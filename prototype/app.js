@@ -53,6 +53,9 @@ let state;
 try { const saved=JSON.parse(localStorage.getItem(KEY));state=saved?.version===1?saved:seed(); } catch {state=seed();}
 let scope='all', page=location.hash.slice(1)||'overview', companyTab='overview', hiringStep='request', jobId='j0', query='';
 let editorDraft=null, editorBaseline='', toastTimer;
+let viewAs=null;
+const viewer=()=>viewAs?person(viewAs):null;
+const can=cap=>{if(!viewAs)return true;if(scope==='all')return false;const g=state.grants[viewAs+'|'+scope];return !!g&&g.permissions.includes(cap);};
 const main=$('#main'), dialog=$('#editor');
 const company = id => state.companies.find(c=>c.id===id);
 const person = id => state.people.find(p=>p.id===id);
@@ -71,29 +74,36 @@ function scopedName(){return scope==='all'?'Holding overview':company(scope).nam
 function navigate(target){page=target;query='';location.hash=target;render();}
 function render(){
   if(!['overview','company','people','hiring','onboarding','activity'].includes(page))page='overview';
-  $('#company-select').innerHTML=`<option value="all">All companies</option>${state.companies.map(c=>`<option value="${c.id}">${esc(c.name)}</option>`).join('')}`;$('#company-select').value=scope;
+  if(viewAs&&scope==='all')scope=viewer().company;
+  $('#company-select').innerHTML=`${viewAs?'':'<option value="all">All companies</option>'}${state.companies.map(c=>`<option value="${c.id}">${esc(c.name)}</option>`).join('')}`;$('#company-select').value=scope;
+  $('#view-as').innerHTML=`<option value="">Admin (you)</option>${state.companies.map(c=>`<optgroup label="${esc(c.name)}">${state.people.filter(p=>p.company===c.id).map(p=>`<option value="${p.id}" ${p.id===viewAs?'selected':''}>${esc(p.name)} · ${esc(p.title)}</option>`).join('')}</optgroup>`).join('')}`;$('#view-as').value=viewAs||'';
+  const banner=$('#viewas-banner');banner.hidden=!viewAs;if(viewAs){const v=viewer(),g=state.grants[viewAs+'|'+scope];banner.innerHTML=`<span>SIMULATION</span><strong>Viewing as ${esc(v.name)}</strong><span>${esc(v.title)} · ${esc(company(scope).name)} · ${g?g.permissions.length:0} capabilities here</span>${btn('Return to Admin','exit-view-as','','secondary small')}`;}
+  const pageCaps={overview:null,company:null,people:'people.view',hiring:'jobs.view',onboarding:'tasks.view',activity:'access.manage'};
+  if(pageCaps[page]&&!can(pageCaps[page]))page='overview';
   const nav=[['overview','◫','Overview'],['company','▦','Company profiles'],['people','♧','People & access'],['hiring','↗','Hiring workspace'],['onboarding','☑','Onboarding'],['activity','◷','Activity']];
-  $('#navigation').innerHTML=nav.map(([id,icon,label])=>`<a href="#${id}" class="${page===id?'active':''}" ${page===id?'aria-current="page"':''}><span class="nav-icon" aria-hidden="true">${icon}</span>${label}${id==='hiring'?`<span class="nav-count">${state.jobs.filter(inScope).length}</span>`:''}</a>`).join('');
+  $('#navigation').innerHTML=nav.filter(([id])=>!pageCaps[id]||can(pageCaps[id])).map(([id,icon,label])=>`<a href="#${id}" class="${page===id?'active':''}" ${page===id?'aria-current="page"':''}><span class="nav-icon" aria-hidden="true">${icon}</span>${label}${id==='hiring'?`<span class="nav-count">${state.jobs.filter(inScope).length}</span>`:''}</a>`).join('');
   main.innerHTML=({overview:overview,company:companyPage,people:peoplePage,hiring:hiringPage,onboarding:onboardingPage,activity:activityPage}[page])();
 }
 function overview(){
   const people=state.people.filter(inScope), jobs=state.jobs.filter(inScope), plans=state.onboarding.filter(inScope);
   const needs=[
-    ...jobs.filter(j=>j.request==='Submitted').map(j=>({title:esc(j.title),sub:`${esc(company(j.company).name)} · Hiring request by ${esc(j.manager)}`,action:btn('Review request','open-job',`data-id="${j.id}"`)})),
-    ...jobs.filter(j=>j.promotion.status==='In review').map(j=>({title:`Promotion copy: ${esc(j.title)}`,sub:`${esc(company(j.company).name)} · Awaiting content approval`,action:btn('Review copy','open-promotion',`data-id="${j.id}"`)})),
-    ...plans.filter(p=>p.tasks.some(t=>t.critical&&!t.done)).map(p=>({title:`Onboarding: ${esc(p.name)}`,sub:`${esc(company(p.company).name)} · ${p.tasks.filter(t=>t.critical&&!t.done).length} critical task(s) before start`,action:btn('Open plan','open-onboarding',`data-id="${p.id}"`)}))
+    ...(can('jobs.approve')?jobs.filter(j=>j.request==='Submitted').map(j=>({title:esc(j.title),sub:`${esc(company(j.company).name)} · Hiring request by ${esc(j.manager)}`,action:btn('Review request','open-job',`data-id="${j.id}"`)})):[]),
+    ...(can('marketing.approve')?jobs.filter(j=>j.promotion.status==='In review').map(j=>({title:`Promotion copy: ${esc(j.title)}`,sub:`${esc(company(j.company).name)} · Awaiting content approval`,action:btn('Review copy','open-promotion',`data-id="${j.id}"`)})):[]),
+    ...(can('tasks.view')?plans.filter(p=>p.tasks.some(t=>t.critical&&!t.done)).map(p=>({title:`Onboarding: ${esc(p.name)}`,sub:`${esc(company(p.company).name)} · ${p.tasks.filter(t=>t.critical&&!t.done).length} critical task(s) before start`,action:btn('Open plan','open-onboarding',`data-id="${p.id}"`)})):[])
   ];
   const tasks=plans.reduce((sum,p)=>sum+p.tasks.filter(t=>!t.done).length,0);
   return head('YOUR PEOPLE, CONNECTED',scope==='all'?'A clear view of the whole group.':`${esc(scopedName())}, at a glance.`,'People, hiring decisions, and the next step that needs an owner.',btn('Explore hiring journey <span aria-hidden="true">↗</span>','go-hiring','',''))+
-    `<div class="metrics">${metric('People',people.length,'One employing company per person')}${metric('Companies',scope==='all'?state.companies.length:1,scope==='all'?'One shared holding workspace':'Company-scoped view')}${metric('Hiring requests',jobs.filter(j=>j.request==='Submitted').length,'Awaiting a director’s decision')}${metric('Open onboarding tasks',tasks,plans.length?`${plans.length} onboarding plan(s)`:'Confirm a hire to start a plan')}</div>
+    `<div class="metrics">${metric('People',people.length,'One employing company per person')}${metric('Companies',scope==='all'?state.companies.length:1,scope==='all'?'One shared holding workspace':'Company-scoped view')}${can('jobs.view')?metric('Hiring requests',jobs.filter(j=>j.request==='Submitted').length,'Awaiting a director’s decision'):metric('Your access','—','Capabilities are set per company')}${metric('Open onboarding tasks',tasks,plans.length?`${plans.length} onboarding plan(s)`:'Confirm a hire to start a plan')}</div>
     <div class="grid-two"><div><div class="card"><div class="card-head"><div><h2>Needs a decision</h2><p>Hiring approvals, content reviews, and readiness gaps in one queue.</p></div>${badge(`${needs.length} open`,needs.length?'amber':'green')}</div>${needs.map((n,i)=>`<div class="list-row"><span class="list-num">${String(i+1).padStart(2,'0')}</span><div class="row-text"><strong>${n.title}</strong><small>${n.sub}</small></div>${n.action}</div>`).join('')||'<div class="empty">Nothing needs a decision right now.</div>'}</div>
     <div class="company-grid">${state.companies.filter(c=>scope==='all'||c.id===scope).map(c=>`<div class="company-card"><div class="company-icon" style="background:${c.color}">${esc(c.short)}</div><h3>${esc(c.name)}</h3><p>${esc(c.director)} · Director</p><div class="company-card-bottom"><span>${state.people.filter(p=>p.company===c.id).length} people</span>${btn('Open company →','open-company',`data-id="${c.id}"`,'ghost small')}</div></div>`).join('')}</div></div>
-    <div><div class="card"><div class="card-head"><h2>Start with one real workflow</h2></div><div class="card-body"><div class="eyebrow">DESIGN WALKTHROUGH</div><h2 style="margin:12px 0">From a request to a ready first day.</h2><p class="small-copy">Review a director’s request, prepare the job, bring Marketing in, and confirm a candidate. Their onboarding tasks appear automatically.</p>${btn('Open the walkthrough','go-hiring','','gap-top')}</div></div><div class="card"><div class="card-head"><h2>Access is intentional</h2></div><div class="card-body"><p class="small-copy" style="margin-top:0">A Director title does not automatically grant salary or payroll access. You choose their company and capabilities.</p>${btn('Configure a director','director-access','','secondary small')}<div class="inline-note gap-top">Demo grants are editable. This prototype remains in <strong>Admin view</strong>; it does not enforce account access.</div></div></div></div></div>`;
+    <div><div class="card"><div class="card-head"><h2>Start with one real workflow</h2></div><div class="card-body"><div class="eyebrow">DESIGN WALKTHROUGH</div><h2 style="margin:12px 0">From a request to a ready first day.</h2><p class="small-copy">Review a director’s request, prepare the job, bring Marketing in, and confirm a candidate. Their onboarding tasks appear automatically.</p>${btn('Open the walkthrough','go-hiring','','gap-top')}</div></div><div class="card"><div class="card-head"><h2>Access is intentional</h2></div><div class="card-body"><p class="small-copy" style="margin-top:0">A Director title does not automatically grant salary or payroll access. You choose their company and capabilities.</p>${btn('Configure a director','director-access','','secondary small',!can('access.manage'))}<div class="inline-note gap-top">Demo grants are editable. This prototype remains in <strong>Admin view</strong>; it does not enforce account access.</div></div></div></div></div>`;
 }
 function companyPage(){
   if(scope==='all')return head('THE HOLDING','Four companies. One workspace.','Select a company to review its people, access, and hiring activity.')+`<div class="company-grid">${state.companies.map(c=>`<div class="company-card"><div class="company-icon" style="background:${c.color}">${esc(c.short)}</div><h2>${esc(c.name)}</h2><p>${state.people.filter(p=>p.company===c.id).length} employees · ${esc(c.director)}, Director</p>${btn('Open company profile →','open-company',`data-id="${c.id}"`)}</div>`).join('')}</div>`;
   const c=company(scope),director=state.people.find(p=>p.company===scope&&p.title==='Director');
-  const tabs=[['overview','Overview'],['people','People'],['access','Access'],['hiring','Hiring'],['integrations','Integrations']];
+  const tabCaps={people:'people.view',access:'access.manage',hiring:'jobs.view',integrations:'integration.view'};
+  const tabs=[['overview','Overview'],['people','People'],['access','Access'],['hiring','Hiring'],['integrations','Integrations']].filter(([id])=>!tabCaps[id]||can(tabCaps[id]));
+  if(!tabs.some(([id])=>id===companyTab))companyTab='overview';
   let body='';
   if(companyTab==='overview')body=`<div class="metrics">${metric('People',state.people.filter(inScope).length,'Company employment records')}${metric('Hiring requests',state.jobs.filter(inScope).length,'One sample opening')}${metric('Onboarding',state.onboarding.filter(inScope).length,'Linked to confirmed hires')}${metric('Connected channels',0,'Connections are not configured')}</div><div class="grid-two"><div class="card"><div class="card-head"><h2>Company details</h2></div><div class="card-body"><dl class="detail-grid"><div><dt>Parent organization</dt><dd>Main holding · sample label</dd></div><div><dt>Director</dt><dd>${esc(c.director)}</dd></div><div><dt>Employment structure</dt><dd>One company per employee</dd></div><div><dt>HR workspace</dt><dd>Shared across the holding</dd></div></dl></div></div><div class="card"><div class="card-head"><h2>Director access</h2></div><div class="card-body"><div class="person-cell">${avatar(director.name)}<div><strong>${esc(director.name)}</strong><small>Director · ${esc(c.name)}</small></div></div><p class="small-copy">Review the exact capabilities assigned to this company.</p>${btn('Manage permissions','edit-access',`data-person="${director.id}" data-company="${c.id}"`)}</div></div></div>`;
   if(companyTab==='people'||companyTab==='access')body=peopleTable(companyTab==='access');
@@ -162,6 +172,8 @@ document.addEventListener('click',event=>{
   const target=event.target.closest('[data-action]');if(!target)return;
   const {action,id,tab,step,candidate:aid}=target.dataset;
   const j=getJob();
+  const actionCaps={'approve-request':'jobs.approve','request-changes':'jobs.approve','publish-careers':'jobs.publish','manual-publication':'jobs.publish','request-promotion':'jobs.edit','review-promotion':'marketing.draft','approve-promotion':'marketing.approve','manual-promotion':'marketing.publish','candidate-next':'candidates.review','reject-candidate':'candidates.review','toggle-task':'tasks.complete','edit-access':'access.manage','director-access':'access.manage','save-access':'access.manage'};
+  if(viewAs&&actionCaps[action]&&!can(actionCaps[action])){toast(`Not permitted in this simulation: ${labels[actionCaps[action]]||actionCaps[action]} is not granted.`);return;}
   if(action==='go-hiring'){hiringStep='request';navigate('hiring');}
   else if(action==='open-company'){scope=id;companyTab='overview';navigate('company');}
   else if(action==='company-tab'){companyTab=tab;query='';render();}
@@ -198,10 +210,12 @@ document.addEventListener('click',event=>{
   else if(action==='reject-candidate'){const a=j.candidates.find(a=>a.id===aid);modal('Record a rejection',`<form id="rejection-form" data-candidate="${a.id}"><p class="small-copy">${esc(a.name)} · ${esc(j.title)}. This records the decision only; no message is sent.</p><div class="field"><label for="rejection-reason">Decision reason</label><textarea id="rejection-reason" name="reason" required maxlength="1000"></textarea></div><button type="submit" class="button danger">Record rejection</button></form>`);}
   else if(action==='open-onboarding'){navigate('onboarding');document.getElementById('plan-'+id)?.scrollIntoView({behavior:'smooth',block:'start'});}
   else if(action==='toggle-task'){const p=state.onboarding.find(p=>p.id===target.dataset.plan),t=p.tasks.find(t=>t.id===target.dataset.task);t.done=!t.done;commit(p.company,`${t.done?'Completed':'Reopened'} ${t.title.toLowerCase()} for ${p.name}.`);}
+  else if(action==='exit-view-as'){viewAs=null;render();}
 });
 document.addEventListener('change',event=>{
   const target=event.target;
   if(target.id==='company-select'){scope=target.value;query='';render();}
+  else if(target.id==='view-as'){viewAs=target.value||null;if(viewAs)scope=person(viewAs).company;else if(!state.companies.some(c=>c.id===scope))scope='all';companyTab='overview';page='overview';location.hash='overview';render();}
   else if(target.id==='job-select'){jobId=target.value;render();}
   else if(target.id==='access-company'){
     if(JSON.stringify(editorDraft)!==editorBaseline&&!confirm('Discard unsaved changes before changing company?')){target.value=editorDraft.companyId;return;}
@@ -213,6 +227,8 @@ document.addEventListener('change',event=>{
 document.addEventListener('input',event=>{if(event.target.id==='people-search'){query=event.target.value;$('#people-rows').innerHTML=peopleRows();}});
 document.addEventListener('submit',event=>{
   event.preventDefault();const form=event.target,fd=new FormData(form),j=getJob();const value=name=>String(fd.get(name)||'').trim();
+  const formCaps={'request-form':'jobs.edit','description-form':'jobs.edit','changes-form':'jobs.approve','promotion-form':'marketing.draft','candidate-note-form':'candidates.review','rejection-form':'candidates.review','hire-form':'employment.edit','manual-form':'jobs.publish'};
+  if(viewAs&&formCaps[form.id]&&!can(formCaps[form.id])){toast('Not permitted in this simulation.');return;}
   if(form.id==='request-form'){if(j.request==='Approved')return;j.title=value('title');j.reason=value('reason');j.start=value('start');j.request='Submitted';commit(j.company,`Saved hiring request: ${j.title}.`);}
   else if(form.id==='description-form'){j.description=value('description');if(j.channels.careers==='Demo live')j.channels.careers='Draft changed';commit(j.company,`Saved description draft for ${j.title}.`);}
   else if(form.id==='changes-form'){j.request='Changes requested';j.changeReason=value('reason');closeDialog(true);commit(j.company,`Requested changes to ${j.title}: ${j.changeReason}`);}

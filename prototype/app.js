@@ -1,6 +1,6 @@
 'use strict';
 
-const KEY = 'personnel-design-round-01-v1';
+const KEY = 'personnel-design-round-01-v2';
 const $ = (selector, root = document) => root.querySelector(selector);
 const esc = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const initials = name => name.split(' ').map(p => p[0]).slice(0,2).join('');
@@ -11,6 +11,7 @@ const groups = [
   ['Documents & onboarding', [['documents.view','View employment documents',true],['documents.request','Request employee documents'],['tasks.view','View onboarding progress'],['tasks.assign','Assign onboarding tasks'],['tasks.complete','Complete assigned tasks']]],
   ['Equipment & IT', [['it.view','View IT and equipment requests'],['it.assign','Assign requests'],['it.complete','Confirm setup and equipment handoff']]],
   ['Recruitment marketing', [['marketing.view','View approved public job briefs'],['marketing.draft','Draft promotional content'],['marketing.approve','Approve promotional content'],['marketing.publish','Publish company posts']]],
+  ['Projects & work', [['projects.view','View project assignments (read-only)']]],
   ['Administration', [['integration.view','View integration status'],['integration.manage','Manage company connections',true],['access.manage','Manage company access',true]]]
 ];
 const labels = Object.fromEntries(groups.flatMap(g=>g[1]).map(p=>[p[0],p[1]]));
@@ -25,12 +26,12 @@ const dependencies = {
   'marketing.publish':['marketing.view'],'integration.manage':['integration.view']
 };
 const presets = {
-  'Company Director':['people.view','jobs.view','jobs.request','jobs.approve','candidates.view','tasks.view'],
-  'Company HR':['people.view','personal.view','employment.edit','departure.start','jobs.view','jobs.request','jobs.edit','candidates.view','candidates.review','documents.view','documents.request','tasks.view','tasks.assign','tasks.complete','integration.view'],
+  'Company Director':['people.view','jobs.view','jobs.request','jobs.approve','candidates.view','tasks.view','projects.view'],
+  'Company HR':['people.view','personal.view','employment.edit','departure.start','jobs.view','jobs.request','jobs.edit','candidates.view','candidates.review','documents.view','documents.request','tasks.view','tasks.assign','tasks.complete','integration.view','projects.view'],
   'Finance':['people.view','salary.view','payroll.summary','payroll.individual'],
   'IT':['people.view','it.view','it.assign','it.complete','tasks.view','tasks.complete'],
   'Marketing':['marketing.view','marketing.draft'],
-  'Hiring Manager':['people.view','jobs.view','jobs.request','candidates.view','candidates.review','tasks.view'],
+  'Hiring Manager':['people.view','jobs.view','jobs.request','candidates.view','candidates.review','tasks.view','projects.view'],
   'No access':[], 'Custom':[]
 };
 function seed(){
@@ -47,10 +48,12 @@ function seed(){
   const grants = {};
   people.forEach((person,i)=>{const preset=i%10===0?'Company Director':i%10===1?'Company HR':i%10===5?'Marketing':i%10===6?'Finance':'No access';grants[person.id+'|'+person.company]={preset,permissions:[...presets[preset]]};});
   const jobs = companies.map((company,i)=>({id:'j'+i,company:company.id,title:['Operations Coordinator','Product Designer','Account Manager','Software Engineer'][i],manager:company.director,headcount:1,start:'2026-11-02',reason:'Support the team as responsibilities grow and give the role a clear owner.',request:'Submitted',description:'We are looking for a thoughtful, organized teammate who enjoys collaborating across teams. You will own day-to-day work, communicate clearly, and help improve how we operate.',channels:{careers:'Not published',linkedin:'Not connected',other:'Manual handoff'},links:{},promotion:{status:'Not requested',copy:'',url:''},candidates:[{id:'a'+i+'-1',name:['Jamie Taylor','Riley Adams','Casey Lee','Jordan Quinn'][i],source:'Sample careers application',stage:'Interview',note:'Interview completed. Hiring manager feedback is ready for review.'},{id:'a'+i+'-2',name:['Robin Lane','Avery James','Cameron Drew','Charlie Lane'][i],source:'Sample referral',stage:'New',note:'New application awaiting an initial review.'}]}));
-  return {version:1,companies,people,grants,jobs,onboarding:[],activity:[]};
+  const projectNames=[['Website relaunch','Internal tools cleanup'],['Retail rollout','Supplier portal'],['Mobile app v2','Data warehouse'],['Brand refresh','Logistics automation']];
+  const projects=companies.flatMap((company,i)=>projectNames[i].map((name,k)=>({id:`pr${i}-${k}`,company:company.id,name,status:k===0?'Active':'On hold',source:'Zoho Projects (sample)',lastSync:'2026-09-10T08:00:00Z',members:[people[i*10+2].id,people[i*10+4].id,people[i*10+8].id].slice(0,k===0?3:2)})));
+  return {version:2,companies,people,grants,jobs,projects,onboarding:[],activity:[]};
 }
 let state;
-try { const saved=JSON.parse(localStorage.getItem(KEY));state=saved?.version===1?saved:seed(); } catch {state=seed();}
+try { const saved=JSON.parse(localStorage.getItem(KEY));state=saved?.version===2?saved:seed(); } catch {state=seed();}
 let scope='all', page=location.hash.slice(1)||'overview', companyTab='overview', hiringStep='request', jobId='j0', query='';
 let editorDraft=null, editorBaseline='', toastTimer;
 let viewAs=null;
@@ -111,18 +114,20 @@ function selfServiceOverview(){
   `</div><div>`+
   `<div class="card"><div class="card-head"><h2>My profile</h2></div><div class="card-body"><div class="person-cell">${avatar(v.name)}<div><strong>${esc(v.name)}</strong><small>${esc(v.title)} · ${esc(v.department)}</small></div></div><dl class="detail-grid gap-top"><div><dt>Employing company</dt><dd>${esc(company(v.company).name)}</dd></div><div><dt>Status</dt><dd>${badge(v.status,v.status==='Active'?'green':'blue')}</dd></div>${v.start?`<div><dt>Start date</dt><dd>${esc(v.start)}</dd></div>`:''}${v.manager?`<div><dt>Manager</dt><dd>${esc(v.manager)}</dd></div>`:''}</dl></div></div>`+
   `<div class="card"><div class="card-head"><div><h2>My access here</h2><p>${esc(company(scope).name)} · preset: ${esc(g.preset)}</p></div></div><div class="card-body">${g.permissions.length?`<ul class="preview-list">${g.permissions.map(id=>`<li>${labels[id]}</li>`).join('')}</ul>`:'<p class="small-copy">No capabilities granted in this company.</p>'}<div class="inline-note gap-top">Access is granted by your admin per company. This simulation shows exactly what your grant allows.</div></div></div>`+
+  `<div class="card"><div class="card-head"><h2>My projects</h2></div><div class="card-body">${(state.projects||[]).filter(pr=>pr.members.includes(viewAs)).map(pr=>`<div class="channel"><div class="channel-top"><h3>${esc(pr.name)}</h3>${badge(pr.status,pr.status==='Active'?'green':'gray')}</div><p class="source">${esc(pr.source)}</p></div>`).join('')||'<p class="small-copy">No project assignments synced.</p>'}</div></div>`+
   `</div></div>`;
 }
 function companyPage(){
   if(scope==='all')return head('THE HOLDING','Four companies. One workspace.','Select a company to review its people, access, and hiring activity.')+`<div class="company-grid">${state.companies.map(c=>`<div class="company-card"><div class="company-icon" style="background:${c.color}">${esc(c.short)}</div><h2>${esc(c.name)}</h2><p>${state.people.filter(p=>p.company===c.id).length} employees · ${esc(c.director)}, Director</p>${btn('Open company profile →','open-company',`data-id="${c.id}"`)}</div>`).join('')}</div>`;
   const c=company(scope),director=state.people.find(p=>p.company===scope&&p.title==='Director');
-  const tabCaps={people:'people.view',access:'access.manage',hiring:'jobs.view',integrations:'integration.view'};
-  const tabs=[['overview','Overview'],['people','People'],['access','Access'],['hiring','Hiring'],['integrations','Integrations']].filter(([id])=>!tabCaps[id]||can(tabCaps[id]));
+  const tabCaps={people:'people.view',access:'access.manage',hiring:'jobs.view',projects:'projects.view',integrations:'integration.view'};
+  const tabs=[['overview','Overview'],['people','People'],['access','Access'],['hiring','Hiring'],['projects','Projects'],['integrations','Integrations']].filter(([id])=>!tabCaps[id]||can(tabCaps[id]));
   if(!tabs.some(([id])=>id===companyTab))companyTab='overview';
   let body='';
   if(companyTab==='overview')body=`<div class="metrics">${metric('People',state.people.filter(inScope).length,'Company employment records')}${metric('Hiring requests',state.jobs.filter(inScope).length,'One sample opening')}${metric('Onboarding',state.onboarding.filter(inScope).length,'Linked to confirmed hires')}${metric('Connected channels',0,'Connections are not configured')}</div><div class="grid-two"><div class="card"><div class="card-head"><h2>Company details</h2></div><div class="card-body"><dl class="detail-grid"><div><dt>Parent organization</dt><dd>Main holding · sample label</dd></div><div><dt>Director</dt><dd>${esc(c.director)}</dd></div><div><dt>Employment structure</dt><dd>One company per employee</dd></div><div><dt>HR workspace</dt><dd>Shared across the holding</dd></div></dl></div></div><div class="card"><div class="card-head"><h2>Director access</h2></div><div class="card-body"><div class="person-cell">${avatar(director.name)}<div><strong>${esc(director.name)}</strong><small>Director · ${esc(c.name)}</small></div></div><p class="small-copy">Review the exact capabilities assigned to this company.</p>${btn('Manage permissions','edit-access',`data-person="${director.id}" data-company="${c.id}"`)}</div></div></div>`;
   if(companyTab==='people'||companyTab==='access')body=peopleTable(companyTab==='access');
   if(companyTab==='hiring')body=state.jobs.filter(inScope).map(j=>`<div class="card"><div class="card-head"><div><h2>${esc(j.title)}</h2><p>Requested by ${esc(j.manager)} · ${esc(j.start)}</p></div>${badge(j.request,j.request==='Approved'?'green':'amber')}</div><div class="card-body">${btn('Open hiring workspace →','open-job',`data-id="${j.id}"`,'')}</div></div>`).join('');
+  if(companyTab==='projects')body=`<div class="card"><div class="card-head"><div><h2>Projects</h2><p>Read-only view synced from your project system (simulated).</p></div>${badge('Zoho Projects (sample)','blue')}</div><div class="card-body">${state.projects.filter(inScope).map(pr=>`<div class="channel"><div class="channel-top"><h3>${esc(pr.name)}</h3>${badge(pr.status,pr.status==='Active'?'green':'gray')}</div><p>${pr.members.length} assigned · Last sync ${new Date(pr.lastSync).toLocaleString()}</p>${pr.members.map(id=>{const m=person(id);return m?`<div class="person-cell" style="margin-bottom:8px">${avatar(m.name)}<div><strong>${esc(m.name)}</strong><small>${esc(m.title)}</small></div></div>`:''}).join('')}</div>`).join('')||'<div class="empty">No projects synced for this company.</div>'}<div class="inline-note">Project facts stay in the external system. This panel is read-only; assignments, deadlines, and budgets are not edited here.</div></div></div>`;
   if(companyTab==='integrations')body=`<div class="card"><div class="card-head"><div><h2>Company connections</h2><p>Every destination belongs to ${esc(c.name)}.</p></div></div><div class="card-body">${[['LinkedIn company page','Separate authorization for promotional posts and recruitment APIs.'],['Recruitment platforms','Provider availability and your existing accounts must be confirmed.'],['Leave system','Your existing system stays responsible for requests and balances.']].map(([name,description])=>`<div class="channel"><div class="channel-top"><h3>${name}</h3>${badge('Not connected','amber')}</div><p>${description}</p>${btn('View connection requirements','connection',`data-provider="${esc(name)}"`)}</div>`).join('')}<div class="inline-note">No account has been connected. The prototype does not request credentials or publish externally.</div></div></div>`;
   return `<div class="eyebrow" style="margin-bottom:17px">HOLDING / COMPANY PROFILE</div><div class="company-banner"><div class="company-icon" style="background:${c.color}">${esc(c.short)}</div><div><h1>${esc(c.name)}</h1><p>Part of the holding · ${state.people.filter(inScope).length} people · Sample company</p></div></div><div class="tabs" role="tablist" aria-label="Company profile">${tabs.map(([id,label])=>`<button class="tab ${companyTab===id?'active':''}" role="tab" aria-selected="${companyTab===id}" data-action="company-tab" data-tab="${id}">${label}</button>`).join('')}</div>${body}`;
 }

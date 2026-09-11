@@ -42,6 +42,10 @@ round; merging it into `main` is the maintainer's decision.
 | 013 | Self-service: My workspace (profile, onboarding, tasks, access, projects) | DONE (reviewed, merged to main @ `3839087`; full suite 11/11) |
 | 014 | Company profiles: holding list + per-company tabs | DONE (reviewed, merged to main @ `8082763`; full suite 12/12) |
 | 015 | Zoho Projects read-only sync (client, mapping, CLI, docs) | DONE (reviewed, merged to main @ `53ce3ab`; server 23/23, app 12/12; live HTTP calls await credentials) |
+| — | Offboarding foundation: departure template + `schedule_departure` / `complete_departure` RPCs (migration 0010) | DONE (main @ `66201fa`; smoke tests) |
+| — | Company management: create / edit / archive with full profile (brand + logo bucket, legal & registration, contacts; migration 0011) | DONE (reviewed, main @ `10407ee`; full suite 13/13) |
+| 016 | Offboarding UI: schedule departure, queue, kind-aware plan page, mark as former; `auth.can()` | DONE (reviewed, main @ `8dd3764`; full suite 14/14) |
+| 017 | Employment changes: scheduled job/manager/location changes, circular-reporting guard, departments & locations management | TODO |
 
 Round-03 executors branch from `main` as `feature/NNN-<slug>`; the reviewer
 runs the full E2E suite serially and merges after review.

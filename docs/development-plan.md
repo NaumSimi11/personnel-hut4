@@ -22,20 +22,28 @@ prototype in `../prototype` is the UI spec. Updated as milestones land.
 | Self-service: My workspace — own profile and employment history, own onboarding (read-only), tasks assigned to me, my access per company, my synced projects | plan 013 | E2E own-task complete + admin note |
 | Company profiles: holding list with headcounts; per-company tabs (overview, people, access, hiring, projects, integrations), deep-linkable | plan 014 | E2E all tabs + `?tab=` deep link |
 | Zoho Projects read-only sync: OAuth client, per-company mapping with routing exceptions, idempotent mirror upserts, CLI with dry-run ([docs](integrations-zoho.md)) | plan 015 | 15 tests incl. live-DB sync with a fixture client; awaiting Zoho credentials to go live |
+| Company management: admins create / edit / archive companies with a full profile — logo (public Storage bucket), accent colour, tagline, website, legal & registration, director / HR contact; archive is the only delete and every picker honours it | migration 0011, `CompanyFormPage` | E2E create with logo → profile → edit → archive → gone from pickers; schema smoke tests |
+| Offboarding: schedule departure (dates + restricted reason → plan), queue with blockers, kind-aware plan page, explicit "mark as former" allowed with open tasks; Departing badge; `auth.can()` capability hint for non-admin HR | migration 0010 + plan 016 | E2E schedule → queue → task → former; smoke tests for the RPCs |
 
 ## Next (in order)
 
-1. **Employee records, remaining depth** — scheduled changes with effective
-   dates, manager field + circular-reporting guard, private personal details
-   (personal.view-gated), departments/locations management, import preview.
+1. **Employment changes** (plan 017) — scheduled job / manager / location
+   changes with effective dates, manager field + circular-reporting guard,
+   departments & locations management (tables exist, no UI), directory
+   filters (active / upcoming / departing / former).
 2. **Turn on Zoho sync** — supply credentials + per-company mapping, then
    run it for real (code is done; see [integrations-zoho.md](integrations-zoho.md)).
-5. **Company profiles & projects** — company pages; read-only Zoho Projects
-   sync into `external_projects` via the auth service's sibling job.
-6. **Leave-system linking** — shared auth pool with the leave app (one
+3. **Compensation** — `compensation_records` UI (propose / approve, history),
+   `salary.*`-gated; company default currency.
+4. **Leave-system linking** — shared auth pool with the leave app (one
    password for both), then read-only leave indicators via `leave_links`.
-7. **Later, per blueprint** — documents & policies, equipment/IT, offboarding,
-   payroll preparation, reports, recruitment marketing + channel integrations.
+5. **Company profile leftovers** — upcoming starters / departures and open
+   tasks on the overview; `settings` overrides (notification contacts,
+   workflow owners); Integrations tab connect / configure; invite from the
+   company Access tab.
+6. **Later, per blueprint** — documents & policies, equipment/IT, payroll
+   preparation, audit history tab, reports, recruitment marketing + channel
+   integrations, import preview, rehire.
 
 ## Standing rules
 

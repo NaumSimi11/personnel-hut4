@@ -1244,6 +1244,91 @@ begin
 end $$;
 reset role;
 
+-- --------------------------------------------------------- hardening (0018)
+-- 1. The audit trail keeps identity and actors but never blind or salary content.
+do $$
+begin
+  assert exists (select 1 from public.activity_log where entity_type = 'scorecards'), 'scorecards are still audited';
+  assert exists (select 1 from public.activity_log where entity_type = 'compensation_records' and after ? 'status'),
+    'compensation status changes are still audited';
+  assert not exists (select 1 from public.activity_log where entity_type = 'scorecards'
+                     and (coalesce(after, '{}') ? 'ratings' or coalesce(before, '{}') ? 'ratings'
+                          or coalesce(after, '{}') ? 'recommendation')), 'scorecard content is not in the audit log';
+  assert not exists (select 1 from public.activity_log where entity_type = 'compensation_records'
+                     and (coalesce(after, '{}') ? 'amount' or coalesce(before, '{}') ? 'amount')),
+    'compensation amounts are not in the audit log';
+  assert not exists (select 1 from public.activity_log where entity_type = 'offers'
+                     and (coalesce(after, '{}') ? 'terms' or coalesce(before, '{}') ? 'terms')),
+    'offer terms are not in the audit log';
+end $$;
+
+-- 2. Cycle check within the company. Pia and Quinn work in A; Quinn reports
+--    to Pia. Quinn is transferring: her A period ends soon and a later,
+--    unmanaged pre-start period in B follows. Making Quinn Pia's manager in
+--    A is still a loop and must be refused even though Quinn's latest period
+--    is elsewhere.
+insert into public.people (id, full_name) values
+  ('20000000-0000-0000-0000-000000000021', 'Pia Planner'),
+  ('20000000-0000-0000-0000-000000000022', 'Quinn Quant');
+insert into public.employment_periods (id, person_id, company_id, job_title, status, start_date, end_date, manager_id) values
+  ('30000000-0000-0000-0000-000000000021','20000000-0000-0000-0000-000000000021',
+   '10000000-0000-0000-0000-00000000000a','Planner','active','2024-06-01', null, null),
+  ('30000000-0000-0000-0000-000000000022','20000000-0000-0000-0000-000000000022',
+   '10000000-0000-0000-0000-00000000000a','Analyst','active','2024-06-01', current_date + 10, '20000000-0000-0000-0000-000000000021'),
+  ('30000000-0000-0000-0000-000000000023','20000000-0000-0000-0000-000000000022',
+   '10000000-0000-0000-0000-00000000000b','Advisor','pre_start', current_date + 11, null, null);
+-- 3. Apply-time re-validation fixture: a future change to Operations for Pia.
+set app.test_uid = '00000000-0000-0000-0000-000000000001';  -- Alex (employment.edit in A)
+set role authenticated;
+do $$
+declare r jsonb;
+begin
+  begin
+    perform public.schedule_employment_change('30000000-0000-0000-0000-000000000021', current_date,
+      '{"manager_id":"20000000-0000-0000-0000-000000000022"}', null);
+    raise exception 'FAIL: cross-company period hid a reporting loop';
+  exception when raise_exception then
+    if sqlerrm not like '%circular%' then raise; end if;
+  end;
+  r := public.schedule_employment_change('30000000-0000-0000-0000-000000000021', current_date + 5,
+    '{"department_id":"e0000000-0000-0000-0000-00000000000a"}', 'Move later');
+  assert (r->>'applied')::boolean = false, 'future department change is scheduled';
+end $$;
+reset role;
+set app.test_uid = '';
+update public.departments set archived_at = now() where id = 'e0000000-0000-0000-0000-00000000000a';
+update public.employment_changes set effective_date = current_date
+  where employment_period_id = '30000000-0000-0000-0000-000000000021' and status = 'scheduled';
+set app.test_uid = '00000000-0000-0000-0000-000000000001';
+set role authenticated;
+do $$
+begin
+  perform public.apply_due_employment_changes();
+  assert (select status from public.employment_changes
+          where employment_period_id = '30000000-0000-0000-0000-000000000021') = 'failed',
+    'a change to an archived department fails at apply time';
+  assert (select failure_reason from public.employment_changes
+          where employment_period_id = '30000000-0000-0000-0000-000000000021') = 'Department not found.',
+    'the reason names the guard';
+end $$;
+reset role;
+set app.test_uid = '';
+
+-- 4. One open application per candidate per job, enforced by the database.
+insert into public.candidates (id, full_name, email) values
+  ('80000000-0000-0000-0000-000000000018', 'Dana Duplicate', 'dana@example.test');
+insert into public.applications (job_id, company_id, candidate_id) values
+  ('70000000-0000-0000-0000-000000000001', '10000000-0000-0000-0000-00000000000a', '80000000-0000-0000-0000-000000000018');
+do $$
+begin
+  begin
+    insert into public.applications (job_id, company_id, candidate_id) values
+      ('70000000-0000-0000-0000-000000000001', '10000000-0000-0000-0000-00000000000a', '80000000-0000-0000-0000-000000000018');
+    raise exception 'FAIL: second open application for the same candidate and job accepted';
+  exception when unique_violation then null;
+  end;
+end $$;
+
 reset role;
 set app.test_uid = '';
 

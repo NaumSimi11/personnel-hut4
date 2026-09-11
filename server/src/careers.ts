@@ -25,15 +25,26 @@ export class RateLimiter {
 
   /** Records the attempt and says whether it is within the sliding window. */
   allow(key: string): boolean {
+    if (!this.peek(key)) return false
+    this.record(key)
+    return true
+  }
+
+  /** Would another attempt be within the window? Spends nothing. */
+  peek(key: string): boolean {
     const at = this.now()
     this.evict(at)
     const recent = (this.hits.get(key) ?? []).filter((t) => at - t < this.windowMs)
-    if (recent.length >= this.max) {
-      this.hits.set(key, recent)
-      return false
-    }
+    if (recent.length) this.hits.set(key, recent)
+    else this.hits.delete(key)
+    return recent.length < this.max
+  }
+
+  /** Spends one attempt — call once the work it guards has actually happened. */
+  record(key: string): void {
+    const at = this.now()
+    const recent = (this.hits.get(key) ?? []).filter((t) => at - t < this.windowMs)
     this.hits.set(key, [...recent, at])
-    return true
   }
 
   /** Keys tracked right now — for tests and diagnostics. */
@@ -239,4 +250,29 @@ export function checkAnswers(
 /** Company codes are 2–6 letters or digits — never a LIKE pattern. */
 export function isShortCode(value: string): boolean {
   return /^[A-Za-z0-9]{2,6}$/.test(value)
+}
+
+// ------------------------------------------------------------- serialisation
+
+const inFlight = new Map<string, Promise<unknown>>()
+
+/**
+ * Runs `fn` after any earlier call for the same key has settled, so a
+ * read-then-insert per applicant cannot race with itself inside this process.
+ * The database's unique index is the hard guarantee across processes; this
+ * keeps the friendly 409 path the common one.
+ */
+export async function serialised<T>(key: string, fn: () => Promise<T>): Promise<T> {
+  const previous = inFlight.get(key) ?? Promise.resolve()
+  const run = previous.then(fn, fn)
+  const tracked = run.then(
+    () => undefined,
+    () => undefined,
+  )
+  inFlight.set(key, tracked)
+  try {
+    return await run
+  } finally {
+    if (inFlight.get(key) === tracked) inFlight.delete(key)
+  }
 }

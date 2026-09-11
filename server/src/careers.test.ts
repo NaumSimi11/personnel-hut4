@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   HONEYPOT_FIELD,
   RateLimiter,
+  serialised,
   applicationInput,
   checkAnswers,
   isDuplicateApplication,
@@ -207,5 +208,41 @@ describe('isShortCode', () => {
     expect(isShortCode('a%')).toBe(false)
     expect(isShortCode('AB_')).toBe(false)
     expect(isShortCode('TOOLONGX')).toBe(false)
+  })
+})
+
+describe('RateLimiter peek / record', () => {
+  it('peek never spends the budget; record spends it without deciding', () => {
+    let now = 0
+    const limiter = new RateLimiter({ max: 2, windowMs: 60_000, now: () => now })
+    expect(limiter.peek('k')).toBe(true)
+    expect(limiter.peek('k')).toBe(true)
+    limiter.record('k')
+    limiter.record('k')
+    expect(limiter.peek('k')).toBe(false)
+    now = 60_001
+    expect(limiter.peek('k')).toBe(true)
+  })
+})
+
+describe('serialised', () => {
+  it('runs calls for the same key one after another and different keys concurrently', async () => {
+    const order: string[] = []
+    const run = (key: string, label: string, ms: number) =>
+      serialised(key, async () => {
+        order.push(`start ${label}`)
+        await new Promise((r) => setTimeout(r, ms))
+        order.push(`end ${label}`)
+        return label
+      })
+    const results = await Promise.all([run('a', 'a1', 20), run('a', 'a2', 1), run('b', 'b1', 1)])
+    expect(results).toEqual(['a1', 'a2', 'b1'])
+    expect(order.indexOf('end a1')).toBeLessThan(order.indexOf('start a2'))
+    expect(order.indexOf('end b1')).toBeLessThan(order.indexOf('end a1'))
+  })
+
+  it('releases the key when the call throws', async () => {
+    await expect(serialised('c', async () => { throw new Error('boom') })).rejects.toThrow('boom')
+    await expect(serialised('c', async () => 'ok')).resolves.toBe('ok')
   })
 })

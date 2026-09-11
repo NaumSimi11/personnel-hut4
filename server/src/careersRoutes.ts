@@ -13,6 +13,7 @@ import {
   publicBrief,
   publicCompany,
   referenceFor,
+  serialised,
   summaryOf,
   validateCv,
 } from './careers.js'
@@ -136,90 +137,101 @@ export async function registerCareersRoutes(app: FastifyInstance): Promise<void>
 
       const db = serviceDb()
 
-      // Duplicate rule across every candidate row carrying this email (the
-      // column is not unique): one open application per person per role.
-      const { data: priorApps } = await db
-        .from('applications')
-        .select('stage_key, candidate:candidates!inner(email)')
-        .eq('job_id', job.id)
-        .eq('candidate.email', input.email)
-      if (isDuplicateApplication(priorApps ?? [])) {
-        return fail(reply, 409, 'You have already applied for this role — we have your application.')
-      }
+      // The budget check, the duplicate check and the inserts run one applicant
+      // at a time (per email) so concurrent submissions cannot all pass the
+      // checks; the database's one-open-application index is the guarantee
+      // across processes.
+      return serialised(`apply:${input.email}`, async () => {
+        // Only accepted submissions spend the per-email budget (recorded once
+        // the application is saved), so a retry after a validation error or a
+        // transient failure is never locked out.
+        if (!emailLimiter.peek(`email:${input.email}`)) {
+          return fail(reply, 429, 'Too many applications for this email address. Try again later.')
+        }
 
-      // Only accepted submissions spend the per-email budget, so a retry after
-      // a validation error or a transient failure is never locked out.
-      if (!emailLimiter.allow(`email:${input.email}`)) {
-        return fail(reply, 429, 'Too many applications for this email address. Try again later.')
-      }
+        // Duplicate rule across every candidate row carrying this email (the
+        // column is not unique): one open application per person per role.
+        const { data: priorApps } = await db
+          .from('applications')
+          .select('stage_key, candidate:candidates!inner(email)')
+          .eq('job_id', job.id)
+          .eq('candidate.email', input.email)
+        if (isDuplicateApplication(priorApps ?? [])) {
+          return fail(reply, 409, 'You have already applied for this role — we have your application.')
+        }
 
-      // Identity: reuse the oldest exact email match; applications stay separate.
-      const { data: existingCandidate } = await db
-        .from('candidates')
-        .select('id')
-        .eq('email', input.email)
-        .order('created_at')
-        .limit(1)
-        .maybeSingle()
-
-      let candidateId = existingCandidate?.id ?? null
-      if (!candidateId) {
-        const { data: created, error: candErr } = await db
+        // Identity: reuse the oldest exact email match; applications stay separate.
+        const { data: existingCandidate } = await db
           .from('candidates')
-          .insert({ full_name: input.name, email: input.email, phone: input.phone || null })
+          .select('id')
+          .eq('email', input.email)
+          .order('created_at')
+          .limit(1)
+          .maybeSingle()
+
+        let candidateId = existingCandidate?.id ?? null
+        if (!candidateId) {
+          const { data: created, error: candErr } = await db
+            .from('candidates')
+            .insert({ full_name: input.name, email: input.email, phone: input.phone || null })
+            .select('id')
+            .single()
+          if (candErr || !created) {
+            req.log.error({ err: candErr }, 'careers: candidate insert failed')
+            return fail(reply, 500, 'We could not save your application. Please try again.')
+          }
+          candidateId = created.id
+        }
+
+        const { data: application, error: appErr } = await db
+          .from('applications')
+          .insert({
+            job_id: job.id,
+            company_id: company.id,
+            candidate_id: candidateId,
+            source_channel_key: 'careers',
+            screening_answers: checked.answers,
+          })
           .select('id')
           .single()
-        if (candErr || !created) {
-          req.log.error({ err: candErr }, 'careers: candidate insert failed')
+        if (appErr?.code === '23505') {
+          return fail(reply, 409, 'You have already applied for this role — we have your application.')
+        }
+        if (appErr || !application) {
+          req.log.error({ err: appErr }, 'careers: application insert failed')
           return fail(reply, 500, 'We could not save your application. Please try again.')
         }
-        candidateId = created.id
-      }
 
-      const { data: application, error: appErr } = await db
-        .from('applications')
-        .insert({
-          job_id: job.id,
-          company_id: company.id,
-          candidate_id: candidateId,
-          source_channel_key: 'careers',
-          screening_answers: checked.answers,
-        })
-        .select('id')
-        .single()
-      if (appErr || !application) {
-        req.log.error({ err: appErr }, 'careers: application insert failed')
-        return fail(reply, 500, 'We could not save your application. Please try again.')
-      }
+        const fileId = randomUUID()
+        const path = `${application.id}/${fileId}.${cvExtension(cv.mimetype)}`
+        const { error: uploadErr } = await db.storage
+          .from('candidate-files')
+          .upload(path, cv.buffer, { contentType: cv.mimetype })
+        if (uploadErr) {
+          req.log.error({ err: uploadErr }, 'careers: cv upload failed')
+        } else {
+          const { error: fileErr } = await db.from('application_files').insert({
+            id: fileId,
+            application_id: application.id,
+            company_id: company.id,
+            kind: 'cv',
+            storage_path: path,
+            original_name: cv.filename.slice(0, 200),
+            mime_type: cv.mimetype,
+            size_bytes: cv.buffer.length,
+          })
+          if (fileErr) req.log.error({ err: fileErr }, 'careers: application_files insert failed')
+        }
 
-      const fileId = randomUUID()
-      const path = `${application.id}/${fileId}.${cvExtension(cv.mimetype)}`
-      const { error: uploadErr } = await db.storage
-        .from('candidate-files')
-        .upload(path, cv.buffer, { contentType: cv.mimetype })
-      if (uploadErr) {
-        req.log.error({ err: uploadErr }, 'careers: cv upload failed')
-      } else {
-        const { error: fileErr } = await db.from('application_files').insert({
-          id: fileId,
+        await db.from('application_events').insert({
           application_id: application.id,
-          company_id: company.id,
-          kind: 'cv',
-          storage_path: path,
-          original_name: cv.filename.slice(0, 200),
-          mime_type: cv.mimetype,
-          size_bytes: cv.buffer.length,
+          kind: 'note',
+          body: `Applied through the ${company.name} careers page.`,
         })
-        if (fileErr) req.log.error({ err: fileErr }, 'careers: application_files insert failed')
-      }
 
-      await db.from('application_events').insert({
-        application_id: application.id,
-        kind: 'note',
-        body: `Applied through the ${company.name} careers page.`,
+        emailLimiter.record(`email:${input.email}`)
+        return reply.status(201).send({ reference: referenceFor(application.id) })
       })
-
-      return reply.status(201).send({ reference: referenceFor(application.id) })
     },
   )
 }

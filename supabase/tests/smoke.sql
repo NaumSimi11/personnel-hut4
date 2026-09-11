@@ -334,6 +334,71 @@ end $$;
 reset role;
 set app.test_uid = '';
 
+-- Departures: capability-gated, idempotent, and scheduling never deactivates
+-- the person (migration 0010).
+set app.test_uid = '00000000-0000-0000-0000-000000000002';  -- Fiona, Finance
+set role authenticated;
+do $$
+begin
+  begin
+    perform public.schedule_departure('30000000-0000-0000-0000-000000000003',
+      current_date + 30, current_date + 28, 'sample reason');
+    raise exception 'FAIL: Finance scheduled a departure without departure.start';
+  exception when insufficient_privilege then null;
+  end;
+end $$;
+reset role;
+
+set app.test_uid = '00000000-0000-0000-0000-000000000004';  -- Ada, admin
+set role authenticated;
+do $$
+declare first jsonb; again jsonb; done jsonb;
+begin
+  first := public.schedule_departure('30000000-0000-0000-0000-000000000003',
+    current_date + 30, current_date + 28, 'sample restricted reason');
+  assert (first->>'already_scheduled')::boolean = false, 'first schedule creates a plan';
+  assert (select status from public.employment_periods
+          where id = '30000000-0000-0000-0000-000000000003') = 'active',
+    'scheduling a departure must NOT deactivate the person';
+  assert (select count(*) from public.plan_tasks
+          where plan_id = (first->>'plan_id')::uuid) = 5,
+    'offboarding plan carries the 5 template tasks';
+  assert (select count(*) from public.plan_tasks
+          where plan_id = (first->>'plan_id')::uuid
+            and due_date = current_date + 28) = 2,
+    'last-day tasks are dated from the last working day';
+
+  again := public.schedule_departure('30000000-0000-0000-0000-000000000003',
+    current_date + 31, current_date + 29, null);
+  assert (again->>'already_scheduled')::boolean = true, 'second schedule is a no-op';
+  assert again->>'plan_id' = first->>'plan_id', 'retry returns the same plan';
+  assert (select count(*) from public.plans
+          where employment_period_id = '30000000-0000-0000-0000-000000000003') = 1,
+    'exactly one offboarding plan per employment period';
+
+  -- Former while work is still outstanding is legitimate, and reported.
+  done := public.complete_departure('30000000-0000-0000-0000-000000000003');
+  assert (done->>'open_tasks')::int = 5, 'outstanding tasks are reported, not blocking';
+  assert (select status from public.employment_periods
+          where id = '30000000-0000-0000-0000-000000000003') = 'former',
+    'completing a departure makes the person Former';
+  assert (select status from public.plans
+          where id = (first->>'plan_id')::uuid) = 'completed',
+    'the offboarding plan is closed';
+end $$;
+reset role;
+
+-- The restricted reason stays out of reach of plain people.view holders.
+set app.test_uid = '00000000-0000-0000-0000-000000000001';  -- Alex, Director
+set role authenticated;
+do $$
+begin
+  assert (select count(*) from public.employment_departure_details) = 0,
+    'departure reasons are not visible to people.view holders';
+end $$;
+reset role;
+set app.test_uid = '';
+
 -- Audit trail captured the grant writes.
 do $$
 begin

@@ -2619,6 +2619,10 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      complete_departure: {
+        Args: { p_employment_period_id: string }
+        Returns: Json
+      }
       confirm_hire: {
         Args: {
           p_application_id: string
@@ -2626,6 +2630,15 @@ export type Database = {
           p_job_title: string
           p_manager_id?: string
           p_start_date: string
+        }
+        Returns: Json
+      }
+      schedule_departure: {
+        Args: {
+          p_employment_period_id: string
+          p_end_date: string
+          p_last_working_date?: string
+          p_reason?: string
         }
         Returns: Json
       }

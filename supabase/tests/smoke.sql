@@ -881,4 +881,51 @@ end $$;
 reset role;
 set app.test_uid = '';
 
+
+-- ------------------------------------------------ recruitment report (0015)
+-- Company A has job 7000…01 (open) with: Cathy (new, careers), Carl (new,
+-- added by hand), and the hired application 9000…02 (hired today, careers).
+update public.applications set source_channel_key = 'careers'
+  where id in ('90000000-0000-0000-0000-000000000001', '90000000-0000-0000-0000-000000000002');
+update public.applications set received_at = now() - interval '10 days'
+  where id = '90000000-0000-0000-0000-000000000002';
+
+set app.test_uid = '00000000-0000-0000-0000-000000000001';  -- Alex: jobs.view in A
+set role authenticated;
+do $$
+declare r jsonb;
+begin
+  r := public.recruitment_report('10000000-0000-0000-0000-00000000000a', current_date - 30, current_date);
+  assert (r->'kpis'->>'open_roles')::int = 1, 'one open role';
+  assert (r->'kpis'->>'received')::int = 3, 'three applications received in range';
+  assert (r->'kpis'->>'hires')::int = 1, 'one hire in range';
+  assert (r->'kpis'->>'median_days_to_hire')::numeric between 9 and 11, 'ten days to hire';
+  assert (r->'kpis'->>'active_candidates')::int = 2, 'two candidates still in play';
+  assert (select count(*) from jsonb_array_elements(r->'funnel')) = 1, 'funnel has the one job';
+  assert (r->'funnel'->0->>'hired')::int = 1 and (r->'funnel'->0->'stages'->>'new')::int = 2,
+    'funnel counts per stage';
+  assert (select count(*) from jsonb_array_elements(r->'sources') s
+          where s->>'source' = 'Company careers page' and (s->>'received')::int = 2 and (s->>'hired')::int = 1) = 1,
+    'careers source: 2 received, 1 hired';
+  assert (select count(*) from jsonb_array_elements(r->'sources') s
+          where s->>'source' = 'Added by hand' and (s->>'received')::int = 1) = 1,
+    'hand-added source counted';
+  assert (r->'attention'->>'unassigned')::int = 2, 'unassigned open applications flagged';
+end $$;
+reset role;
+
+-- Bea (Company B only) is refused; Omar (no jobs.view) is refused.
+set app.test_uid = '00000000-0000-0000-0000-000000000005';
+set role authenticated;
+do $$
+begin
+  begin
+    perform public.recruitment_report('10000000-0000-0000-0000-00000000000a', current_date - 30, current_date);
+    raise exception 'FAIL: Company B HR read Company A recruitment report';
+  exception when insufficient_privilege then null;
+  end;
+end $$;
+reset role;
+set app.test_uid = '';
+
 select 'SMOKE TESTS PASSED' as result;

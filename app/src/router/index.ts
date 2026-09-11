@@ -81,6 +81,11 @@ export const router = createRouter({
           component: () => import('@/pages/ApplicationPage.vue'),
         },
         {
+          path: 'reports',
+          name: 'reports',
+          component: () => import('@/pages/ReportsPage.vue'),
+        },
+        {
           path: 'onboarding',
           name: 'onboarding',
           component: () => import('@/pages/OnboardingPage.vue'),

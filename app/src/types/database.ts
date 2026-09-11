@@ -2969,6 +2969,10 @@ export type Database = {
         }
         Returns: Json
       }
+      recruitment_report: {
+        Args: { p_company_id: string; p_from: string; p_to: string }
+        Returns: Json
+      }
       schedule_departure: {
         Args: {
           p_employment_period_id: string

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  HONEYPOT_FIELD,
   RateLimiter,
   applicationInput,
   checkAnswers,
@@ -33,7 +34,6 @@ describe('applicationInput', () => {
     phone: '',
     answers: JSON.stringify([{ question_id: 'q1', answer: ' yes ' }]),
     consent: 'true',
-    website: '',
   }
 
   it('normalises name and email and parses the answers JSON', () => {
@@ -61,10 +61,11 @@ describe('applicationInput', () => {
 })
 
 describe('isHoneypotTripped', () => {
-  it('trips when the hidden field carries anything', () => {
-    expect(isHoneypotTripped({ website: '' })).toBe(false)
-    expect(isHoneypotTripped({ website: undefined })).toBe(false)
-    expect(isHoneypotTripped({ website: 'http://spam.example' })).toBe(true)
+  it('trips when the hidden field carries anything, and is not named like an autofill target', () => {
+    expect(HONEYPOT_FIELD).not.toMatch(/website|url|phone|email|name|address/i)
+    expect(isHoneypotTripped({ [HONEYPOT_FIELD]: '' })).toBe(false)
+    expect(isHoneypotTripped({})).toBe(false)
+    expect(isHoneypotTripped({ [HONEYPOT_FIELD]: 'http://spam.example' })).toBe(true)
   })
 })
 

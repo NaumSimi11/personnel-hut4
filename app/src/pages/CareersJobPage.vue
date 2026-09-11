@@ -7,7 +7,7 @@ import { fetchCareersJob, submitApplication, type PublicBrief } from '@/lib/care
 
 /**
  * One role's public brief and its application form (plan 019). The form
- * posts multipart to the auth service; the hidden "website" field is the
+ * posts multipart to the auth service; the hidden ref_x7 field is the
  * honeypot — real people never see or fill it.
  */
 
@@ -204,10 +204,12 @@ onMounted(async () => {
             <small class="hint">PDF or Word, up to 10 MB.</small>
           </div>
 
-          <!-- Honeypot: hidden from people, irresistible to bots. -->
+          <!-- Honeypot: hidden from people, irresistible to bots. The name is
+               deliberately meaningless so browser autofill never touches it
+               (mirrors HONEYPOT_FIELD in the auth service). -->
           <div class="trap" aria-hidden="true">
-            <label for="apply-website">Website</label>
-            <input id="apply-website" name="website" type="text" tabindex="-1" autocomplete="off" />
+            <label for="apply-ref-x7">Leave this empty</label>
+            <input id="apply-ref-x7" name="ref_x7" type="text" tabindex="-1" autocomplete="off" />
           </div>
 
           <label class="consent">

@@ -149,7 +149,7 @@ export async function registerCareersRoutes(app: FastifyInstance): Promise<void>
 
       // Only accepted submissions spend the per-email budget, so a retry after
       // a validation error or a transient failure is never locked out.
-      if (!emailLimiter.allow(`email:`)) {
+      if (!emailLimiter.allow(`email:${input.email}`)) {
         return fail(reply, 429, 'Too many applications for this email address. Try again later.')
       }
 

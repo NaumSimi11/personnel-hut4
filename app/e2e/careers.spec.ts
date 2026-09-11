@@ -142,7 +142,7 @@ test('anonymous applicant → reference → duplicate refused → honeypot dropp
   await pub.locator('#apply-cv').setInputFiles({ name: 'spam.pdf', mimeType: 'application/pdf', buffer: PDF })
   await pub.locator('#apply-consent').check()
   await pub.evaluate(() => {
-    const trap = document.querySelector<HTMLInputElement>('input[name="website"]')
+    const trap = document.querySelector<HTMLInputElement>('input[name="ref_x7"]')
     if (trap) trap.value = 'http://spam.example'
   })
   await pub.getByRole('button', { name: 'Send application' }).click()

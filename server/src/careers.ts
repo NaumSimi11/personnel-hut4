@@ -73,7 +73,6 @@ export const applicationInput = z.object({
     .union([z.literal('true'), z.literal('on'), z.literal(true)])
     .transform(() => true as const)
     .catch(false as never),
-  website: z.string().optional().default(''),
 })
   .refine((input) => input.consent === true, {
     message: 'Please confirm you are happy for us to process your application.',
@@ -82,9 +81,16 @@ export const applicationInput = z.object({
 
 export type ApplicationInput = z.infer<typeof applicationInput>
 
-/** The hidden field real browsers leave empty and bots fill in. */
-export function isHoneypotTripped(fields: { website?: string | undefined }): boolean {
-  return typeof fields.website === 'string' && fields.website.trim().length > 0
+/**
+ * The hidden field real browsers leave empty and bots fill in. Its name must
+ * not look like anything a password manager or autofill would populate —
+ * a real applicant whose browser filled it would be dropped silently.
+ */
+export const HONEYPOT_FIELD = 'ref_x7'
+
+export function isHoneypotTripped(fields: Record<string, string | undefined>): boolean {
+  const value = fields[HONEYPOT_FIELD]
+  return typeof value === 'string' && value.trim().length > 0
 }
 
 export const CV_MAX_BYTES = 10 * 1024 * 1024

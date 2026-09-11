@@ -621,4 +621,89 @@ end $$;
 reset role;
 set app.test_uid = '';
 
+
+-- ------------------------------------------- candidate files & answers (0013)
+-- Files hang off the application and inherit its company; the bucket is
+-- private and both the row and the object follow candidates.view / review.
+-- Alex (Director, Company A) also gets candidates.review, then attaches a CV.
+insert into public.grant_capabilities (grant_id, capability_key) values
+  ('40000000-0000-0000-0000-000000000001', 'candidates.review');
+set app.test_uid = '00000000-0000-0000-0000-000000000001';
+set role authenticated;
+do $$
+declare v_id uuid;
+begin
+  insert into public.application_files
+      (application_id, kind, storage_path, original_name, mime_type, size_bytes, uploaded_by)
+    values ('90000000-0000-0000-0000-000000000001', 'cv',
+            '90000000-0000-0000-0000-000000000001/f1.pdf', 'cathy-cv.pdf', 'application/pdf', 1234,
+            '20000000-0000-0000-0000-000000000001')
+    returning id into v_id;
+  assert (select company_id from public.application_files where id = v_id)
+         = '10000000-0000-0000-0000-00000000000a', 'file company is derived from the application';
+  begin
+    insert into public.application_files
+        (application_id, company_id, kind, storage_path, original_name, mime_type, size_bytes)
+      values ('90000000-0000-0000-0000-000000000001', '10000000-0000-0000-0000-00000000000b', 'cv',
+              '90000000-0000-0000-0000-000000000001/forged.pdf', 'x.pdf', 'application/pdf', 1);
+    -- the trigger overwrites the forged company, so this simply succeeds as A
+  end;
+  assert (select count(*) from public.application_files
+          where company_id = '10000000-0000-0000-0000-00000000000b') = 0,
+    'a forged company_id is corrected to the application''s company';
+  insert into storage.objects (bucket_id, name) values
+    ('candidate-files', '90000000-0000-0000-0000-000000000001/f1.pdf');
+  assert (select public from storage.buckets where id = 'candidate-files') = false,
+    'candidate-files bucket is private';
+  update public.applications set screening_answers = '[{"question_id":"q1","answer":"Because"}]'
+    where id = '90000000-0000-0000-0000-000000000001';
+  assert (select screening_answers->0->>'answer' from public.applications
+          where id = '90000000-0000-0000-0000-000000000001') = 'Because',
+    'reviewer records screening answers';
+end $$;
+reset role;
+
+-- Bea (Company B only) sees neither the file row nor the object.
+set app.test_uid = '00000000-0000-0000-0000-000000000005';
+set role authenticated;
+do $$
+begin
+  assert (select count(*) from public.application_files) = 0,
+    'Company B HR sees no Company A candidate files';
+  assert (select count(*) from storage.objects where bucket_id = 'candidate-files') = 0,
+    'Company B HR sees no Company A candidate objects';
+  begin
+    insert into storage.objects (bucket_id, name) values
+      ('candidate-files', '90000000-0000-0000-0000-000000000001/sneaky.pdf');
+    raise exception 'FAIL: cross-company candidate upload accepted';
+  exception when insufficient_privilege then null;
+  end;
+end $$;
+reset role;
+
+-- Omar (employee, no recruitment capabilities) sees nothing either.
+set app.test_uid = '00000000-0000-0000-0000-000000000003';
+set role authenticated;
+do $$
+begin
+  assert (select count(*) from public.application_files) = 0,
+    'plain employees see no candidate files';
+end $$;
+reset role;
+set app.test_uid = '';
+
+
+-- A stray object whose name is not application-keyed must not break reads
+-- for everyone: the policy helper treats it as belonging to no company.
+insert into storage.objects (bucket_id, name) values ('candidate-files', 'not-an-application/x.pdf');
+set app.test_uid = '00000000-0000-0000-0000-000000000001';  -- Alex
+set role authenticated;
+do $$
+begin
+  assert (select count(*) from storage.objects where bucket_id = 'candidate-files') = 1,
+    'reviewers still see their company''s objects when a junk-named object exists';
+end $$;
+reset role;
+set app.test_uid = '';
+
 select 'SMOKE TESTS PASSED' as result;

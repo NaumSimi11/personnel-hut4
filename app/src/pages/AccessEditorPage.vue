@@ -128,6 +128,9 @@ async function save(): Promise<void> {
   }
 }
 
+// Switching company reloads the grant. Edits are disabled while it loads
+// (see the preset select and checkboxes) so a slow response can never
+// overwrite a change the person has already made.
 watch(companyId, () => {
   if (companyId.value) loadGrant()
 })
@@ -173,6 +176,7 @@ onMounted(async () => {
               <select
                 id="preset"
                 :value="presetName"
+                :disabled="loading"
                 @change="applyPreset(($event.target as HTMLSelectElement).value)"
               >
                 <option v-for="p in catalog.presets" :key="p.id" :value="p.name">
@@ -204,6 +208,7 @@ onMounted(async () => {
               <input
                 type="checkbox"
                 :checked="selected.has(cap.key)"
+                :disabled="loading"
                 @change="toggle(cap.key, ($event.target as HTMLInputElement).checked)"
               />
               <span>{{ cap.label }}</span>

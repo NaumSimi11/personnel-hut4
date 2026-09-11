@@ -61,7 +61,10 @@ type ApplicationRow = {
   id: string
   stage_key: string
   employment_period_id: string | null
+  next_action: string | null
+  next_action_due: string | null
   candidate: { id: string; full_name: string; email: string | null } | null
+  owner: { full_name: string } | null
   employment_period: { person_id: string } | null
 }
 
@@ -179,8 +182,9 @@ async function loadApplications(): Promise<void> {
   const { data, error: err } = await supabase
     .from('applications')
     .select(
-      `id, stage_key, employment_period_id,
+      `id, stage_key, employment_period_id, next_action, next_action_due,
        candidate:candidates(id, full_name, email),
+       owner:people!applications_owner_id_fkey(full_name),
        employment_period:employment_periods!applications_employment_period_id_fkey(person_id)`,
     )
     .eq('job_id', jobId)
@@ -505,8 +509,14 @@ onMounted(async () => {
         <div v-else>
           <div v-for="a in applications" :key="a.id" class="application-row">
             <div class="row-text">
-              <strong>{{ a.candidate?.full_name ?? '—' }}</strong>
-              <small>{{ a.candidate?.email ?? '—' }}</small>
+              <router-link class="candidate-link" :to="{ name: 'application', params: { applicationId: a.id } }">
+                <strong>{{ a.candidate?.full_name ?? '—' }}</strong>
+              </router-link>
+              <small>
+                {{ a.candidate?.email ?? '—' }}
+                <template v-if="a.owner"> · {{ a.owner.full_name }}</template>
+                <template v-if="a.next_action"> · next: {{ a.next_action }}<template v-if="a.next_action_due"> by {{ a.next_action_due }}</template></template>
+              </small>
             </div>
             <span class="badge" :class="stageBadgeClass(a.stage_key)">{{ a.stage_key }}</span>
             <div class="row-actions">
@@ -640,6 +650,8 @@ textarea[readonly] { background: #fafbf9; }
 .row-text { flex: 1; min-width: 220px; }
 .row-text strong { display: block; font-size: 12px; font-weight: 550; }
 .row-text small { display: block; font-size: 10px; color: var(--muted); margin-top: 4px; }
+.candidate-link { text-decoration: none; color: inherit; }
+.candidate-link:hover strong { color: var(--green); text-decoration: underline; }
 .row-actions { display: flex; gap: 7px; flex-wrap: wrap; }
 .small-btn { font-size: 11px; padding: 7px 11px; text-decoration: none; }
 </style>

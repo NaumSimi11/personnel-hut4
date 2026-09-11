@@ -180,6 +180,70 @@ export type Database = {
           },
         ]
       }
+      application_files: {
+        Row: {
+          application_id: string
+          company_id: string
+          created_at: string
+          extracted_text: string | null
+          id: string
+          kind: string
+          mime_type: string
+          original_name: string
+          size_bytes: number
+          storage_path: string
+          uploaded_by: string | null
+        }
+        Insert: {
+          application_id: string
+          company_id: string
+          created_at?: string
+          extracted_text?: string | null
+          id?: string
+          kind?: string
+          mime_type: string
+          original_name: string
+          size_bytes: number
+          storage_path: string
+          uploaded_by?: string | null
+        }
+        Update: {
+          application_id?: string
+          company_id?: string
+          created_at?: string
+          extracted_text?: string | null
+          id?: string
+          kind?: string
+          mime_type?: string
+          original_name?: string
+          size_bytes?: number
+          storage_path?: string
+          uploaded_by?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "application_files_application_id_fkey"
+            columns: ["application_id"]
+            isOneToOne: false
+            referencedRelation: "applications"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "application_files_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "application_files_uploaded_by_fkey"
+            columns: ["uploaded_by"]
+            isOneToOne: false
+            referencedRelation: "people"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       application_stages: {
         Row: {
           is_terminal: boolean
@@ -216,6 +280,7 @@ export type Database = {
           provider_ref: string | null
           received_at: string
           rejected_reason: string | null
+          screening_answers: Json
           source_channel_key: string | null
           source_provider: string | null
           stage_key: string
@@ -236,6 +301,7 @@ export type Database = {
           provider_ref?: string | null
           received_at?: string
           rejected_reason?: string | null
+          screening_answers?: Json
           source_channel_key?: string | null
           source_provider?: string | null
           stage_key?: string
@@ -256,6 +322,7 @@ export type Database = {
           provider_ref?: string | null
           received_at?: string
           rejected_reason?: string | null
+          screening_answers?: Json
           source_channel_key?: string | null
           source_provider?: string | null
           stage_key?: string

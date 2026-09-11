@@ -1,0 +1,56 @@
+import { describe, expect, it } from 'vitest'
+import {
+  FILE_KINDS,
+  FILE_MAX_BYTES,
+  fileObjectPath,
+  formatBytes,
+  validateApplicationFile,
+} from './applicationFiles'
+
+describe('validateApplicationFile', () => {
+  it('accepts PDF, Word, text and images up to 10 MB', () => {
+    for (const type of [
+      'application/pdf',
+      'application/msword',
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      'text/plain',
+      'image/png',
+      'image/jpeg',
+    ]) {
+      expect(validateApplicationFile({ type, size: FILE_MAX_BYTES, name: 'cv.pdf' })).toBeNull()
+    }
+  })
+
+  it('rejects other types and oversized files with readable messages', () => {
+    expect(validateApplicationFile({ type: 'application/zip', size: 10, name: 'cv.zip' })).toBe(
+      'Attach a PDF, Word document, text file or image.',
+    )
+    expect(validateApplicationFile({ type: 'application/pdf', size: FILE_MAX_BYTES + 1, name: 'cv.pdf' })).toBe(
+      'Files must be 10 MB or smaller.',
+    )
+  })
+})
+
+describe('fileObjectPath', () => {
+  it('keys the object by application and file id with the extension from the type', () => {
+    expect(fileObjectPath('app-1', 'file-1', 'application/pdf')).toBe('app-1/file-1.pdf')
+    expect(
+      fileObjectPath('app-1', 'file-1', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'),
+    ).toBe('app-1/file-1.docx')
+    expect(fileObjectPath('app-1', 'file-1', 'image/jpeg')).toBe('app-1/file-1.jpg')
+  })
+})
+
+describe('formatBytes', () => {
+  it('prints human sizes', () => {
+    expect(formatBytes(512)).toBe('512 B')
+    expect(formatBytes(2048)).toBe('2 KB')
+    expect(formatBytes(3 * 1024 * 1024)).toBe('3.0 MB')
+  })
+})
+
+describe('FILE_KINDS', () => {
+  it('offers the four kinds with CV first', () => {
+    expect(FILE_KINDS.map((k) => k.key)).toEqual(['cv', 'cover_letter', 'portfolio', 'other'])
+  })
+})

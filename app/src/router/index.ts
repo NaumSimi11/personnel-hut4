@@ -62,6 +62,11 @@ export const router = createRouter({
           component: () => import('@/pages/JobPage.vue'),
         },
         {
+          path: 'hiring/applications/:applicationId',
+          name: 'application',
+          component: () => import('@/pages/ApplicationPage.vue'),
+        },
+        {
           path: 'onboarding',
           name: 'onboarding',
           component: () => import('@/pages/OnboardingPage.vue'),

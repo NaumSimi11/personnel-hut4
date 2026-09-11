@@ -3,6 +3,7 @@ import { onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { supabase } from '@/lib/supabase'
 import RequestHireDialog from '@/components/RequestHireDialog.vue'
+import { awaitingLabel } from '@/lib/companyOps'
 
 type HiringRequestRow = {
   id: string
@@ -28,6 +29,9 @@ const error = ref<string | null>(null)
 const actionError = ref<string | null>(null)
 const busyId = ref<string | null>(null)
 const requestDialog = ref<InstanceType<typeof RequestHireDialog> | null>(null)
+// Configured hiring approver per company (plan 024) — informational routing;
+// the jobs.approve + not-the-requester gate is enforced by the database.
+const approvers = ref<Record<string, { person: { full_name: string } | null }>>({})
 
 function badgeClass(status: string): string {
   if (status === 'approved') return 'green'
@@ -43,6 +47,14 @@ function canDecide(status: string): boolean {
 async function load(): Promise<void> {
   loading.value = true
   error.value = null
+  const ownersRes = await supabase
+    .from('workflow_owners')
+    .select('company_id, person:people!workflow_owners_person_id_fkey(full_name)')
+    .eq('role_key', 'hiring_approver')
+  if (ownersRes.error) console.error('Workflow owners load failed:', ownersRes.error.message)
+  approvers.value = Object.fromEntries(
+    (ownersRes.data ?? []).map((o) => [o.company_id, { person: o.person as unknown as { full_name: string } | null }]),
+  )
   const { data, error: err } = await supabase
     .from('hiring_requests')
     .select(
@@ -181,6 +193,7 @@ onMounted(load)
                 <template v-if="r.manager?.full_name"> · manager {{ r.manager.full_name }}</template>
               </small>
               <p v-if="r.change_reason" class="change-reason">{{ r.change_reason }}</p>
+              <p v-if="r.status === 'submitted'" class="awaiting">{{ awaitingLabel(approvers[r.company_id]) }}</p>
             </div>
             <span class="badge" :class="badgeClass(r.status)">{{ r.status.replace('_', ' ') }}</span>
             <div v-if="canDecide(r.status)" class="row-actions">
@@ -259,6 +272,7 @@ h1 { margin-bottom: 24px; }
 .row-text strong { display: block; font-size: 12px; font-weight: 550; }
 .row-text small { display: block; font-size: 10px; color: var(--muted); margin-top: 4px; }
 .change-reason { margin: 6px 0 0; font-size: 11px; color: var(--amber); }
+.awaiting { margin: 4px 0 0; font-size: 10px; color: var(--amber); }
 .row-actions { display: flex; gap: 7px; flex-wrap: wrap; }
 .small-btn { font-size: 11px; padding: 7px 11px; }
 </style>

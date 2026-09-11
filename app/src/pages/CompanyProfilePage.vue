@@ -12,6 +12,10 @@ import {
 import CompanyTile from '@/components/CompanyTile.vue'
 import CompanyStructurePanel from '@/components/CompanyStructurePanel.vue'
 import CompanyPayrollPanel from '@/components/CompanyPayrollPanel.vue'
+import WorkflowOwnersPanel from '@/components/WorkflowOwnersPanel.vue'
+import InviteAccessDialog from '@/components/InviteAccessDialog.vue'
+import { upcoming } from '@/lib/companyOps'
+import { todayLocal } from '@/lib/compensation'
 
 /**
  * One company, tabbed (plan 014): Overview / People / Access / Hiring /
@@ -25,7 +29,7 @@ import CompanyPayrollPanel from '@/components/CompanyPayrollPanel.vue'
  * links and history never 404.
  */
 
-type TabId = 'overview' | 'people' | 'structure' | 'access' | 'hiring' | 'payroll' | 'projects' | 'integrations'
+type TabId = 'overview' | 'people' | 'structure' | 'access' | 'hiring' | 'payroll' | 'projects' | 'integrations' | 'settings'
 
 const TABS: { id: TabId; label: string }[] = [
   { id: 'overview', label: 'Overview' },
@@ -36,6 +40,7 @@ const TABS: { id: TabId; label: string }[] = [
   { id: 'payroll', label: 'Payroll' },
   { id: 'projects', label: 'Projects' },
   { id: 'integrations', label: 'Integrations' },
+  { id: 'settings', label: 'Settings' },
 ]
 
 type PersonRef = { id: string; full_name: string } | null
@@ -46,6 +51,8 @@ type EmploymentRow = {
   job_title: string
   status: string
   start_date: string
+  end_date: string | null
+  last_working_date: string | null
   person: { id: string; full_name: string; work_email: string | null } | null
 }
 
@@ -146,8 +153,17 @@ async function archiveCompany(): Promise<void> {
   router.push({ name: 'companies' })
 }
 
-// Payroll is only offered to payroll.summary holders; the function refuses everyone else anyway.
-const visibleTabs = computed(() => TABS.filter((t) => t.id !== 'payroll' || auth.can(companyId, 'payroll.summary')))
+// Payroll is only offered to payroll.summary holders (the function refuses
+// everyone else anyway); Settings writes are admin-only by RLS.
+const visibleTabs = computed(() =>
+  TABS.filter((t) => {
+    if (t.id === 'payroll') return auth.can(companyId, 'payroll.summary')
+    if (t.id === 'settings') return auth.isAdmin
+    return true
+  }),
+)
+const inviteDialog = ref<InstanceType<typeof InviteAccessDialog> | null>(null)
+const upcomingPeople = computed(() => upcoming(employments.value, todayLocal()))
 
 const activeTab = computed<TabId>(() => {
   const raw = route.query.tab
@@ -229,7 +245,7 @@ async function load(): Promise<void> {
     supabase
       .from('employment_periods')
       .select(
-        `id, job_title, status, start_date,
+        `id, job_title, status, start_date, end_date, last_working_date,
          person:people!employment_periods_person_id_fkey(id, full_name, work_email)`,
       )
       .eq('company_id', companyId)
@@ -364,6 +380,46 @@ onMounted(load)
               <span class="metric-label">Connected channels</span>
               <span class="metric-value">{{ connectedChannelsCount }}</span>
             </div>
+          </div>
+
+          <div class="card">
+            <div class="card-head">
+              <div>
+                <h2>Upcoming</h2>
+                <p>Who is about to start or leave.</p>
+              </div>
+            </div>
+            <div
+              v-if="!upcomingPeople.starters.length && !upcomingPeople.departures.length"
+              class="empty"
+            >
+              No starters or departures scheduled.
+            </div>
+            <template v-else>
+              <div v-for="e in upcomingPeople.starters" :key="e.id" class="row upcoming-row">
+                <div class="row-text">
+                  <strong>{{ e.person?.full_name ?? '—' }}</strong>
+                  <small>{{ e.job_title }} · {{ e.start_date < todayLocal() ? 'was due to start' : 'starts' }} {{ e.start_date }}</small>
+                </div>
+                <span class="badge green">starting</span>
+                <router-link v-if="e.person" class="button secondary small-btn" :to="{ name: 'person', params: { personId: e.person.id } }">
+                  Open
+                </router-link>
+              </div>
+              <div v-for="e in upcomingPeople.departures" :key="e.id" class="row upcoming-row">
+                <div class="row-text">
+                  <strong>{{ e.person?.full_name ?? '—' }}</strong>
+                  <small>
+                    {{ e.job_title }} · leaves {{ e.end_date }}
+                    <template v-if="e.last_working_date"> · last day {{ e.last_working_date }}</template>
+                  </small>
+                </div>
+                <span class="badge amber">departing</span>
+                <router-link v-if="e.person" class="button secondary small-btn" :to="{ name: 'person', params: { personId: e.person.id } }">
+                  Open
+                </router-link>
+              </div>
+            </template>
           </div>
 
           <div class="card">
@@ -535,7 +591,15 @@ onMounted(load)
         <CompanyStructurePanel v-else-if="activeTab === 'structure'" :company-id="companyId" />
 
         <div v-else-if="activeTab === 'access'" class="card">
-          <div class="card-head"><h2>Access</h2></div>
+          <div class="card-head">
+            <div>
+              <h2>Access</h2>
+              <p>Invite creates the account; capabilities are granted in the access editor afterwards.</p>
+            </div>
+            <button v-if="canManage" class="button small-btn" type="button" @click="inviteDialog?.openInvite()">
+              Invite person
+            </button>
+          </div>
           <div v-if="!accessGrants.length" class="empty">No grants in this company yet.</div>
           <div v-else>
             <div v-for="g in accessGrants" :key="g.id" class="row">
@@ -587,6 +651,8 @@ onMounted(load)
 
         <CompanyPayrollPanel v-else-if="activeTab === 'payroll'" :company-id="companyId" />
 
+        <WorkflowOwnersPanel v-else-if="activeTab === 'settings'" :company-id="companyId" />
+
         <div v-else-if="activeTab === 'projects'" class="card">
           <div class="card-head"><h2>Projects</h2></div>
           <div v-if="!projects.length" class="empty">No projects synced for this company.</div>
@@ -628,6 +694,7 @@ onMounted(load)
           </p>
         </div>
       </template>
+      <InviteAccessDialog ref="inviteDialog" @invited="load" />
     </template>
   </div>
 </template>

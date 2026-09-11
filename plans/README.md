@@ -34,7 +34,8 @@ round; merging it into `main` is the maintainer's decision.
 
 | Plan | Title | Status |
 |------|-------|--------|
-| 008 | Records depth: invite↔record attach + private details | TODO |
+| 008 | Records depth: invite↔record attach + private details | DONE (reviewed, merged to main @ `482301c`; full suite 6/6) |
+| 009 | Hiring workspace A: requests + approve/reject/changes | DONE (reviewed, merged to main @ `9221d24`; full suite 7/7 after one cold-start flake) |
 
 Round-03 executors branch from `main` as `feature/NNN-<slug>`; the reviewer
 runs the full E2E suite serially and merges after review.

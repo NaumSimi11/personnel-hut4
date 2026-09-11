@@ -21,6 +21,7 @@ async function signOut() {
       <nav aria-label="Workspace">
         <router-link :to="{ name: 'directory' }">People &amp; access</router-link>
         <router-link :to="{ name: 'hiring' }">Hiring</router-link>
+        <router-link :to="{ name: 'onboarding' }">Onboarding</router-link>
       </nav>
       <div class="sidebar-bottom">
         <span class="avatar avatar-dark">{{ (auth.personName ?? 'U')[0] }}</span>

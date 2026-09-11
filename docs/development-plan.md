@@ -18,17 +18,15 @@ prototype in `../prototype` is the UI spec. Updated as milestones land.
 | Hiring workspace A: requests, approve / request changes / reject with DB-enforced no-self-approval | plan 009 | E2E incl. self-approval refusal |
 | Hiring workspace B: jobs from approved requests, candidates, stages, atomic idempotent confirm hire | plan 010 + migration 0009 | E2E request→job→candidate→hire→employee |
 | Onboarding: queue with readiness, plan detail, complete/reopen/block/skip, finish plan | plan 011 | E2E block→complete→ready→finish |
+| Home: needs-action queue (approvals, offers, readiness gaps), metrics, my tasks; post-login landing | plan 012 | E2E queue rows + deep links |
 
 ## Next (in order)
 
 1. **Employee records, remaining depth** — scheduled changes with effective
    dates, manager field + circular-reporting guard, private personal details
    (personal.view-gated), departments/locations management, import preview.
-2. **Home / needs-action queue** — one place showing hiring requests awaiting
-   a decision, applications at offer, and onboarding readiness gaps (the
-   prototype's overview, from live data).
-3. **Self-service** — my profile, my tasks, my access (the prototype's
-   view-as overview, now for the real signed-in person).
+2. **Self-service** — my profile, my tasks, my access for the signed-in
+   person (the prototype's view-as overview, now real).
 5. **Company profiles & projects** — company pages; read-only Zoho Projects
    sync into `external_projects` via the auth service's sibling job.
 6. **Leave-system linking** — shared auth pool with the leave app (one

@@ -60,7 +60,12 @@ function applyPreset(name: string): void {
   if (preset) selected.value = new Set(preset.capabilities)
 }
 
+// Switching company quickly can leave an earlier response landing after a
+// later one; only the most recent request may write the grant.
+let grantRequestSeq = 0
+
 async function loadGrant(): Promise<void> {
+  const seq = ++grantRequestSeq
   loading.value = true
   error.value = null
   const { data, error: err } = await supabase
@@ -69,6 +74,7 @@ async function loadGrant(): Promise<void> {
     .eq('person_id', personId)
     .eq('company_id', companyId.value)
     .maybeSingle()
+  if (seq !== grantRequestSeq) return
   if (err) {
     error.value = 'Could not load this grant.'
     console.error('Grant load failed:', err.message)

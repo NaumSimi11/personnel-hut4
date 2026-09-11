@@ -3,6 +3,7 @@ import { computed, onMounted, ref } from 'vue'
 import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/stores/auth'
 import { departureState } from '@/lib/departure'
+import { DIRECTORY_FILTERS, currentPeriod, matchesFilter, type DirectoryFilter } from '@/lib/employmentChanges'
 import InviteAccessDialog from '@/components/InviteAccessDialog.vue'
 import AddPersonDialog from '@/components/AddPersonDialog.vue'
 
@@ -13,15 +14,21 @@ type DirectoryRow = {
   employment_periods: {
     job_title: string
     status: string
+    start_date: string
     end_date: string | null
     last_working_date: string | null
+    company_id: string
     company: { name: string } | null
+    department: { name: string } | null
   }[]
 }
 
 const auth = useAuthStore()
 const rows = ref<DirectoryRow[]>([])
 const query = ref('')
+const filter = ref<DirectoryFilter>('all')
+const companyFilter = ref('')
+const companies = ref<{ id: string; name: string }[]>([])
 const loading = ref(true)
 const error = ref<string | null>(null)
 const inviteDialog = ref<InstanceType<typeof InviteAccessDialog> | null>(null)
@@ -29,13 +36,16 @@ const addPersonDialog = ref<InstanceType<typeof AddPersonDialog> | null>(null)
 
 const filtered = computed(() => {
   const q = query.value.trim().toLowerCase()
-  if (!q) return rows.value
-  return rows.value.filter((p) =>
-    [p.full_name, p.work_email ?? '', ...p.employment_periods.map((e) => `${e.job_title} ${e.company?.name ?? ''}`)]
+  return rows.value.filter((p) => {
+    const current = currentEmployment(p)
+    if (!matchesFilter(filter.value, current)) return false
+    if (companyFilter.value && current?.company_id !== companyFilter.value) return false
+    if (!q) return true
+    return [p.full_name, p.work_email ?? '', ...p.employment_periods.map((e) => `${e.job_title} ${e.company?.name ?? ''} ${e.department?.name ?? ''}`)]
       .join(' ')
       .toLowerCase()
-      .includes(q),
-  )
+      .includes(q)
+  })
 })
 
 function initials(name: string): string {
@@ -47,14 +57,19 @@ function initials(name: string): string {
 }
 
 function currentEmployment(p: DirectoryRow) {
-  return p.employment_periods[0] ?? null
+  return currentPeriod(p.employment_periods)
 }
 
 async function load(): Promise<void> {
+  // Scheduled employment changes whose date has arrived apply on the way in.
+  const due = await supabase.rpc('apply_due_employment_changes')
+  if (due.error) console.error('Applying due employment changes failed:', due.error.message)
+  const companiesRes = await supabase.from('companies').select('id, name').eq('kind', 'company').is('archived_at', null).order('name')
+  companies.value = companiesRes.data ?? []
   const { data, error: err } = await supabase
     .from('people')
     .select(
-      'id, full_name, work_email, employment_periods!person_id(job_title, status, end_date, last_working_date, company:companies(name))',
+      'id, full_name, work_email, employment_periods!person_id(job_title, status, start_date, end_date, last_working_date, company_id, company:companies(name), department:departments(name))',
     )
     .is('archived_at', null)
     .order('full_name')
@@ -99,6 +114,25 @@ onMounted(load)
           aria-label="Search people"
           placeholder="Search name, role, company…"
         />
+      </div>
+      <div class="filters">
+        <div class="chips" role="group" aria-label="Employment state">
+          <button
+            v-for="f in DIRECTORY_FILTERS"
+            :key="f.key"
+            class="chip"
+            :class="{ active: filter === f.key }"
+            type="button"
+            :aria-pressed="filter === f.key"
+            @click="filter = f.key"
+          >
+            {{ f.label }}
+          </button>
+        </div>
+        <select v-model="companyFilter" class="company-filter" aria-label="Company">
+          <option value="">All companies</option>
+          <option v-for="c in companies" :key="c.id" :value="c.id">{{ c.name }}</option>
+        </select>
       </div>
       <p v-if="error" class="error-note" style="margin: 16px 24px">{{ error }}</p>
       <div v-else-if="loading" class="empty">Loading directory…</div>
@@ -178,6 +212,11 @@ onMounted(load)
 
 <style scoped>
 .departing-badge { margin-left: 6px; }
+.filters { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; padding: 12px 24px; border-bottom: 1px solid var(--line); background: #fafbf9; }
+.chips { display: flex; gap: 6px; flex-wrap: wrap; }
+.chip { border: 1px solid var(--line); background: #fff; color: var(--muted); font-size: 11px; padding: 6px 11px; border-radius: 999px; }
+.chip.active { background: var(--green); border-color: var(--green); color: #fff; }
+.company-filter { border: 1px solid var(--line); background: #fff; padding: 7px 10px; font-size: 11px; }
 .search {
   border: 1px solid var(--line);
   background: #fafbf9;

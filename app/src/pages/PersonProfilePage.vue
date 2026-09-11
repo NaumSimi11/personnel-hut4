@@ -5,6 +5,8 @@ import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/stores/auth'
 import PrivateDetailsCard from '@/components/PrivateDetailsCard.vue'
 import ScheduleDepartureDialog from '@/components/ScheduleDepartureDialog.vue'
+import ScheduleChangeDialog, { type ChangeTarget } from '@/components/ScheduleChangeDialog.vue'
+import { describeChanges, type Lookups } from '@/lib/employmentChanges'
 import { departureState, friendlyDepartureError } from '@/lib/departure'
 
 type Employment = {
@@ -16,9 +18,18 @@ type Employment = {
   end_date: string | null
   last_working_date: string | null
   employment_type_key: string | null
+  person_id: string
+  department_id: string | null
+  location_id: string | null
+  manager_id: string | null
   company: { name: string } | null
+  department: { name: string } | null
+  location: { name: string } | null
+  manager: { id: string; full_name: string } | null
   // The open offboarding plan, if a departure is scheduled (plan 016).
   plans: { id: string; kind: string; status: string }[]
+  // Scheduled employment changes not yet applied (plan 022).
+  employment_changes: { id: string; effective_date: string; changes: Record<string, unknown>; reason: string | null; status: string }[]
 }
 type Grant = {
   company_id: string
@@ -48,6 +59,45 @@ const empForm = ref({
 })
 const busy = ref(false)
 const departureDialog = ref<InstanceType<typeof ScheduleDepartureDialog> | null>(null)
+const changeDialog = ref<InstanceType<typeof ScheduleChangeDialog> | null>(null)
+const lookups = ref<Lookups>({ departments: {}, locations: {}, people: {}, employmentTypes: {} })
+
+function canEditEmployment(emp: Employment): boolean {
+  return auth.can(emp.company_id, 'employment.edit')
+}
+
+function pendingChanges(emp: Employment) {
+  return emp.employment_changes
+    .filter((c) => c.status === 'scheduled')
+    .sort((a, b) => a.effective_date.localeCompare(b.effective_date))
+}
+
+function employmentFacts(emp: Employment): string {
+  const parts: string[] = []
+  if (emp.department) parts.push(emp.department.name)
+  if (emp.location) parts.push(emp.location.name)
+  if (emp.manager) parts.push(`reports to ${emp.manager.full_name}`)
+  return parts.join(' · ')
+}
+
+function onChangeSaved(result: { applied: boolean; effectiveDate: string }): void {
+  notice.value = result.applied ? 'Change applied.' : `Change scheduled for ${result.effectiveDate}.`
+  void load()
+}
+
+async function cancelChange(changeId: string): Promise<void> {
+  if (!window.confirm('Cancel this scheduled change?')) return
+  busy.value = true
+  error.value = null
+  const { error: err } = await supabase.rpc('cancel_employment_change', { p_change_id: changeId })
+  busy.value = false
+  if (err) {
+    error.value = err.message
+    return
+  }
+  notice.value = 'Scheduled change cancelled.'
+  await load()
+}
 
 // A scheduled departure keeps the person current until they are marked former.
 const current = computed(() => employments.value.find((e) => departureState(e) !== 'former') ?? null)
@@ -96,14 +146,22 @@ function initials(name: string): string {
 async function load(): Promise<void> {
   loading.value = true
   error.value = null
-  const [personRes, empRes, grantRes] = await Promise.all([
+  // Scheduled changes whose date has arrived apply on the way in (idempotent).
+  const due = await supabase.rpc('apply_due_employment_changes')
+  if (due.error) console.error('Applying due employment changes failed:', due.error.message)
+  const [personRes, empRes, grantRes, deptRes, locRes, peopleRes, typesRes] = await Promise.all([
     supabase.from('people').select('full_name, work_email, user_id').eq('id', personId).maybeSingle(),
     supabase
       .from('employment_periods')
       .select(
-        `id, company_id, job_title, status, start_date, end_date, last_working_date,
-         employment_type_key, company:companies(name),
-         plans!plans_employment_period_id_fkey(id, kind, status)`,
+        `id, company_id, person_id, job_title, status, start_date, end_date, last_working_date,
+         employment_type_key, department_id, location_id, manager_id,
+         company:companies(name),
+         department:departments(name),
+         location:locations(name),
+         manager:people!employment_periods_manager_id_fkey(id, full_name),
+         plans!plans_employment_period_id_fkey(id, kind, status),
+         employment_changes(id, effective_date, changes, reason, status)`,
       )
       .eq('person_id', personId)
       .order('start_date', { ascending: false }),
@@ -111,7 +169,17 @@ async function load(): Promise<void> {
       .from('access_grants')
       .select('company_id, company:companies(name), grant_capabilities(capability_key)')
       .eq('person_id', personId),
+    supabase.from('departments').select('id, name'),
+    supabase.from('locations').select('id, name'),
+    supabase.from('people').select('id, full_name'),
+    supabase.from('employment_types').select('key, label'),
   ])
+  lookups.value = {
+    departments: Object.fromEntries((deptRes.data ?? []).map((d) => [d.id, d.name])),
+    locations: Object.fromEntries((locRes.data ?? []).map((l) => [l.id, l.name])),
+    people: Object.fromEntries((peopleRes.data ?? []).map((p) => [p.id, p.full_name])),
+    employmentTypes: Object.fromEntries((typesRes.data ?? []).map((t) => [t.key, t.label])),
+  }
   if (personRes.error || !personRes.data) {
     error.value = 'Person not found or not visible with your access.'
     loading.value = false
@@ -179,6 +247,7 @@ onMounted(async () => {
           <p class="meta">
             {{ person.work_email ?? 'no work email' }} ·
             {{ current ? `${current.job_title} · ${current.company?.name}` : 'no current employment' }}
+            <template v-if="current?.manager"> · Manager: {{ current.manager.full_name }}</template>
             <span class="badge" :class="person.user_id ? 'green' : ''">
               {{ person.user_id ? 'has sign-in account' : 'no account — record only' }}
             </span>
@@ -243,6 +312,24 @@ onMounted(async () => {
                 {{ emp.start_date }} → {{ emp.end_date ?? 'present' }}
                 <template v-if="emp.employment_type_key"> · {{ emp.employment_type_key.replace('_', ' ') }}</template>
               </small>
+              <small v-if="employmentFacts(emp)" class="facts">{{ employmentFacts(emp) }}</small>
+              <small
+                v-for="c in pendingChanges(emp)"
+                :key="c.id"
+                class="pending-change"
+              >
+                Scheduled {{ c.effective_date }}: {{ describeChanges(c.changes, lookups) }}
+                <template v-if="c.reason"> — {{ c.reason }}</template>
+                <button
+                  v-if="canEditEmployment(emp)"
+                  class="link-button"
+                  type="button"
+                  :disabled="busy"
+                  @click="cancelChange(c.id)"
+                >
+                  Cancel
+                </button>
+              </small>
               <small v-if="departureState(emp) === 'departing'" class="departing">
                 Departing · last day {{ emp.last_working_date ?? emp.end_date }}
                 <template v-if="offboardingPlanId(emp)">
@@ -256,6 +343,15 @@ onMounted(async () => {
             <span class="badge" :class="emp.status === 'active' ? 'green' : emp.status === 'former' ? '' : 'blue'">
               {{ emp.status.replace('_', ' ') }}
             </span>
+            <button
+              v-if="canEditEmployment(emp) && departureState(emp) !== 'former'"
+              class="button secondary small-btn"
+              type="button"
+              :disabled="busy"
+              @click="changeDialog?.open(emp as ChangeTarget, person.full_name)"
+            >
+              Schedule change
+            </button>
             <template v-if="canStartDeparture(emp)">
               <button
                 v-if="departureState(emp) === 'employed'"
@@ -280,6 +376,7 @@ onMounted(async () => {
         </div>
 
         <ScheduleDepartureDialog ref="departureDialog" @scheduled="onDepartureScheduled" />
+        <ScheduleChangeDialog ref="changeDialog" @saved="onChangeSaved" />
 
         <div class="right-column">
           <div class="card">
@@ -324,6 +421,9 @@ onMounted(async () => {
 .row-text strong { display: block; font-size: 12px; font-weight: 550; }
 .row-text small { display: block; font-size: 10px; color: var(--muted); margin-top: 4px; }
 .row-text .departing { color: var(--amber); font-weight: 550; }
+.row-text .facts { color: var(--ink); opacity: 0.8; }
+.row-text .pending-change { color: var(--green); }
+.link-button { border: 0; background: none; color: var(--red); font-size: 10px; padding: 0 0 0 6px; cursor: pointer; text-decoration: underline; }
 .row-text .departing a { color: var(--green); text-decoration: none; }
 .row-text .departing a:hover { text-decoration: underline; }
 .small-btn { font-size: 11px; padding: 7px 11px; text-decoration: none; }

@@ -928,4 +928,197 @@ end $$;
 reset role;
 set app.test_uid = '';
 
+
+-- ------------------------------------------------- employment changes (0016)
+-- Alex (Director, A) gets employment.edit. Omar reports to Fiona; a change
+-- dated today applies at once, a future one waits, a cycle is refused, a
+-- department from Company B is refused, and Company B HR cannot touch A.
+insert into public.grant_capabilities (grant_id, capability_key) values
+  ('40000000-0000-0000-0000-000000000001', 'employment.edit');
+insert into public.departments (id, company_id, name) values
+  ('e0000000-0000-0000-0000-00000000000a', '10000000-0000-0000-0000-00000000000a', 'Operations'),
+  ('e0000000-0000-0000-0000-00000000000b', '10000000-0000-0000-0000-00000000000b', 'Sales B'),
+  ('e0000000-0000-0000-0000-000000000000', null, 'Shared Finance');
+
+set app.test_uid = '00000000-0000-0000-0000-000000000001';  -- Alex
+set role authenticated;
+do $$
+declare r jsonb; v_change uuid;
+begin
+  -- Omar (period 3000…03, currently former after the departure test — use
+  -- Fiona's period 3000…02 as the subject instead): title + department + manager Alex, today.
+  r := public.schedule_employment_change('30000000-0000-0000-0000-000000000002', current_date,
+    '{"job_title":"Finance Lead","department_id":"e0000000-0000-0000-0000-00000000000a","manager_id":"20000000-0000-0000-0000-000000000001"}',
+    'Promotion');
+  assert (r->>'applied')::boolean = true, 'a change dated today applies immediately';
+  assert (select job_title from public.employment_periods where id = '30000000-0000-0000-0000-000000000002') = 'Finance Lead',
+    'title updated';
+  assert (select manager_id from public.employment_periods where id = '30000000-0000-0000-0000-000000000002')
+         = '20000000-0000-0000-0000-000000000001', 'manager updated';
+
+  -- Future change: recorded, not applied.
+  r := public.schedule_employment_change('30000000-0000-0000-0000-000000000002', current_date + 30,
+    '{"job_title":"Head of Finance"}', 'Planned');
+  assert (r->>'applied')::boolean = false, 'a future change is scheduled';
+  v_change := (r->>'change_id')::uuid;
+  assert (select job_title from public.employment_periods where id = '30000000-0000-0000-0000-000000000002') = 'Finance Lead',
+    'today''s record is untouched by a future change';
+  perform public.apply_due_employment_changes();
+  assert (select status from public.employment_changes where id = v_change) = 'scheduled',
+    'apply_due leaves future changes alone';
+  perform public.cancel_employment_change(v_change);
+  assert (select status from public.employment_changes where id = v_change) = 'cancelled', 'cancelled';
+
+  -- Cycle: Fiona now reports to Alex; making Alex report to Fiona is refused.
+  begin
+    perform public.schedule_employment_change('30000000-0000-0000-0000-000000000001', current_date,
+      '{"manager_id":"20000000-0000-0000-0000-000000000002"}', null);
+    raise exception 'FAIL: circular reporting accepted';
+  exception when raise_exception then
+    if sqlerrm like 'FAIL:%' then raise; end if;
+  end;
+  -- Self-management refused.
+  begin
+    perform public.schedule_employment_change('30000000-0000-0000-0000-000000000001', current_date,
+      '{"manager_id":"20000000-0000-0000-0000-000000000001"}', null);
+    raise exception 'FAIL: self-management accepted';
+  exception when raise_exception then
+    if sqlerrm like 'FAIL:%' then raise; end if;
+  end;
+  -- Department from another company refused; a shared one is fine.
+  begin
+    perform public.schedule_employment_change('30000000-0000-0000-0000-000000000001', current_date,
+      '{"department_id":"e0000000-0000-0000-0000-00000000000b"}', null);
+    raise exception 'FAIL: foreign department accepted';
+  exception when raise_exception then
+    if sqlerrm like 'FAIL:%' then raise; end if;
+  end;
+  perform public.schedule_employment_change('30000000-0000-0000-0000-000000000001', current_date,
+    '{"department_id":"e0000000-0000-0000-0000-000000000000"}', null);
+  assert (select department_id from public.employment_periods where id = '30000000-0000-0000-0000-000000000001')
+         = 'e0000000-0000-0000-0000-000000000000', 'shared department accepted';
+  -- Effective date before the period start is refused.
+  begin
+    perform public.schedule_employment_change('30000000-0000-0000-0000-000000000001', '2000-01-01',
+      '{"job_title":"x"}', null);
+    raise exception 'FAIL: change before start accepted';
+  exception when raise_exception then
+    if sqlerrm like 'FAIL:%' then raise; end if;
+  end;
+end $$;
+reset role;
+
+-- A future change becomes due: simulate by back-dating it, then apply.
+set app.test_uid = '00000000-0000-0000-0000-000000000001';
+set role authenticated;
+do $$
+declare r jsonb; v_change uuid;
+begin
+  r := public.schedule_employment_change('30000000-0000-0000-0000-000000000002', current_date + 1,
+    '{"job_title":"Head of Finance"}', 'Planned');
+  v_change := (r->>'change_id')::uuid;
+end $$;
+reset role;
+update public.employment_changes set effective_date = current_date
+  where status = 'scheduled' and changes->>'job_title' = 'Head of Finance';
+set app.test_uid = '00000000-0000-0000-0000-000000000003';  -- anyone signed in may trigger apply
+set role authenticated;
+do $$
+begin
+  assert public.apply_due_employment_changes() = 1, 'apply_due applies the one due change';
+end $$;
+reset role;
+-- Read back as superuser: Omar cannot see Fiona's period under RLS.
+do $$
+begin
+  assert (select job_title from public.employment_periods where id = '30000000-0000-0000-0000-000000000002') = 'Head of Finance',
+    'a due change is applied';
+  assert (select count(*) from public.employment_changes where status = 'applied' and changes->>'job_title' = 'Head of Finance') = 1,
+    'the change is marked applied';
+end $$;
+
+-- Bea (Company B) cannot schedule for Company A.
+set app.test_uid = '00000000-0000-0000-0000-000000000005';
+set role authenticated;
+do $$
+begin
+  begin
+    perform public.schedule_employment_change('30000000-0000-0000-0000-000000000002', current_date,
+      '{"job_title":"Hacked"}', null);
+    raise exception 'FAIL: Company B HR changed a Company A employment';
+  exception when insufficient_privilege then null;
+  end;
+  assert (select count(*) from public.employment_changes) = 0, 'Company B HR sees no Company A changes';
+end $$;
+reset role;
+set app.test_uid = '';
+
+
+-- Apply-time safety: a cycle that only exists once a scheduled change lands
+-- is caught then and marked failed (not applied, not raised); an empty
+-- employment type is refused up front; a departure cancels pending changes.
+set app.test_uid = '00000000-0000-0000-0000-000000000001';  -- Alex (employment.edit)
+set role authenticated;
+do $$
+declare r jsonb; v_future uuid;
+begin
+  -- Fiona currently reports to Alex (applied earlier). Schedule Alex → Fiona
+  -- in 30 days: no cycle *today* because Alex has no manager yet...
+  r := public.schedule_employment_change('30000000-0000-0000-0000-000000000001', current_date + 30,
+    '{"manager_id":"20000000-0000-0000-0000-000000000002"}', 'reorg');
+  raise exception 'FAIL: schedule accepted a manager who already reports to this person';
+exception when raise_exception then
+  if sqlerrm like 'FAIL:%' then raise; end if;
+end $$;
+do $$
+declare r jsonb; v_future uuid;
+begin
+  -- Clear Fiona's manager today, then schedule Alex → Fiona (+30) and
+  -- Fiona → Alex (+40): neither is a cycle today; together they are one
+  -- once the first applies.
+  r := public.schedule_employment_change('30000000-0000-0000-0000-000000000002', current_date,
+    '{"manager_id":""}', 'clear now');
+  r := public.schedule_employment_change('30000000-0000-0000-0000-000000000002', current_date + 30,
+    '{"job_title":"Finance Partner"}', 'later title');
+  r := public.schedule_employment_change('30000000-0000-0000-0000-000000000001', current_date + 30,
+    '{"manager_id":"20000000-0000-0000-0000-000000000002"}', 'Alex reports to Fiona');
+  r := public.schedule_employment_change('30000000-0000-0000-0000-000000000002', current_date + 40,
+    '{"manager_id":"20000000-0000-0000-0000-000000000001"}', 'would loop');
+  v_future := (r->>'change_id')::uuid;
+  -- Empty employment type is refused at schedule time.
+  begin
+    perform public.schedule_employment_change('30000000-0000-0000-0000-000000000002', current_date,
+      '{"employment_type_key":""}', null);
+    raise exception 'FAIL: empty employment type accepted';
+  exception when raise_exception then
+    if sqlerrm like 'FAIL:%' then raise; end if;
+  end;
+end $$;
+reset role;
+-- Make the looping change due and apply: it must fail safely.
+update public.employment_changes set effective_date = current_date
+  where status = 'scheduled' and reason in ('Alex reports to Fiona', 'would loop');
+do $$
+begin
+  perform public.apply_due_employment_changes();
+  assert (select status from public.employment_changes where reason = 'would loop') = 'failed',
+    'a change that would loop at apply time is marked failed';
+  assert (select failure_reason from public.employment_changes where reason = 'would loop') ilike '%circular%',
+    'the failure says why';
+  assert (select manager_id from public.employment_periods where id = '30000000-0000-0000-0000-000000000002') is null,
+    'the looping change was not applied';
+end $$;
+-- A departure completing cancels what is still scheduled for that period.
+do $$
+begin
+  assert (select count(*) from public.employment_changes
+          where employment_period_id = '30000000-0000-0000-0000-000000000002' and status = 'scheduled') = 1,
+    'one change still scheduled for Fiona';
+  update public.employment_periods set status = 'former', end_date = current_date
+    where id = '30000000-0000-0000-0000-000000000002';
+  assert (select count(*) from public.employment_changes
+          where employment_period_id = '30000000-0000-0000-0000-000000000002' and status = 'scheduled') = 0,
+    'becoming former cancels pending changes';
+end $$;
+
 select 'SMOKE TESTS PASSED' as result;

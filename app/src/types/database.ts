@@ -1080,6 +1080,70 @@ export type Database = {
           },
         ]
       }
+      employment_changes: {
+        Row: {
+          applied_at: string | null
+          changes: Json
+          company_id: string
+          created_at: string
+          created_by: string | null
+          effective_date: string
+          employment_period_id: string
+          failure_reason: string | null
+          id: string
+          reason: string | null
+          status: string
+        }
+        Insert: {
+          applied_at?: string | null
+          changes: Json
+          company_id: string
+          created_at?: string
+          created_by?: string | null
+          effective_date: string
+          employment_period_id: string
+          failure_reason?: string | null
+          id?: string
+          reason?: string | null
+          status?: string
+        }
+        Update: {
+          applied_at?: string | null
+          changes?: Json
+          company_id?: string
+          created_at?: string
+          created_by?: string | null
+          effective_date?: string
+          employment_period_id?: string
+          failure_reason?: string | null
+          id?: string
+          reason?: string | null
+          status?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "employment_changes_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "employment_changes_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "people"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "employment_changes_employment_period_id_fkey"
+            columns: ["employment_period_id"]
+            isOneToOne: false
+            referencedRelation: "employment_periods"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       employment_departure_details: {
         Row: {
           employment_period_id: string
@@ -2955,6 +3019,11 @@ export type Database = {
         }
         Returns: Json
       }
+      apply_due_employment_changes: { Args: never; Returns: number }
+      cancel_employment_change: {
+        Args: { p_change_id: string }
+        Returns: undefined
+      }
       complete_departure: {
         Args: { p_employment_period_id: string }
         Returns: Json
@@ -2978,6 +3047,15 @@ export type Database = {
           p_employment_period_id: string
           p_end_date: string
           p_last_working_date?: string
+          p_reason?: string
+        }
+        Returns: Json
+      }
+      schedule_employment_change: {
+        Args: {
+          p_changes: Json
+          p_effective_date: string
+          p_period_id: string
           p_reason?: string
         }
         Returns: Json

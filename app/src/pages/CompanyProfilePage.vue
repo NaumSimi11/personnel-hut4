@@ -10,6 +10,7 @@ import {
   type CompanyProfileRow,
 } from '@/lib/companyForm'
 import CompanyTile from '@/components/CompanyTile.vue'
+import CompanyStructurePanel from '@/components/CompanyStructurePanel.vue'
 
 /**
  * One company, tabbed (plan 014): Overview / People / Access / Hiring /
@@ -23,11 +24,12 @@ import CompanyTile from '@/components/CompanyTile.vue'
  * links and history never 404.
  */
 
-type TabId = 'overview' | 'people' | 'access' | 'hiring' | 'projects' | 'integrations'
+type TabId = 'overview' | 'people' | 'structure' | 'access' | 'hiring' | 'projects' | 'integrations'
 
 const TABS: { id: TabId; label: string }[] = [
   { id: 'overview', label: 'Overview' },
   { id: 'people', label: 'People' },
+  { id: 'structure', label: 'Structure' },
   { id: 'access', label: 'Access' },
   { id: 'hiring', label: 'Hiring' },
   { id: 'projects', label: 'Projects' },
@@ -524,6 +526,8 @@ onMounted(load)
             </table>
           </div>
         </div>
+
+        <CompanyStructurePanel v-else-if="activeTab === 'structure'" :company-id="companyId" />
 
         <div v-else-if="activeTab === 'access'" class="card">
           <div class="card-head"><h2>Access</h2></div>

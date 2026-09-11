@@ -28,11 +28,12 @@ prototype in `../prototype` is the UI spec. Updated as milestones land.
 | Candidate page: files in a private bucket behind signed links (`application_files`, company derived server-side), screening answers, timeline + notes, decision panel (owner / next action / due), reasoned reject & withdraw, stage moves guarded against stale views | migration 0013 + plan 018a | E2E upload → unsigned read refused → signed read OK → answers → decision → note → reject; smoke tests for company derivation, RLS, private bucket, junk-object safety |
 | Interviews with a panel; blind scorecards (1–4 + evidence per criterion, recommendation) hidden from panel members until they submit, enforced in RLS; scorecard criteria per job; offer state machine (`advance_offer`: draft → in approval → approved by someone else → extended → accepted / declined, withdraw any time; author server-set and immutable); Confirm hire takes the accepted start date; job Interviews & Offer tab | migration 0014 + plan 018b | E2E schedule → hidden colleague card → submit → both visible → offer → self-approval blocked → withdraw → colleague's offer approved → extended → accepted → hired with agreed date; smoke tests for blind rule, forged author/company, transitions |
 | Public careers page + intake: branded per-company listing and application form (CV, screening answers, consent) through the auth service only; honeypot, per-IP and per-email limits, exact code lookup, server-side answer checks, one open application per person per role | plan 019 | E2E anonymous apply → reference → duplicate refused → honeypot dropped → recruiter sees file, answers, source; 15 server unit tests |
+| Recruitment reporting: per-company KPIs, funnel by job, source attribution, attention counts — counted in the database (`recruitment_report`, jobs.view), CSV export | migration 0015 + plan 021 | E2E seeded stages → KPIs, funnel, sources, attention, CSV; smoke tests for numbers and refusal |
 
 ## Next (in order)
 
-0. **Recruitment programme** (in order): 020 AI assist (summaries with
-   references, never a score; needs ANTHROPIC_API_KEY) → 021 reporting.
+0. **020 AI assist** — summaries with references, never a score; blocked on
+   ANTHROPIC_API_KEY in .env.local.
 1. **Employment changes** (plan 022) — scheduled job / manager / location
    changes with effective dates, manager field + circular-reporting guard,
    departments & locations management (tables exist, no UI), directory

@@ -50,7 +50,7 @@ round; merging it into `main` is the maintainer's decision.
 | 018b | Interviews + panel, blind scorecards (RLS), scorecard criteria per job, offer state machine (`advance_offer`, immutable author, separated approval), Confirm hire from the accepted offer, job Interviews & Offer tab (migration 0014) | DONE (reviewed, main @ `b3c93bb`; full suite 17/17 ×2) |
 | 019 | Careers page + intake: public routes, auth-service endpoints (public brief only), honeypot + rate limits, answer validation, duplicate rule, CV to private bucket | DONE (reviewed, main; full suite 18/18) |
 | 020 | AI assist: CV summary with references, screening digest, JD and promo drafts — server-side, human-reviewed, never a score | TODO |
-| 021 | Recruitment reporting: funnel, time-to-hire, source attribution | TODO |
+| 021 | Recruitment reporting: `recruitment_report` (KPIs, funnel, sources, attention; counts only), Reports page with CSV export (migration 0015) | DONE (reviewed, main; full suite 19/19) |
 | 022 | Employment changes: scheduled job/manager/location changes, circular-reporting guard, departments & locations management | TODO |
 
 Round-03 executors branch from `main` as `feature/NNN-<slug>`; the reviewer

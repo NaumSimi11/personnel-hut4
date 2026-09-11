@@ -124,7 +124,7 @@ async function endEmployment(emp: Employment): Promise<void> {
 
 onMounted(async () => {
   const [companiesRes, typesRes] = await Promise.all([
-    supabase.from('companies').select('id, name').eq('kind', 'company').order('name'),
+    supabase.from('companies').select('id, name').eq('kind', 'company').is('archived_at', null).order('name'),
     supabase.from('employment_types').select('key, label').is('archived_at', null).order('sort_order'),
   ])
   companies.value = companiesRes.data ?? []

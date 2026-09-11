@@ -408,4 +408,62 @@ begin
     'Audit log should record workflow owner changes';
 end $$;
 
+
+-- ------------------------------------------------- company profile (0011)
+-- Admins write the richer profile; the database validates brand colour and
+-- guards the logo bucket; everyone else is read-only on companies.
+set app.test_uid = '00000000-0000-0000-0000-000000000004';  -- Ada, admin
+set role authenticated;
+do $$
+declare n int;
+begin
+  update public.companies set
+    legal_name = 'Company A Ltd',
+    registration_number = 'REG-1',
+    tax_id = 'VAT-1',
+    address_line1 = '1 Main St', city = 'Skopje', postcode = '1000', country = 'North Macedonia',
+    website = 'https://a.test', contact_email = 'hello@a.test', contact_phone = '+389 2 000',
+    director_person_id = '20000000-0000-0000-0000-000000000001',
+    hr_contact_person_id = '20000000-0000-0000-0000-000000000004',
+    brand = '{"accent_color":"#3e744e","tagline":"We build things","logo_path":"10000000-0000-0000-0000-00000000000a/logo.png"}'
+    where id = '10000000-0000-0000-0000-00000000000a';
+  get diagnostics n = row_count;
+  assert n = 1, 'Admin can write the company profile';
+  begin
+    update public.companies set brand = '{"accent_color":"green"}'
+      where id = '10000000-0000-0000-0000-00000000000a';
+    raise exception 'FAIL: non-hex accent colour accepted';
+  exception when check_violation then null;
+  end;
+  insert into storage.objects (bucket_id, name) values
+    ('company-logos', '10000000-0000-0000-0000-00000000000a/logo.png');
+  assert (select public from storage.buckets where id = 'company-logos'),
+    'company-logos bucket is public';
+end $$;
+reset role;
+
+set app.test_uid = '00000000-0000-0000-0000-000000000001';  -- Alex, Director
+set role authenticated;
+do $$
+declare n int;
+begin
+  assert (select director_person_id from public.companies
+          where id = '10000000-0000-0000-0000-00000000000a')
+         = '20000000-0000-0000-0000-000000000001',
+    'Everyone signed in can read the company profile';
+  update public.companies set legal_name = 'HACKED'
+    where id = '10000000-0000-0000-0000-00000000000a';
+  get diagnostics n = row_count;
+  assert n = 0, 'Non-admin must not write the company profile';
+  begin
+    insert into storage.objects (bucket_id, name) values ('company-logos', 'x/logo.png');
+    raise exception 'FAIL: non-admin uploaded a company logo';
+  exception when insufficient_privilege then null;
+  end;
+  assert (select count(*) from storage.objects where bucket_id = 'company-logos') = 1,
+    'Anyone can list company logos';
+end $$;
+reset role;
+set app.test_uid = '';
+
 select 'SMOKE TESTS PASSED' as result;

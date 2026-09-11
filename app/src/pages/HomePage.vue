@@ -137,7 +137,7 @@ async function load(): Promise<void> {
     myTasksRes,
   ] = await Promise.all([
     supabase.from('people').select('*', { count: 'exact', head: true }).is('archived_at', null),
-    supabase.from('companies').select('*', { count: 'exact', head: true }).eq('kind', 'company'),
+    supabase.from('companies').select('*', { count: 'exact', head: true }).eq('kind', 'company').is('archived_at', null),
     supabase
       .from('hiring_requests')
       .select('*', { count: 'exact', head: true })

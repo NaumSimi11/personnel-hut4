@@ -31,9 +31,20 @@ export const router = createRouter({
           component: () => import('@/pages/CompaniesPage.vue'),
         },
         {
+          // Static segment before the :companyId param so "new" is never an id.
+          path: 'companies/new',
+          name: 'company-new',
+          component: () => import('@/pages/CompanyFormPage.vue'),
+        },
+        {
           path: 'companies/:companyId',
           name: 'company',
           component: () => import('@/pages/CompanyProfilePage.vue'),
+        },
+        {
+          path: 'companies/:companyId/edit',
+          name: 'company-edit',
+          component: () => import('@/pages/CompanyFormPage.vue'),
         },
         {
           path: 'directory',

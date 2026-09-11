@@ -49,7 +49,8 @@ src/
   lib/        supabase client, pure permission-set logic (+ unit tests)
   stores/     Pinia: auth session, capability/preset catalog
   router/     routes + auth guard
-  pages/      LoginPage, DirectoryPage, AccessEditorPage
+  pages/      LoginPage, DirectoryPage, AccessEditorPage, CompaniesPage,
+              CompanyProfilePage, CompanyFormPage (new/edit, admin), …
   components/ AppShell (sidebar layout)
   types/      database.ts — GENERATED, do not edit:
               npx supabase gen types typescript --db-url "$SUPABASE_DB_URL" (needs Docker)

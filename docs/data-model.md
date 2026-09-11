@@ -149,6 +149,16 @@ Holding HR, Recruiter, Employee, No access), stages, channels, providers,
 vocabularies, and the standard onboarding template (4 critical pre-start tasks
 + day-one intro, mirroring the prototype).
 
+**0011 company profile** — `companies` gains the typed facts documents and
+payroll exports need (`legal_name`, `registration_number`, `tax_id`, address
+columns, `website`, `contact_email`, `contact_phone`) plus `director_person_id`
+/ `hr_contact_person_id` FKs to `people`. `brand jsonb` (reserved in 0001) now
+holds `{ logo_path, accent_color, tagline }` with a check that the colour is
+hex. Logos live in the public Storage bucket `company-logos` at
+`{company_id}/logo-{version}.{ext}` (1 MB, image types only); storage
+policies mirror the table — anyone reads, platform admins write. Archiving
+(`archived_at`) is the only "delete"; every picker filters it.
+
 ## Capability → access map (summary)
 
 | Data | Read | Write |

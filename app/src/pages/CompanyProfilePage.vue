@@ -2,12 +2,25 @@
 import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { supabase } from '@/lib/supabase'
+import { useAuthStore } from '@/stores/auth'
+import {
+  COMPANY_PROFILE_SELECT,
+  brandOf,
+  friendlyCompanyError,
+  type CompanyProfileRow,
+} from '@/lib/companyForm'
+import CompanyTile from '@/components/CompanyTile.vue'
 
 /**
  * One company, tabbed (plan 014): Overview / People / Access / Hiring /
  * Projects / Integrations. The active tab is driven by ?tab= so every panel
  * is deep-linkable. All tab data loads in one Promise.all on mount — the
  * datasets are small and this avoids a query per tab switch.
+ *
+ * Platform admins edit the company's details and archive it from Overview.
+ * Archiving is the only "delete": the row stays (23 tables reference it) but
+ * leaves every list and picker. An archived company still opens by URL so old
+ * links and history never 404.
  */
 
 type TabId = 'overview' | 'people' | 'access' | 'hiring' | 'projects' | 'integrations'
@@ -21,13 +34,8 @@ const TABS: { id: TabId; label: string }[] = [
   { id: 'integrations', label: 'Integrations' },
 ]
 
-type CompanyRow = {
-  id: string
-  parent_company_id: string | null
-  kind: string
-  name: string
-  short_code: string
-}
+type PersonRef = { id: string; full_name: string } | null
+type CompanyRow = CompanyProfileRow & { director: PersonRef; hr_contact: PersonRef }
 
 type EmploymentRow = {
   id: string
@@ -75,6 +83,64 @@ const integrations = ref<IntegrationRow[]>([])
 const loading = ref(true)
 const notFound = ref(false)
 const error = ref<string | null>(null)
+
+const auth = useAuthStore()
+const archiving = ref(false)
+const archiveError = ref<string | null>(null)
+
+const isArchived = computed(() => company.value?.archived_at !== null)
+// The holding is the root: it can be edited but never archived.
+const canManage = computed(() => auth.isAdmin && company.value !== null && !isArchived.value)
+const canArchive = computed(() => canManage.value && company.value?.kind === 'company')
+
+const brand = computed(() => (company.value ? brandOf(company.value) : {}))
+
+const addressLines = computed(() => {
+  const c = company.value
+  if (!c) return []
+  const cityLine = [c.postcode, c.city].filter(Boolean).join(' ')
+  return [c.address_line1, c.address_line2, cityLine, c.country].filter(
+    (line): line is string => Boolean(line),
+  )
+})
+
+function websiteLabel(url: string): string {
+  return url.replace(/^https?:\/\//i, '').replace(/\/$/, '')
+}
+
+// The director/HR embeds go through people RLS: a configured person the
+// viewer may not see comes back null, which is not the same as "not set".
+function personFallback(personId: string | null): string {
+  return personId ? 'Not visible with your access' : 'Not set'
+}
+
+async function archiveCompany(): Promise<void> {
+  if (!company.value || !canArchive.value) return
+  const ok = window.confirm(
+    `Archive ${company.value.name}? It leaves every list and picker; its people, access and history are kept.`,
+  )
+  if (!ok) return
+
+  archiving.value = true
+  archiveError.value = null
+  // A refused UPDATE matches zero rows under RLS rather than erroring, so
+  // select the row back and treat "nothing came back" as a refusal.
+  const { data, error: err } = await supabase
+    .from('companies')
+    .update({ archived_at: new Date().toISOString() })
+    .eq('id', companyId)
+    .select('id')
+    .maybeSingle()
+  archiving.value = false
+
+  if (err || !data) {
+    const message = err?.message ?? 'row-level security'
+    archiveError.value = friendlyCompanyError(message)
+    console.error('Company archive failed:', message)
+    return
+  }
+  router.push({ name: 'companies' })
+}
 
 const activeTab = computed<TabId>(() => {
   const raw = route.query.tab
@@ -146,7 +212,11 @@ async function load(): Promise<void> {
   ] = await Promise.all([
     supabase
       .from('companies')
-      .select('id, parent_company_id, kind, name, short_code')
+      .select(
+        `${COMPANY_PROFILE_SELECT},
+         director:people!companies_director_person_id_fkey(id, full_name),
+         hr_contact:people!companies_hr_contact_person_id_fkey(id, full_name)`,
+      )
       .eq('id', companyId)
       .maybeSingle(),
     supabase
@@ -191,7 +261,7 @@ async function load(): Promise<void> {
     loading.value = false
     return
   }
-  company.value = companyRes.data
+  company.value = companyRes.data as CompanyRow
 
   let hadError = false
   const logIfError = (label: string, err: { message: string } | null) => {
@@ -234,12 +304,21 @@ onMounted(load)
 
       <div v-if="loading" class="empty">Loading company…</div>
       <template v-else-if="company">
-        <div class="company-banner">
-          <span class="short-tile" aria-hidden="true">{{ company.short_code }}</span>
+        <div class="company-banner" :style="{ '--accent': brand.accent_color ?? '' }">
+          <CompanyTile :short-code="company.short_code" :brand="brand" size="large" />
           <div>
             <div class="eyebrow">Holding / company profile</div>
-            <h1>{{ company.name }}</h1>
-            <p class="meta">Part of Hut4 · {{ headcount }} people</p>
+            <h1>
+              {{ company.name }}
+              <span v-if="isArchived" class="badge archived-badge">Archived</span>
+            </h1>
+            <p v-if="brand.tagline" class="tagline">{{ brand.tagline }}</p>
+            <p class="meta">
+              Part of Hut4 · {{ headcount }} people
+              <template v-if="company.website">
+                · <a :href="company.website" target="_blank" rel="noopener">{{ websiteLabel(company.website) }}</a>
+              </template>
+            </p>
           </div>
         </div>
 
@@ -281,25 +360,126 @@ onMounted(load)
           </div>
 
           <div class="card">
-            <div class="card-head"><h2>Company details</h2></div>
-            <dl class="detail-grid">
-              <div>
-                <dt>Parent organization</dt>
-                <dd>{{ company.parent_company_id ? 'Hut4' : '—' }}</dd>
+            <div class="card-head">
+              <h2>Company details</h2>
+              <router-link
+                v-if="canManage"
+                class="button secondary small-btn"
+                :to="{ name: 'company-edit', params: { companyId } }"
+              >
+                Edit details
+              </router-link>
+            </div>
+
+            <div class="detail-section">
+              <h3>Registration</h3>
+              <dl class="detail-grid">
+                <div>
+                  <dt>Legal name</dt>
+                  <dd>{{ company.legal_name ?? company.name }}</dd>
+                </div>
+                <div>
+                  <dt>Short code</dt>
+                  <dd>{{ company.short_code }}</dd>
+                </div>
+                <div>
+                  <dt>Registration number</dt>
+                  <dd>{{ company.registration_number ?? '—' }}</dd>
+                </div>
+                <div>
+                  <dt>VAT / tax ID</dt>
+                  <dd>{{ company.tax_id ?? '—' }}</dd>
+                </div>
+                <div>
+                  <dt>Registered address</dt>
+                  <dd v-if="addressLines.length" class="address">
+                    <span v-for="line in addressLines" :key="line">{{ line }}</span>
+                  </dd>
+                  <dd v-else>—</dd>
+                </div>
+                <div>
+                  <dt>Parent organization</dt>
+                  <dd>{{ company.parent_company_id ? 'Hut4' : '—' }}</dd>
+                </div>
+              </dl>
+            </div>
+
+            <div class="detail-section">
+              <h3>Contacts</h3>
+              <dl class="detail-grid">
+                <div>
+                  <dt>Director</dt>
+                  <dd>
+                    <router-link
+                      v-if="company.director"
+                      class="person-link"
+                      :to="{ name: 'person', params: { personId: company.director.id } }"
+                    >
+                      {{ company.director.full_name }}
+                    </router-link>
+                    <template v-else>{{ personFallback(company.director_person_id) }}</template>
+                  </dd>
+                </div>
+                <div>
+                  <dt>HR contact</dt>
+                  <dd>
+                    <router-link
+                      v-if="company.hr_contact"
+                      class="person-link"
+                      :to="{ name: 'person', params: { personId: company.hr_contact.id } }"
+                    >
+                      {{ company.hr_contact.full_name }}
+                    </router-link>
+                    <template v-else>{{ personFallback(company.hr_contact_person_id) }}</template>
+                  </dd>
+                </div>
+                <div>
+                  <dt>Email</dt>
+                  <dd>
+                    <a v-if="company.contact_email" :href="`mailto:${company.contact_email}`">{{ company.contact_email }}</a>
+                    <template v-else>—</template>
+                  </dd>
+                </div>
+                <div>
+                  <dt>Phone</dt>
+                  <dd>{{ company.contact_phone ?? '—' }}</dd>
+                </div>
+                <div>
+                  <dt>Website</dt>
+                  <dd>
+                    <a v-if="company.website" :href="company.website" target="_blank" rel="noopener">
+                      {{ websiteLabel(company.website) }}
+                    </a>
+                    <template v-else>—</template>
+                  </dd>
+                </div>
+                <div>
+                  <dt>HR workspace</dt>
+                  <dd>Shared across the holding · one employing company per person</dd>
+                </div>
+              </dl>
+            </div>
+          </div>
+
+          <div v-if="canArchive" class="card archive-card">
+            <div class="row">
+              <div class="row-text">
+                <strong>Archive this company</strong>
+                <small>
+                  Removes it from every list and picker. People, access grants and history are kept
+                  and this page stays reachable by link.
+                </small>
               </div>
-              <div>
-                <dt>Short code</dt>
-                <dd>{{ company.short_code }}</dd>
-              </div>
-              <div>
-                <dt>Employment structure</dt>
-                <dd>One employing company per person</dd>
-              </div>
-              <div>
-                <dt>HR workspace</dt>
-                <dd>Shared across the holding</dd>
-              </div>
-            </dl>
+              <button
+                class="button secondary small-btn danger"
+                type="button"
+                :disabled="archiving"
+                @click="archiveCompany"
+              >
+                {{ archiving ? 'Archiving…' : 'Archive this company' }}
+              </button>
+            </div>
+            <p v-if="archiveError" class="error-note archive-error" role="alert">{{ archiveError }}</p>
           </div>
         </div>
 
@@ -451,20 +631,32 @@ onMounted(load)
 }
 .back-link:hover { color: var(--green); }
 .company-banner { display: flex; align-items: center; gap: 18px; margin-bottom: 20px; }
-.company-banner h1 { margin: 4px 0 5px; }
+.company-banner h1 { margin: 4px 0 5px; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .company-banner .meta { margin: 0; font-size: 12px; color: var(--muted); }
-.short-tile {
-  display: grid;
-  place-items: center;
-  width: 58px;
-  height: 58px;
-  background: var(--green-soft);
-  color: var(--green);
-  border-radius: 14px;
-  font-size: 20px;
-  font-weight: 650;
-  flex-shrink: 0;
+.archived-badge { font-size: 10px; letter-spacing: 0.04em; text-transform: uppercase; }
+.archive-card { margin-top: 18px; }
+.archive-card .row { border-top: 0; }
+.archive-card .row-text small { line-height: 1.6; }
+.archive-error { margin: 0 24px 18px; }
+.danger { color: var(--red); border-color: #e8d3d3; }
+.danger:hover { background: #f9eeee; }
+.company-banner .tagline { margin: 0 0 5px; font-size: 13px; color: var(--ink); opacity: 0.85; }
+.company-banner .meta a { color: var(--green); text-decoration: none; }
+.company-banner .meta a:hover { text-decoration: underline; }
+.detail-section { border-top: 1px solid var(--line); }
+.detail-section:first-of-type { border-top: 0; }
+.detail-section h3 {
+  margin: 0;
+  padding: 18px 24px 0;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
 }
+.detail-grid .address span { display: block; }
+.detail-grid dd a { color: var(--green); text-decoration: none; }
+.detail-grid dd a:hover { text-decoration: underline; }
 .tabs { display: flex; gap: 22px; border-bottom: 1px solid var(--line); margin-bottom: 22px; overflow: auto; }
 .tab {
   border: 0;
@@ -484,7 +676,7 @@ onMounted(load)
 .metric-tile { display: flex; flex-direction: column; gap: 8px; padding: 18px 20px; }
 .metric-label { font-size: 11px; color: var(--muted); font-weight: 550; }
 .metric-value { font-size: 26px; font-weight: 750; letter-spacing: -0.02em; }
-.detail-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 18px 20px; padding: 23px 24px; margin: 0; }
+.detail-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 18px 20px; padding: 16px 24px 23px; margin: 0; }
 .detail-grid dt { font-size: 10px; color: var(--muted); margin-bottom: 6px; }
 .detail-grid dd { margin: 0; font-size: 12px; }
 @media (max-width: 560px) {

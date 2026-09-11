@@ -39,3 +39,19 @@ export function generateTempPassword(): string {
   for (let i = 0; i < bytes.length; i++) out += alphabet[bytes[i] % alphabet.length]
   return out
 }
+
+export type InvitePlan =
+  | { action: 'create' }
+  | { action: 'attach'; personId: string }
+  | { action: 'refuse'; reason: 'has_account' }
+
+/**
+ * Invite-vs-record rule (ported from the leave system's account-linking
+ * invariant): attach to an existing record-only person, never duplicate;
+ * a person who already has an account gets "Reset access", not a new invite.
+ */
+export function planInvite(existing: { id: string; user_id: string | null } | null): InvitePlan {
+  if (!existing) return { action: 'create' }
+  if (existing.user_id) return { action: 'refuse', reason: 'has_account' }
+  return { action: 'attach', personId: existing.id }
+}

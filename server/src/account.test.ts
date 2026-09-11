@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { generateTempPassword, isAllowedEmail, parseAllowedDomains } from './account.js'
+import { generateTempPassword, isAllowedEmail, parseAllowedDomains, planInvite } from './account.js'
 import { meetsPasswordPolicy } from '../../shared/passwordPolicy.js'
 
 describe('parseAllowedDomains', () => {
@@ -35,5 +35,23 @@ describe('generateTempPassword', () => {
       expect(pw).toMatch(/^[A-Za-z0-9]{20}$/)
       expect(meetsPasswordPolicy(pw) || !/[0-9]/.test(pw) || !/[A-Z]/.test(pw)).toBe(true)
     }
+  })
+})
+
+describe('planInvite', () => {
+  it('creates a new person when nobody matches the work email', () => {
+    expect(planInvite(null)).toEqual({ action: 'create' })
+  })
+  it('attaches to an existing record-only person (no account yet)', () => {
+    expect(planInvite({ id: 'person-1', user_id: null })).toEqual({
+      action: 'attach',
+      personId: 'person-1',
+    })
+  })
+  it('refuses when the matched person already has an account', () => {
+    expect(planInvite({ id: 'person-1', user_id: 'user-1' })).toEqual({
+      action: 'refuse',
+      reason: 'has_account',
+    })
   })
 })

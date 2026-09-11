@@ -1,7 +1,7 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
 import { z } from 'zod'
 import { meetsPasswordPolicy, PASSWORD_POLICY_SUMMARY } from '../../shared/passwordPolicy.js'
-import { generateTempPassword, isAllowedEmail, parseAllowedDomains } from './account.js'
+import { generateTempPassword, isAllowedEmail, parseAllowedDomains, planInvite } from './account.js'
 import { sendAccessEmail } from './emails.js'
 import { env } from './env.js'
 import {
@@ -106,14 +106,52 @@ export function registerRoutes(app: FastifyInstance): void {
     const db = serviceDb()
     const { data: existing } = await db
       .from('people')
-      .select('id')
+      .select('id, user_id, full_name')
       .eq('work_email', input.email)
       .maybeSingle()
-    if (existing) return fail(reply, 400, 'An account with this email already exists.')
+    const plan = planInvite(existing)
+    if (plan.action === 'refuse') {
+      return fail(
+        reply,
+        400,
+        'This person already has an account. Use "Reset access" to issue a new password.',
+      )
+    }
+    // A dangling auth account with this email (an auth user exists but no
+    // people row references it as user_id) is a broken half-state, not a
+    // normal "has an account" case — refuse rather than silently orphaning it.
     if (await findAccountByEmail(input.email))
       return fail(reply, 400, 'An account with this email already exists.')
 
     const tempPassword = generateTempPassword()
+
+    if (plan.action === 'attach') {
+      // planInvite only returns 'attach' when `existing` is truthy; this guard
+      // just satisfies the type-checker without a non-null assertion.
+      if (!existing) return fail(reply, 500, 'Unexpected invite state.')
+
+      // Attach to the existing record-only person — never insert a duplicate.
+      const account = await createInvitedAccount({
+        email: input.email,
+        name: existing.full_name,
+        tempPassword,
+      })
+      const { error: attachErr } = await db
+        .from('people')
+        .update({ user_id: account.id })
+        .eq('id', plan.personId)
+      if (attachErr)
+        return fail(reply, 500, `Account created but person record failed: ${attachErr.message}`)
+
+      const emailSent = await deliverAccessEmail({
+        name: existing.full_name,
+        email: input.email,
+        tempPassword,
+        kind: 'invite',
+      })
+      return { personId: plan.personId, tempPassword, emailSent }
+    }
+
     const account = await createInvitedAccount({ ...input, tempPassword })
     const { data: person, error: personErr } = await db
       .from('people')

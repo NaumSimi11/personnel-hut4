@@ -48,7 +48,7 @@ round; merging it into `main` is the maintainer's decision.
 | 017 | Job workspace: five-step journey, Description + screening questions, Channels (careers publish, manual records, out-of-date), Promotion state machine (`advance_promotion`), Activity trail (migration 0012) | DONE (reviewed, main @ `2c3ac5c`; full suite 15/15) |
 | 018a | Candidate page: private files (`application_files` + `candidate-files` bucket, signed links), screening answers, timeline + notes, decision panel (owner / next action / due), reasoned reject & withdraw (migration 0013) | DONE (reviewed, main @ `614d433`; full suite 16/16) |
 | 018b | Interviews + panel, blind scorecards (RLS), scorecard criteria per job, offer state machine (`advance_offer`, immutable author, separated approval), Confirm hire from the accepted offer, job Interviews & Offer tab (migration 0014) | DONE (reviewed, main @ `b3c93bb`; full suite 17/17 ×2) |
-| 019 | Careers page + application intake: public per-company listing and form with CV upload, spam protection | TODO |
+| 019 | Careers page + intake: public routes, auth-service endpoints (public brief only), honeypot + rate limits, answer validation, duplicate rule, CV to private bucket | DONE (reviewed, main; full suite 18/18) |
 | 020 | AI assist: CV summary with references, screening digest, JD and promo drafts — server-side, human-reviewed, never a score | TODO |
 | 021 | Recruitment reporting: funnel, time-to-hire, source attribution | TODO |
 | 022 | Employment changes: scheduled job/manager/location changes, circular-reporting guard, departments & locations management | TODO |

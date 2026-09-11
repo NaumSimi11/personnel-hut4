@@ -1,3 +1,4 @@
+| Compensation: one amount + currency + pay basis per record; proposed by one person, decided by another (`salary.propose` / `salary.approve`), approving closes the previous approved record the day before so history never overlaps; refused after a departure; Payroll tab totals annualised per currency with distinct active headcount (`payroll.summary`) | migration 0017 + plan 023 | E2E current → propose → no self-approval → colleague approves → history → payroll total matches independent sum → own compensation; smoke tests for gating, self-approval, direct-write refusal, supersede, departure edges |
 # Personnel: development plan
 
 Working plan for the real build (Vue app + Supabase). Derives its order from
@@ -37,15 +38,13 @@ prototype in `../prototype` is the UI spec. Updated as milestones land.
    ANTHROPIC_API_KEY in .env.local.
 2. **Turn on Zoho sync** — supply credentials + per-company mapping, then
    run it for real (code is done; see [integrations-zoho.md](integrations-zoho.md)).
-3. **Compensation** — `compensation_records` UI (propose / approve, history),
-   `salary.*`-gated; company default currency.
-4. **Leave-system linking** — shared auth pool with the leave app (one
+3. **Leave-system linking** — shared auth pool with the leave app (one
    password for both), then read-only leave indicators via `leave_links`.
-5. **Company profile leftovers** — upcoming starters / departures and open
+4. **Company profile leftovers** — upcoming starters / departures and open
    tasks on the overview; `settings` overrides (notification contacts,
    workflow owners); Integrations tab connect / configure; invite from the
    company Access tab.
-6. **Later, per blueprint** — documents & policies, equipment/IT, payroll
+5. **Later, per blueprint** — documents & policies, equipment/IT, payroll
    preparation, audit history tab, reports, recruitment marketing + channel
    integrations, import preview, rehire.
 

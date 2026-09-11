@@ -25,13 +25,13 @@ prototype in `../prototype` is the UI spec. Updated as milestones land.
 | Company management: admins create / edit / archive companies with a full profile — logo (public Storage bucket), accent colour, tagline, website, legal & registration, director / HR contact; archive is the only delete and every picker honours it | migration 0011, `CompanyFormPage` | E2E create with logo → profile → edit → archive → gone from pickers; schema smoke tests |
 | Offboarding: schedule departure (dates + restricted reason → plan), queue with blockers, kind-aware plan page, explicit "mark as former" allowed with open tasks; Departing badge; `auth.can()` capability hint for non-admin HR | migration 0010 + plan 016 | E2E schedule → queue → task → former; smoke tests for the RPCs |
 | Job workspace: five-step journey, tabs (Overview · Description + screening questions · Channels · Applications · Promotion · Activity), draft → ready → open lifecycle, careers publish / manual posting records / out-of-date flag, promotion as a separated-duties state machine (`advance_promotion`), recruitment audit trail | migration 0012 + plan 017 | E2E prepare → describe → publish → promote → applications → activity; smoke tests for transitions, self-review refusal, re-request |
+| Candidate page: files in a private bucket behind signed links (`application_files`, company derived server-side), screening answers, timeline + notes, decision panel (owner / next action / due), reasoned reject & withdraw, stage moves guarded against stale views | migration 0013 + plan 018a | E2E upload → unsigned read refused → signed read OK → answers → decision → note → reject; smoke tests for company derivation, RLS, private bucket, junk-object safety |
 
 ## Next (in order)
 
-0. **Recruitment programme** (plans 018–021, in order): candidate review depth
-   (CV files, screening checklist, interviews + blind scorecards, offer
-   builder) → public careers page + intake → AI assist (summaries with
-   references, never a score) → reporting.
+0. **Recruitment programme** (in order): 018b interviews + blind scorecards +
+   offer builder → 019 public careers page + intake → 020 AI assist
+   (summaries with references, never a score) → 021 reporting.
 1. **Employment changes** (plan 022) — scheduled job / manager / location
    changes with effective dates, manager field + circular-reporting guard,
    departments & locations management (tables exist, no UI), directory

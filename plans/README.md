@@ -45,7 +45,12 @@ round; merging it into `main` is the maintainer's decision.
 | — | Offboarding foundation: departure template + `schedule_departure` / `complete_departure` RPCs (migration 0010) | DONE (main @ `66201fa`; smoke tests) |
 | — | Company management: create / edit / archive with full profile (brand + logo bucket, legal & registration, contacts; migration 0011) | DONE (reviewed, main @ `10407ee`; full suite 13/13) |
 | 016 | Offboarding UI: schedule departure, queue, kind-aware plan page, mark as former; `auth.can()` | DONE (reviewed, main @ `8dd3764`; full suite 14/14) |
-| 017 | Employment changes: scheduled job/manager/location changes, circular-reporting guard, departments & locations management | TODO |
+| 017 | Job workspace: five-step journey, Description + screening questions, Channels (careers publish, manual records, out-of-date), Promotion state machine (`advance_promotion`), Activity trail (migration 0012) | DONE (reviewed, main @ `2c3ac5c`; full suite 15/15) |
+| 018 | Candidate review depth: candidate profile, CV upload (private bucket), screening checklist, interviews + blind scorecards, decision panel, offer builder | TODO |
+| 019 | Careers page + application intake: public per-company listing and form with CV upload, spam protection | TODO |
+| 020 | AI assist: CV summary with references, screening digest, JD and promo drafts — server-side, human-reviewed, never a score | TODO |
+| 021 | Recruitment reporting: funnel, time-to-hire, source attribution | TODO |
+| 022 | Employment changes: scheduled job/manager/location changes, circular-reporting guard, departments & locations management | TODO |
 
 Round-03 executors branch from `main` as `feature/NNN-<slug>`; the reviewer
 runs the full E2E suite serially and merges after review.

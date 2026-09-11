@@ -26,6 +26,16 @@ export const router = createRouter({
           component: () => import('@/pages/HomePage.vue'),
         },
         {
+          path: 'companies',
+          name: 'companies',
+          component: () => import('@/pages/CompaniesPage.vue'),
+        },
+        {
+          path: 'companies/:companyId',
+          name: 'company',
+          component: () => import('@/pages/CompanyProfilePage.vue'),
+        },
+        {
           path: 'directory',
           name: 'directory',
           component: () => import('@/pages/DirectoryPage.vue'),

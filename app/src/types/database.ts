@@ -108,7 +108,15 @@ export type Database = {
           entity_type?: string
           id?: never
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "activity_log_actor_person_id_fkey"
+            columns: ["actor_person_id"]
+            isOneToOne: false
+            referencedRelation: "people"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       application_events: {
         Row: {
@@ -2398,6 +2406,7 @@ export type Database = {
           created_at: string
           creative_document_id: string | null
           deadline: string | null
+          drafted_by: string | null
           id: string
           job_id: string
           publication_url: string | null
@@ -2415,6 +2424,7 @@ export type Database = {
           created_at?: string
           creative_document_id?: string | null
           deadline?: string | null
+          drafted_by?: string | null
           id?: string
           job_id: string
           publication_url?: string | null
@@ -2432,6 +2442,7 @@ export type Database = {
           created_at?: string
           creative_document_id?: string | null
           deadline?: string | null
+          drafted_by?: string | null
           id?: string
           job_id?: string
           publication_url?: string | null
@@ -2461,6 +2472,13 @@ export type Database = {
             columns: ["creative_document_id"]
             isOneToOne: false
             referencedRelation: "documents"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "promotions_drafted_by_fkey"
+            columns: ["drafted_by"]
+            isOneToOne: false
+            referencedRelation: "people"
             referencedColumns: ["id"]
           },
           {
@@ -2672,6 +2690,16 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      advance_promotion: {
+        Args: {
+          p_brief?: Json
+          p_copy?: string
+          p_promotion_id: string
+          p_publication_url?: string
+          p_to_status: string
+        }
+        Returns: Json
+      }
       complete_departure: {
         Args: { p_employment_period_id: string }
         Returns: Json

@@ -112,9 +112,11 @@ test('approved request → prepare job → candidate pipeline → confirm hire',
   await requestRow.getByRole('button', { name: 'Prepare job' }).click()
 
   await expect(page.getByRole('heading', { name: REQUEST_TITLE })).toBeVisible()
-  await expect(page.locator('.page-head .badge')).toHaveText('open')
+  // A prepared job starts as a draft (plan 017); publishing a channel opens it.
+  await expect(page.locator('.page-head .badge')).toHaveText('draft')
 
   // Step 3: add the candidate; the application row appears at stage `new`.
+  await page.getByRole('tab', { name: 'Applications' }).click()
   await page.getByRole('button', { name: 'Add candidate' }).click()
   await page.locator('#ac-name').fill(CANDIDATE_NAME)
   await page.locator('#ac-email').fill(CANDIDATE_EMAIL)

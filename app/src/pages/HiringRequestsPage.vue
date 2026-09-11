@@ -115,7 +115,9 @@ async function prepareJob(row: HiringRequestRow): Promise<void> {
       hiring_request_id: row.id,
       title: row.title,
       description: '',
-      status: 'open',
+      // A job starts as a draft: it opens when its description is ready and
+      // a channel is published (plan 017).
+      status: 'draft',
     })
     .select('id')
     .single()

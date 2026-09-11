@@ -466,4 +466,159 @@ end $$;
 reset role;
 set app.test_uid = '';
 
+
+-- ------------------------------------------- job workspace: promotions (0012)
+-- Marketing collaboration is a state machine with separated duties: a drafter
+-- writes, a different approver reviews, a publisher records the URL. Direct
+-- status edits are closed; only advance_promotion moves a promotion.
+-- Omar: Marketing (view + draft) plus approve, to prove self-review is refused.
+insert into public.access_grants (id, person_id, company_id) values
+  ('40000000-0000-0000-0000-000000000004','20000000-0000-0000-0000-000000000003','10000000-0000-0000-0000-00000000000a');
+insert into public.grant_capabilities (grant_id, capability_key) values
+  ('40000000-0000-0000-0000-000000000004','marketing.view'),
+  ('40000000-0000-0000-0000-000000000004','marketing.draft'),
+  ('40000000-0000-0000-0000-000000000004','marketing.approve');
+-- Fiona (Finance, Company A) additionally approves and publishes.
+insert into public.grant_capabilities (grant_id, capability_key) values
+  ('40000000-0000-0000-0000-000000000002','marketing.view'),
+  ('40000000-0000-0000-0000-000000000002','marketing.approve'),
+  ('40000000-0000-0000-0000-000000000002','marketing.publish');
+
+-- Ada (admin, holds jobs.edit everywhere) requests the promotion.
+set app.test_uid = '00000000-0000-0000-0000-000000000004';
+set role authenticated;
+insert into public.promotions (id, job_id, company_id, channel_key, brief, requested_by) values
+  ('a0000000-0000-0000-0000-000000000001','70000000-0000-0000-0000-000000000001',
+   '10000000-0000-0000-0000-00000000000a','linkedin',
+   '{"title":"Operations Coordinator","company":"Company A"}',
+   '20000000-0000-0000-0000-000000000004');
+reset role;
+
+-- Omar drafts and submits; cannot approve his own draft; cannot edit status directly.
+set app.test_uid = '00000000-0000-0000-0000-000000000003';
+set role authenticated;
+do $$
+declare n int;
+begin
+  begin
+    perform public.advance_promotion('a0000000-0000-0000-0000-000000000001', 'draft', '', null);
+    raise exception 'FAIL: empty copy accepted';
+  exception when raise_exception then
+    if sqlerrm like 'FAIL:%' then raise; end if;
+  end;
+  perform public.advance_promotion('a0000000-0000-0000-0000-000000000001', 'draft',
+    'Join Company A as our Operations Coordinator.', null);
+  assert (select status from public.promotions where id = 'a0000000-0000-0000-0000-000000000001') = 'draft',
+    'drafter saves a draft';
+  perform public.advance_promotion('a0000000-0000-0000-0000-000000000001', 'in_review', null, null);
+  assert (select status from public.promotions where id = 'a0000000-0000-0000-0000-000000000001') = 'in_review',
+    'drafter submits for review';
+  begin
+    perform public.advance_promotion('a0000000-0000-0000-0000-000000000001', 'approved', null, null);
+    raise exception 'FAIL: drafter approved their own content';
+  exception when insufficient_privilege then null;
+  end;
+  update public.promotions set status = 'published'
+    where id = 'a0000000-0000-0000-0000-000000000001';
+  get diagnostics n = row_count;
+  assert n = 0, 'promotion status cannot be edited directly';
+end $$;
+reset role;
+
+-- Fiona approves (not the drafter), then publishes with a URL.
+set app.test_uid = '00000000-0000-0000-0000-000000000002';
+set role authenticated;
+do $$
+begin
+  begin
+    perform public.advance_promotion('a0000000-0000-0000-0000-000000000001', 'published', null, 'https://x.test/post');
+    raise exception 'FAIL: published straight from review';
+  exception when raise_exception then
+    if sqlerrm like 'FAIL:%' then raise; end if;
+  end;
+  perform public.advance_promotion('a0000000-0000-0000-0000-000000000001', 'approved', null, null);
+  assert (select reviewed_by from public.promotions where id = 'a0000000-0000-0000-0000-000000000001')
+         = '20000000-0000-0000-0000-000000000002', 'approver is recorded';
+  begin
+    perform public.advance_promotion('a0000000-0000-0000-0000-000000000001', 'published', null, 'not a url');
+    raise exception 'FAIL: published without a valid URL';
+  exception when raise_exception then
+    if sqlerrm like 'FAIL:%' then raise; end if;
+  end;
+  perform public.advance_promotion('a0000000-0000-0000-0000-000000000001', 'published', null, 'https://x.test/post');
+  assert (select status from public.promotions where id = 'a0000000-0000-0000-0000-000000000001') = 'published',
+    'publisher records the post';
+end $$;
+reset role;
+
+-- Activity: Alex (Director, jobs.view in A) reads the recruitment trail for
+-- Company A; Bea (Company B only) sees none of it.
+set app.test_uid = '00000000-0000-0000-0000-000000000001';
+set role authenticated;
+do $$
+begin
+  assert (select count(*) from public.activity_log
+          where entity_type = 'promotions' and entity_id = 'a0000000-0000-0000-0000-000000000001') >= 4,
+    'jobs.view holders can read the promotion trail';
+  assert (select count(*) from public.activity_log where entity_type = 'access_grants') = 0,
+    'jobs.view does not open the access audit trail';
+end $$;
+reset role;
+set app.test_uid = '00000000-0000-0000-0000-000000000005';
+set role authenticated;
+do $$
+begin
+  assert (select count(*) from public.activity_log where entity_type = 'promotions') = 0,
+    'Company B HR sees no Company A recruitment activity';
+end $$;
+reset role;
+set app.test_uid = '';
+
+
+-- Separation of duties cannot be sidestepped by rewriting the copy on submit,
+-- and a cancelled promotion can be requested again (fresh brief, clean slate).
+set app.test_uid = '00000000-0000-0000-0000-000000000004';  -- Ada, admin
+set role authenticated;
+insert into public.promotions (id, job_id, company_id, channel_key, brief, requested_by) values
+  ('a0000000-0000-0000-0000-000000000002','70000000-0000-0000-0000-000000000001',
+   '10000000-0000-0000-0000-00000000000a','indeed', '{"title":"v1"}',
+   '20000000-0000-0000-0000-000000000004');
+reset role;
+set app.test_uid = '00000000-0000-0000-0000-000000000003';  -- Omar drafts
+set role authenticated;
+select public.advance_promotion('a0000000-0000-0000-0000-000000000002', 'draft', 'Omar''s words', null, null);
+reset role;
+-- Omar (draft + approve) submits with rewritten copy, then tries to approve.
+set app.test_uid = '00000000-0000-0000-0000-000000000003';
+set role authenticated;
+do $$
+begin
+  perform public.advance_promotion('a0000000-0000-0000-0000-000000000002', 'in_review', 'Rewritten on submit', null, null);
+  assert (select drafted_by from public.promotions where id = 'a0000000-0000-0000-0000-000000000002')
+         = '20000000-0000-0000-0000-000000000003', 'rewriting on submit records the new drafter';
+  begin
+    perform public.advance_promotion('a0000000-0000-0000-0000-000000000002', 'approved', null, null, null);
+    raise exception 'FAIL: drafter approved rewritten content';
+  exception when insufficient_privilege then null;
+  end;
+end $$;
+reset role;
+-- Ada cancels, then requests again with a fresh brief; the slate is clean.
+set app.test_uid = '00000000-0000-0000-0000-000000000004';
+set role authenticated;
+do $$
+begin
+  perform public.advance_promotion('a0000000-0000-0000-0000-000000000002', 'cancelled', null, null, null);
+  perform public.advance_promotion('a0000000-0000-0000-0000-000000000002', 'requested', null, null, '{"title":"v2"}');
+  assert (select status from public.promotions where id = 'a0000000-0000-0000-0000-000000000002') = 'requested',
+    'a cancelled promotion can be requested again';
+  assert (select brief->>'title' from public.promotions where id = 'a0000000-0000-0000-0000-000000000002') = 'v2',
+    're-request refreshes the brief';
+  assert (select copy is null and drafted_by is null and reviewed_by is null
+          from public.promotions where id = 'a0000000-0000-0000-0000-000000000002'),
+    're-request clears the previous draft and review';
+end $$;
+reset role;
+set app.test_uid = '';
+
 select 'SMOKE TESTS PASSED' as result;

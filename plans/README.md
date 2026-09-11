@@ -39,6 +39,7 @@ round; merging it into `main` is the maintainer's decision.
 | 010 | Hiring workspace B: jobs, candidates, confirm hire (RPC 0009) | DONE (reviewed, merged to main @ `9e2f529`; full suite 8/8) |
 | 011 | Onboarding: queue, plan detail, task actions, readiness | DONE (reviewed, merged to main @ `1831765`; full suite 9/9) |
 | 012 | Home: needs-action queue, metrics, my tasks | DONE (reviewed, merged to main @ `412d1a3`; reviewer then switched the post-login landing to it; full suite 10/10) |
+| 013 | Self-service: My workspace (profile, onboarding, tasks, access, projects) | DONE (reviewed, merged to main @ `3839087`; full suite 11/11) |
 
 Round-03 executors branch from `main` as `feature/NNN-<slug>`; the reviewer
 runs the full E2E suite serially and merges after review.

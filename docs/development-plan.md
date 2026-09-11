@@ -31,8 +31,8 @@ prototype in `../prototype` is the UI spec. Updated as milestones land.
 
 ## Next (in order)
 
-0. **Recruitment programme** (in order): 019 public careers page + intake →
-   020 AI assist (summaries with references, never a score) → 021 reporting.
+0. **Recruitment programme** (in order): 020 AI assist (summaries with
+   references, never a score; needs ANTHROPIC_API_KEY) → 021 reporting.
 1. **Employment changes** (plan 022) — scheduled job / manager / location
    changes with effective dates, manager field + circular-reporting guard,
    departments & locations management (tables exist, no UI), directory

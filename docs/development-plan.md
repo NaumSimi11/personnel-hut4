@@ -24,10 +24,15 @@ prototype in `../prototype` is the UI spec. Updated as milestones land.
 | Zoho Projects read-only sync: OAuth client, per-company mapping with routing exceptions, idempotent mirror upserts, CLI with dry-run ([docs](integrations-zoho.md)) | plan 015 | 15 tests incl. live-DB sync with a fixture client; awaiting Zoho credentials to go live |
 | Company management: admins create / edit / archive companies with a full profile — logo (public Storage bucket), accent colour, tagline, website, legal & registration, director / HR contact; archive is the only delete and every picker honours it | migration 0011, `CompanyFormPage` | E2E create with logo → profile → edit → archive → gone from pickers; schema smoke tests |
 | Offboarding: schedule departure (dates + restricted reason → plan), queue with blockers, kind-aware plan page, explicit "mark as former" allowed with open tasks; Departing badge; `auth.can()` capability hint for non-admin HR | migration 0010 + plan 016 | E2E schedule → queue → task → former; smoke tests for the RPCs |
+| Job workspace: five-step journey, tabs (Overview · Description + screening questions · Channels · Applications · Promotion · Activity), draft → ready → open lifecycle, careers publish / manual posting records / out-of-date flag, promotion as a separated-duties state machine (`advance_promotion`), recruitment audit trail | migration 0012 + plan 017 | E2E prepare → describe → publish → promote → applications → activity; smoke tests for transitions, self-review refusal, re-request |
 
 ## Next (in order)
 
-1. **Employment changes** (plan 017) — scheduled job / manager / location
+0. **Recruitment programme** (plans 018–021, in order): candidate review depth
+   (CV files, screening checklist, interviews + blind scorecards, offer
+   builder) → public careers page + intake → AI assist (summaries with
+   references, never a score) → reporting.
+1. **Employment changes** (plan 022) — scheduled job / manager / location
    changes with effective dates, manager field + circular-reporting guard,
    departments & locations management (tables exist, no UI), directory
    filters (active / upcoming / departing / former).

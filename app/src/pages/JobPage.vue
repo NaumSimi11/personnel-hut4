@@ -10,6 +10,8 @@ import ScreeningQuestionsEditor from '@/components/ScreeningQuestionsEditor.vue'
 import JobChannelsPanel from '@/components/JobChannelsPanel.vue'
 import JobPromotionPanel from '@/components/JobPromotionPanel.vue'
 import JobActivityPanel from '@/components/JobActivityPanel.vue'
+import JobInterviewsPanel from '@/components/JobInterviewsPanel.vue'
+import { criteriaFor, criteriaInput, type Criterion } from '@/lib/interviews'
 import {
   currentStep,
   friendlyRecruitmentError,
@@ -29,13 +31,14 @@ import {
  * arrives with plan 018.
  */
 
-type TabId = 'overview' | 'description' | 'channels' | 'applications' | 'promotion' | 'activity'
+type TabId = 'overview' | 'description' | 'channels' | 'applications' | 'interviews' | 'promotion' | 'activity'
 
 const TABS: { id: TabId; label: string }[] = [
   { id: 'overview', label: 'Overview' },
   { id: 'description', label: 'Description' },
   { id: 'channels', label: 'Channels' },
   { id: 'applications', label: 'Applications' },
+  { id: 'interviews', label: 'Interviews & Offer' },
   { id: 'promotion', label: 'Promotion' },
   { id: 'activity', label: 'Activity' },
 ]
@@ -46,6 +49,7 @@ type Job = {
   description: string | null
   description_revision: number
   screening_questions: unknown
+  scorecard_criteria: unknown
   status: string
   company_id: string
   company: { name: string } | null
@@ -86,6 +90,7 @@ const statusBusy = ref(false)
 
 const descriptionDraft = ref('')
 const questionsDraft = ref<ScreeningQuestion[]>([])
+const criteriaDraft = ref<Criterion[]>([])
 const descSaving = ref(false)
 const descError = ref<string | null>(null)
 const descSaved = ref(false)
@@ -158,7 +163,7 @@ async function loadJob(): Promise<void> {
   const { data, error: err } = await supabase
     .from('jobs')
     .select(
-      `id, title, description, description_revision, screening_questions, status, company_id,
+      `id, title, description, description_revision, screening_questions, scorecard_criteria, status, company_id,
        company:companies(name),
        request:hiring_requests(title, headcount, target_start_date,
          hiring_manager:people!hiring_requests_hiring_manager_id_fkey(full_name))`,
@@ -175,6 +180,19 @@ async function loadJob(): Promise<void> {
   const salvaged = salvageQuestions(data.screening_questions)
   questionsDraft.value = salvaged.questions
   questionsUnreadable.value = salvaged.lossy
+  criteriaDraft.value = criteriaFor(data.scorecard_criteria)
+}
+
+function updateCriterion(index: number, patch: Partial<Criterion>): void {
+  criteriaDraft.value = criteriaDraft.value.map((c, i) => (i === index ? { ...c, ...patch } : c))
+}
+
+function addCriterion(): void {
+  criteriaDraft.value = [...criteriaDraft.value, { id: crypto.randomUUID(), label: '' }]
+}
+
+function removeCriterion(index: number): void {
+  criteriaDraft.value = criteriaDraft.value.filter((_, i) => i !== index)
 }
 
 async function loadApplications(): Promise<void> {
@@ -219,6 +237,11 @@ async function saveDescription(): Promise<void> {
     descError.value = parsed.error.issues[0]?.message ?? 'Check the screening questions.'
     return
   }
+  const criteria = criteriaInput.safeParse(criteriaDraft.value)
+  if (!criteria.success) {
+    descError.value = criteria.error.issues[0]?.message ?? 'Check the scorecard criteria.'
+    return
+  }
   descSaving.value = true
   const revision = job.value.description_revision + 1
   const { error: err } = await supabase
@@ -226,6 +249,7 @@ async function saveDescription(): Promise<void> {
     .update({
       description: descriptionDraft.value,
       screening_questions: parsed.data,
+      scorecard_criteria: criteria.data,
       description_revision: revision,
     })
     .eq('id', job.value.id)
@@ -470,6 +494,46 @@ onMounted(async () => {
           ></textarea>
           <h3 class="sub-heading">Screening questions</h3>
           <ScreeningQuestionsEditor v-model="questionsDraft" :disabled="!canEdit" />
+
+          <h3 class="sub-heading">Scorecard criteria</h3>
+          <p class="sub-hint">What every interviewer rates 1–4. Existing scorecards keep the labels they were scored against.</p>
+          <div class="criteria">
+            <div v-for="(c, i) in criteriaDraft" :key="c.id" class="criterion-row">
+              <input
+                class="criterion-label"
+                :value="c.label"
+                :disabled="!canEdit"
+                maxlength="80"
+                :aria-label="`Criterion ${i + 1}`"
+                @input="updateCriterion(i, { label: ($event.target as HTMLInputElement).value })"
+              />
+              <input
+                class="criterion-description"
+                :value="c.description ?? ''"
+                :disabled="!canEdit"
+                maxlength="200"
+                placeholder="What good looks like (optional)"
+                :aria-label="`Description for criterion ${i + 1}`"
+                @input="updateCriterion(i, { description: ($event.target as HTMLInputElement).value })"
+              />
+              <button
+                class="button secondary small-btn"
+                type="button"
+                :disabled="!canEdit || criteriaDraft.length <= 1"
+                @click="removeCriterion(i)"
+              >
+                Remove
+              </button>
+            </div>
+            <button
+              class="button secondary small-btn"
+              type="button"
+              :disabled="!canEdit"
+              @click="addCriterion"
+            >
+              Add criterion
+            </button>
+          </div>
           <p v-if="descError" class="error-note" role="alert">{{ descError }}</p>
           <p v-if="descSaved" class="success-note">Description saved (revision {{ job.description_revision }}).</p>
           <div v-if="canEdit" class="actions">
@@ -549,6 +613,9 @@ onMounted(async () => {
         </div>
       </div>
 
+      <!-- Interviews & Offer -->
+      <JobInterviewsPanel v-else-if="activeTab === 'interviews'" :job-id="job.id" />
+
       <!-- Promotion -->
       <JobPromotionPanel
         v-else-if="activeTab === 'promotion'"
@@ -626,6 +693,19 @@ onMounted(async () => {
 .stage-count { display: inline-block; margin-right: 10px; text-transform: capitalize; }
 .field-label { display: block; font-size: 11px; font-weight: 550; color: #566653; margin-bottom: 7px; }
 .sub-heading { font-size: 12px; margin: 20px 0 10px; }
+.sub-hint { margin: -6px 0 10px; font-size: 11px; color: var(--muted); }
+.criteria { display: grid; gap: 8px; }
+.criterion-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.criterion-label, .criterion-description {
+  border: 1px solid #dce3d7;
+  padding: 9px 11px;
+  background: #fff;
+  color: var(--ink);
+  font-size: 12px;
+}
+.criterion-label { flex: 1; min-width: 160px; }
+.criterion-description { flex: 2; min-width: 220px; }
+.criteria .small-btn { align-self: center; }
 textarea {
   width: 100%;
   border: 1px solid #dce3d7;

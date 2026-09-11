@@ -706,4 +706,179 @@ end $$;
 reset role;
 set app.test_uid = '';
 
+
+-- ------------------------------------ interviews, scorecards, offers (0014)
+-- Alex (candidates.review in A) schedules an interview with himself and Fiona
+-- on the panel; Fiona (Finance, A: no candidates.* ) is given candidates.review
+-- so she can score too. Scorecards are blind for panel members.
+insert into public.grant_capabilities (grant_id, capability_key) values
+  ('40000000-0000-0000-0000-000000000002', 'candidates.view'),
+  ('40000000-0000-0000-0000-000000000002', 'candidates.review'),
+  ('40000000-0000-0000-0000-000000000002', 'offer.approve');
+
+set app.test_uid = '00000000-0000-0000-0000-000000000001';  -- Alex
+set role authenticated;
+insert into public.interviews (id, application_id, company_id, kind, scheduled_at, duration_minutes, created_by) values
+  ('b0000000-0000-0000-0000-000000000001', '90000000-0000-0000-0000-000000000001',
+   '10000000-0000-0000-0000-00000000000b',  -- forged: corrected to Company A by trigger
+   'technical', now() + interval '2 days', 60, '20000000-0000-0000-0000-000000000001');
+insert into public.interview_panel (interview_id, person_id) values
+  ('b0000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001'),
+  ('b0000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000002');
+do $$
+begin
+  assert (select company_id from public.interviews where id = 'b0000000-0000-0000-0000-000000000001')
+         = '10000000-0000-0000-0000-00000000000a', 'interview company is derived from the application';
+end $$;
+reset role;
+
+-- Fiona scores first.
+set app.test_uid = '00000000-0000-0000-0000-000000000002';
+set role authenticated;
+insert into public.scorecards (id, interview_id, application_id, company_id, author_id, ratings, recommendation, summary) values
+  ('c0000000-0000-0000-0000-000000000001', 'b0000000-0000-0000-0000-000000000001',
+   '90000000-0000-0000-0000-000000000001', '10000000-0000-0000-0000-00000000000a',
+   '20000000-0000-0000-0000-000000000002',
+   '[{"criterion_id":"skills","label":"Role skills","rating":3,"evidence":"Solid"}]', 'yes', 'Good fit');
+do $$
+begin
+  begin
+    insert into public.scorecards (interview_id, application_id, company_id, author_id, ratings, recommendation) values
+      ('b0000000-0000-0000-0000-000000000001', '90000000-0000-0000-0000-000000000001',
+       '10000000-0000-0000-0000-00000000000a', '20000000-0000-0000-0000-000000000001',  -- as Alex!
+       '[]', 'yes');
+    raise exception 'FAIL: scorecard accepted with a forged author';
+  exception when insufficient_privilege then null;
+  end;
+end $$;
+reset role;
+
+-- Alex is on the panel and has not scored: Fiona's card is hidden from him.
+set app.test_uid = '00000000-0000-0000-0000-000000000001';
+set role authenticated;
+do $$
+begin
+  assert (select count(*) from public.scorecards where interview_id = 'b0000000-0000-0000-0000-000000000001') = 0,
+    'panel member cannot read colleagues'' scorecards before submitting';
+  insert into public.scorecards (interview_id, application_id, company_id, author_id, ratings, recommendation) values
+    ('b0000000-0000-0000-0000-000000000001', '90000000-0000-0000-0000-000000000001',
+     '10000000-0000-0000-0000-00000000000a', '20000000-0000-0000-0000-000000000001',
+     '[{"criterion_id":"skills","label":"Role skills","rating":2,"evidence":"Gaps"}]', 'no');
+  assert (select count(*) from public.scorecards where interview_id = 'b0000000-0000-0000-0000-000000000001') = 2,
+    'after submitting, the panel member sees every scorecard';
+end $$;
+reset role;
+
+-- Ada (admin) is not on the panel: she sees both without scoring. Bea sees none.
+set app.test_uid = '00000000-0000-0000-0000-000000000004';
+set role authenticated;
+do $$
+begin
+  assert (select count(*) from public.scorecards) = 2, 'a reviewer off the panel sees all scorecards';
+end $$;
+reset role;
+set app.test_uid = '00000000-0000-0000-0000-000000000005';
+set role authenticated;
+do $$
+begin
+  assert (select count(*) from public.interviews) = 0, 'Company B HR sees no Company A interviews';
+  assert (select count(*) from public.scorecards) = 0, 'Company B HR sees no Company A scorecards';
+end $$;
+reset role;
+
+-- Offer: Alex drafts; cannot approve his own; Fiona approves; extended; accepted.
+set app.test_uid = '00000000-0000-0000-0000-000000000001';
+set role authenticated;
+insert into public.offers (id, application_id, company_id, terms, created_by) values
+  ('d0000000-0000-0000-0000-000000000001', '90000000-0000-0000-0000-000000000001',
+   '10000000-0000-0000-0000-00000000000a', '{"salary":52000,"currency":"EUR","pay_basis":"annual","start_date":"2026-11-02"}',
+   '20000000-0000-0000-0000-000000000001');
+do $$
+declare n int;
+begin
+  perform public.advance_offer('d0000000-0000-0000-0000-000000000001', 'in_approval', null);
+  begin
+    perform public.advance_offer('d0000000-0000-0000-0000-000000000001', 'approved', null);
+    raise exception 'FAIL: author approved their own offer';
+  exception when insufficient_privilege then null;
+  end;
+  update public.offers set status = 'approved' where id = 'd0000000-0000-0000-0000-000000000001';
+  get diagnostics n = row_count;
+  assert n = 0, 'offer status cannot be edited directly';
+end $$;
+reset role;
+set app.test_uid = '00000000-0000-0000-0000-000000000002';  -- Fiona: offer.approve
+set role authenticated;
+do $$
+begin
+  perform public.advance_offer('d0000000-0000-0000-0000-000000000001', 'approved', null);
+  assert (select approved_by from public.offers where id = 'd0000000-0000-0000-0000-000000000001')
+         = '20000000-0000-0000-0000-000000000002', 'approver is recorded';
+end $$;
+reset role;
+-- Extending needs only candidates.review (Alex has no offer.approve).
+set app.test_uid = '00000000-0000-0000-0000-000000000001';
+set role authenticated;
+do $$
+begin
+  perform public.advance_offer('d0000000-0000-0000-0000-000000000001', 'extended', null);
+  assert (select status from public.offers where id = 'd0000000-0000-0000-0000-000000000001') = 'extended',
+    'a reviewer without offer.approve can extend an approved offer';
+end $$;
+reset role;
+set app.test_uid = '00000000-0000-0000-0000-000000000002';
+set role authenticated;
+do $$
+begin
+  begin
+    perform public.advance_offer('d0000000-0000-0000-0000-000000000001', 'declined', null);
+    raise exception 'FAIL: declined without a reason';
+  exception when raise_exception then
+    if sqlerrm like 'FAIL:%' then raise; end if;
+  end;
+  perform public.advance_offer('d0000000-0000-0000-0000-000000000001', 'accepted', null);
+  assert (select status = 'accepted' and accepted_at is not null from public.offers
+          where id = 'd0000000-0000-0000-0000-000000000001'), 'acceptance is timestamped';
+end $$;
+reset role;
+set app.test_uid = '';
+
+
+-- Authorship is server-set and immutable, so self-approval cannot be dodged
+-- by inserting with a foreign or null created_by; scorecards cannot be moved
+-- to another company by their author. (A second application: one open offer
+-- per application is enforced by index.)
+insert into public.candidates (id, full_name) values ('80000000-0000-0000-0000-000000000003', 'Carl Candidate');
+insert into public.applications (id, job_id, company_id, candidate_id) values
+  ('90000000-0000-0000-0000-000000000003', '70000000-0000-0000-0000-000000000001',
+   '10000000-0000-0000-0000-00000000000a', '80000000-0000-0000-0000-000000000003');
+set app.test_uid = '00000000-0000-0000-0000-000000000002';  -- Fiona (review + approve)
+set role authenticated;
+insert into public.offers (id, application_id, company_id, terms, created_by) values
+  ('d0000000-0000-0000-0000-000000000002', '90000000-0000-0000-0000-000000000003',
+   '10000000-0000-0000-0000-00000000000a', '{"salary":1}', null);
+do $$
+declare n int;
+begin
+  assert (select created_by from public.offers where id = 'd0000000-0000-0000-0000-000000000002')
+         = '20000000-0000-0000-0000-000000000002', 'created_by is set from the session, not the client';
+  update public.offers set created_by = '20000000-0000-0000-0000-000000000001'
+    where id = 'd0000000-0000-0000-0000-000000000002';
+  assert (select created_by from public.offers where id = 'd0000000-0000-0000-0000-000000000002')
+         = '20000000-0000-0000-0000-000000000002', 'created_by cannot be changed';
+  perform public.advance_offer('d0000000-0000-0000-0000-000000000002', 'in_approval', null);
+  begin
+    perform public.advance_offer('d0000000-0000-0000-0000-000000000002', 'approved', null);
+    raise exception 'FAIL: author approved their own offer after tampering';
+  exception when insufficient_privilege then null;
+  end;
+  update public.scorecards set company_id = '10000000-0000-0000-0000-00000000000b'
+    where id = 'c0000000-0000-0000-0000-000000000001';
+  get diagnostics n = row_count;
+  assert (select company_id from public.scorecards where id = 'c0000000-0000-0000-0000-000000000001')
+         = '10000000-0000-0000-0000-00000000000a', 'a scorecard stays in its interview''s company';
+end $$;
+reset role;
+set app.test_uid = '';
+
 select 'SMOKE TESTS PASSED' as result;

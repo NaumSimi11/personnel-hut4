@@ -17,7 +17,8 @@ import { supabase } from '@/lib/supabase'
  */
 const emit = defineEmits<{ hired: [] }>()
 
-type Target = { applicationId: string; candidateName: string; jobTitle: string }
+// startDate: the accepted offer's agreed date when there is one (plan 018b).
+type Target = { applicationId: string; candidateName: string; jobTitle: string; startDate?: string }
 
 const dialog = ref<HTMLDialogElement | null>(null)
 const target = ref<Target | null>(null)
@@ -34,7 +35,7 @@ function open(t: Target): void {
   form.value = {
     fullName: t.candidateName,
     jobTitle: t.jobTitle,
-    startDate: new Date().toISOString().slice(0, 10),
+    startDate: t.startDate ?? new Date().toISOString().slice(0, 10),
     managerId: '',
   }
   dialog.value?.showModal()

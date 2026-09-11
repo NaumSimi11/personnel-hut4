@@ -1538,6 +1538,103 @@ export type Database = {
           },
         ]
       }
+      interview_panel: {
+        Row: {
+          interview_id: string
+          person_id: string
+        }
+        Insert: {
+          interview_id: string
+          person_id: string
+        }
+        Update: {
+          interview_id?: string
+          person_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "interview_panel_interview_id_fkey"
+            columns: ["interview_id"]
+            isOneToOne: false
+            referencedRelation: "interviews"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "interview_panel_person_id_fkey"
+            columns: ["person_id"]
+            isOneToOne: false
+            referencedRelation: "people"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      interviews: {
+        Row: {
+          application_id: string
+          company_id: string
+          created_at: string
+          created_by: string | null
+          duration_minutes: number
+          id: string
+          kind: string
+          location: string | null
+          notes: string | null
+          scheduled_at: string
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          application_id: string
+          company_id: string
+          created_at?: string
+          created_by?: string | null
+          duration_minutes?: number
+          id?: string
+          kind?: string
+          location?: string | null
+          notes?: string | null
+          scheduled_at: string
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          application_id?: string
+          company_id?: string
+          created_at?: string
+          created_by?: string | null
+          duration_minutes?: number
+          id?: string
+          kind?: string
+          location?: string | null
+          notes?: string | null
+          scheduled_at?: string
+          status?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "interviews_application_id_fkey"
+            columns: ["application_id"]
+            isOneToOne: false
+            referencedRelation: "applications"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "interviews_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "interviews_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "people"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       it_requests: {
         Row: {
           assignee_id: string | null
@@ -1705,6 +1802,7 @@ export type Database = {
           description_revision: number
           hiring_request_id: string | null
           id: string
+          scorecard_criteria: Json
           screening_questions: Json
           status: string
           title: string
@@ -1718,6 +1816,7 @@ export type Database = {
           description_revision?: number
           hiring_request_id?: string | null
           id?: string
+          scorecard_criteria?: Json
           screening_questions?: Json
           status?: string
           title: string
@@ -1731,6 +1830,7 @@ export type Database = {
           description_revision?: number
           hiring_request_id?: string | null
           id?: string
+          scorecard_criteria?: Json
           screening_questions?: Json
           status?: string
           title?: string
@@ -1840,6 +1940,9 @@ export type Database = {
           approved_by: string | null
           company_id: string
           created_at: string
+          created_by: string | null
+          decline_reason: string | null
+          extended_at: string | null
           id: string
           status: string
           terms: Json
@@ -1851,6 +1954,9 @@ export type Database = {
           approved_by?: string | null
           company_id: string
           created_at?: string
+          created_by?: string | null
+          decline_reason?: string | null
+          extended_at?: string | null
           id?: string
           status?: string
           terms?: Json
@@ -1862,6 +1968,9 @@ export type Database = {
           approved_by?: string | null
           company_id?: string
           created_at?: string
+          created_by?: string | null
+          decline_reason?: string | null
+          extended_at?: string | null
           id?: string
           status?: string
           terms?: Json
@@ -1887,6 +1996,13 @@ export type Database = {
             columns: ["company_id"]
             isOneToOne: false
             referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "offers_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "people"
             referencedColumns: ["id"]
           },
         ]
@@ -2599,6 +2715,74 @@ export type Database = {
         }
         Relationships: []
       }
+      scorecards: {
+        Row: {
+          application_id: string
+          author_id: string
+          company_id: string
+          id: string
+          interview_id: string
+          ratings: Json
+          recommendation: string
+          submitted_at: string
+          summary: string | null
+          updated_at: string
+        }
+        Insert: {
+          application_id: string
+          author_id: string
+          company_id: string
+          id?: string
+          interview_id: string
+          ratings?: Json
+          recommendation: string
+          submitted_at?: string
+          summary?: string | null
+          updated_at?: string
+        }
+        Update: {
+          application_id?: string
+          author_id?: string
+          company_id?: string
+          id?: string
+          interview_id?: string
+          ratings?: Json
+          recommendation?: string
+          submitted_at?: string
+          summary?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "scorecards_application_id_fkey"
+            columns: ["application_id"]
+            isOneToOne: false
+            referencedRelation: "applications"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "scorecards_author_id_fkey"
+            columns: ["author_id"]
+            isOneToOne: false
+            referencedRelation: "people"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "scorecards_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "scorecards_interview_id_fkey"
+            columns: ["interview_id"]
+            isOneToOne: false
+            referencedRelation: "interviews"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       task_templates: {
         Row: {
           active: boolean
@@ -2757,6 +2941,10 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      advance_offer: {
+        Args: { p_offer_id: string; p_reason?: string; p_to_status: string }
+        Returns: Json
+      }
       advance_promotion: {
         Args: {
           p_brief?: Json

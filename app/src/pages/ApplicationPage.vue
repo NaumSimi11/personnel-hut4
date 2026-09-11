@@ -5,18 +5,22 @@ import { z } from 'zod'
 import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/stores/auth'
 import ApplicationFilesCard from '@/components/ApplicationFilesCard.vue'
+import ApplicationInterviewsCard from '@/components/ApplicationInterviewsCard.vue'
+import ApplicationOfferCard from '@/components/ApplicationOfferCard.vue'
 import ConfirmHireDialog from '@/components/ConfirmHireDialog.vue'
 import RejectApplicationDialog from '@/components/RejectApplicationDialog.vue'
 import { friendlyRecruitmentError, salvageQuestions } from '@/lib/jobWorkspace'
 import { answersFromRows, mergeAnswers, type AnswerRow } from '@/lib/screeningAnswers'
+import { criteriaFor } from '@/lib/interviews'
+import type { OfferTerms } from '@/lib/offers'
 
 /**
  * One application, everything in one place (plan 018a): who the candidate
  * is and where they came from, their files, their answers to the job's
  * screening questions, the timeline of stage changes and notes, and the
  * decision panel — a named owner, the next action and its date, the stage
- * actions, and a reasoned rejection or withdrawal. Interviews, scorecards and
- * the offer arrive with plan 018b.
+ * actions, and a reasoned rejection or withdrawal. Interviews with blind
+ * scorecards and the offer state machine (plan 018b) sit in the same column.
  */
 
 type Application = {
@@ -34,7 +38,13 @@ type Application = {
   screening_answers: unknown
   employment_period_id: string | null
   candidate: { id: string; full_name: string; email: string | null; phone: string | null } | null
-  job: { id: string; title: string; screening_questions: unknown; company: { name: string } | null } | null
+  job: {
+    id: string
+    title: string
+    screening_questions: unknown
+    scorecard_criteria: unknown
+    company: { name: string } | null
+  } | null
   owner: { full_name: string } | null
   employment_period: { person_id: string } | null
 }
@@ -85,6 +95,9 @@ const stageError = ref<string | null>(null)
 
 const rejectDialog = ref<InstanceType<typeof RejectApplicationDialog> | null>(null)
 const confirmHireDialog = ref<InstanceType<typeof ConfirmHireDialog> | null>(null)
+const offerCard = ref<InstanceType<typeof ApplicationOfferCard> | null>(null)
+
+const criteria = computed(() => criteriaFor(application.value?.job?.scorecard_criteria))
 
 const canReview = computed(() =>
   application.value ? auth.can(application.value.company_id, 'candidates.review') : false,
@@ -129,7 +142,7 @@ async function load(): Promise<void> {
         `id, job_id, company_id, stage_key, owner_id, next_action, next_action_due, source_channel_key,
          received_at, rejected_reason, withdrawn_reason, screening_answers, employment_period_id,
          candidate:candidates(id, full_name, email, phone),
-         job:jobs(id, title, screening_questions, company:companies(name)),
+         job:jobs(id, title, screening_questions, scorecard_criteria, company:companies(name)),
          owner:people!applications_owner_id_fkey(full_name),
          employment_period:employment_periods!applications_employment_period_id_fkey(person_id)`,
       )
@@ -283,10 +296,13 @@ function onDecided(payload: { mode: 'reject' | 'withdraw'; reason: string }): vo
 
 function openConfirmHire(): void {
   if (!application.value) return
+  // An accepted offer carries the agreed start date into the hire.
+  const accepted: OfferTerms | null = offerCard.value?.liveStatus() === 'accepted' ? offerCard.value.liveTerms() : null
   confirmHireDialog.value?.open({
     applicationId: application.value.id,
     candidateName: application.value.candidate?.full_name ?? '',
     jobTitle: application.value.job?.title ?? '',
+    startDate: accepted?.start_date,
   })
 }
 
@@ -331,6 +347,21 @@ onMounted(load)
       <div class="layout">
         <div class="main-column">
           <ApplicationFilesCard :application-id="application.id" :company-id="application.company_id" :can-review="canReview" />
+
+          <ApplicationInterviewsCard
+            :application-id="application.id"
+            :company-id="application.company_id"
+            :can-review="canReview"
+            :criteria="criteria"
+          />
+
+          <ApplicationOfferCard
+            ref="offerCard"
+            :application-id="application.id"
+            :company-id="application.company_id"
+            :can-review="canReview"
+            :stage="application.stage_key"
+          />
 
           <div class="card">
             <div class="card-head">

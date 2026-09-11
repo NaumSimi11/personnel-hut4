@@ -60,6 +60,11 @@ export const router = createRouter({
           name: 'access-editor',
           component: () => import('@/pages/AccessEditorPage.vue'),
         },
+        {
+          path: 'me',
+          name: 'my-workspace',
+          component: () => import('@/pages/MyWorkspacePage.vue'),
+        },
       ],
     },
     { path: '/:pathMatch(.*)*', redirect: '/' },

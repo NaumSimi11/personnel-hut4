@@ -21,6 +21,11 @@ export const router = createRouter({
       children: [
         { path: '', redirect: { name: 'directory' } },
         {
+          path: 'overview',
+          name: 'overview',
+          component: () => import('@/pages/HomePage.vue'),
+        },
+        {
           path: 'directory',
           name: 'directory',
           component: () => import('@/pages/DirectoryPage.vue'),

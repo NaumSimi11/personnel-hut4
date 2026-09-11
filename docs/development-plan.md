@@ -26,12 +26,12 @@ prototype in `../prototype` is the UI spec. Updated as milestones land.
 | Offboarding: schedule departure (dates + restricted reason → plan), queue with blockers, kind-aware plan page, explicit "mark as former" allowed with open tasks; Departing badge; `auth.can()` capability hint for non-admin HR | migration 0010 + plan 016 | E2E schedule → queue → task → former; smoke tests for the RPCs |
 | Job workspace: five-step journey, tabs (Overview · Description + screening questions · Channels · Applications · Promotion · Activity), draft → ready → open lifecycle, careers publish / manual posting records / out-of-date flag, promotion as a separated-duties state machine (`advance_promotion`), recruitment audit trail | migration 0012 + plan 017 | E2E prepare → describe → publish → promote → applications → activity; smoke tests for transitions, self-review refusal, re-request |
 | Candidate page: files in a private bucket behind signed links (`application_files`, company derived server-side), screening answers, timeline + notes, decision panel (owner / next action / due), reasoned reject & withdraw, stage moves guarded against stale views | migration 0013 + plan 018a | E2E upload → unsigned read refused → signed read OK → answers → decision → note → reject; smoke tests for company derivation, RLS, private bucket, junk-object safety |
+| Interviews with a panel; blind scorecards (1–4 + evidence per criterion, recommendation) hidden from panel members until they submit, enforced in RLS; scorecard criteria per job; offer state machine (`advance_offer`: draft → in approval → approved by someone else → extended → accepted / declined, withdraw any time; author server-set and immutable); Confirm hire takes the accepted start date; job Interviews & Offer tab | migration 0014 + plan 018b | E2E schedule → hidden colleague card → submit → both visible → offer → self-approval blocked → withdraw → colleague's offer approved → extended → accepted → hired with agreed date; smoke tests for blind rule, forged author/company, transitions |
 
 ## Next (in order)
 
-0. **Recruitment programme** (in order): 018b interviews + blind scorecards +
-   offer builder → 019 public careers page + intake → 020 AI assist
-   (summaries with references, never a score) → 021 reporting.
+0. **Recruitment programme** (in order): 019 public careers page + intake →
+   020 AI assist (summaries with references, never a score) → 021 reporting.
 1. **Employment changes** (plan 022) — scheduled job / manager / location
    changes with effective dates, manager field + circular-reporting guard,
    departments & locations management (tables exist, no UI), directory

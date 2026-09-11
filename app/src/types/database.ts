@@ -3024,6 +3024,7 @@ export type Database = {
         Args: { p_change_id: string }
         Returns: undefined
       }
+      compensation_summary: { Args: { p_company_id: string }; Returns: Json }
       complete_departure: {
         Args: { p_employment_period_id: string }
         Returns: Json
@@ -3035,6 +3036,21 @@ export type Database = {
           p_job_title: string
           p_manager_id?: string
           p_start_date: string
+        }
+        Returns: Json
+      }
+      decide_compensation: {
+        Args: { p_decision: string; p_note?: string; p_record_id: string }
+        Returns: Json
+      }
+      propose_compensation: {
+        Args: {
+          p_amount: number
+          p_currency: string
+          p_effective_date: string
+          p_note?: string
+          p_pay_basis_key: string
+          p_period_id: string
         }
         Returns: Json
       }

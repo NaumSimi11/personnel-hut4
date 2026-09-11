@@ -6,6 +6,7 @@ import { useAuthStore } from '@/stores/auth'
 import PrivateDetailsCard from '@/components/PrivateDetailsCard.vue'
 import ScheduleDepartureDialog from '@/components/ScheduleDepartureDialog.vue'
 import ScheduleChangeDialog, { type ChangeTarget } from '@/components/ScheduleChangeDialog.vue'
+import CompensationCard from '@/components/CompensationCard.vue'
 import { describeChanges, type Lookups } from '@/lib/employmentChanges'
 import { departureState, friendlyDepartureError } from '@/lib/departure'
 
@@ -401,6 +402,7 @@ onMounted(async () => {
             </div>
           </div>
 
+          <CompensationCard :person-id="personId" :periods="employments" />
           <PrivateDetailsCard :person-id="personId" />
         </div>
       </div>

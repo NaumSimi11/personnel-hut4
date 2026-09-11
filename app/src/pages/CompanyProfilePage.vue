@@ -11,6 +11,7 @@ import {
 } from '@/lib/companyForm'
 import CompanyTile from '@/components/CompanyTile.vue'
 import CompanyStructurePanel from '@/components/CompanyStructurePanel.vue'
+import CompanyPayrollPanel from '@/components/CompanyPayrollPanel.vue'
 
 /**
  * One company, tabbed (plan 014): Overview / People / Access / Hiring /
@@ -24,7 +25,7 @@ import CompanyStructurePanel from '@/components/CompanyStructurePanel.vue'
  * links and history never 404.
  */
 
-type TabId = 'overview' | 'people' | 'structure' | 'access' | 'hiring' | 'projects' | 'integrations'
+type TabId = 'overview' | 'people' | 'structure' | 'access' | 'hiring' | 'payroll' | 'projects' | 'integrations'
 
 const TABS: { id: TabId; label: string }[] = [
   { id: 'overview', label: 'Overview' },
@@ -32,6 +33,7 @@ const TABS: { id: TabId; label: string }[] = [
   { id: 'structure', label: 'Structure' },
   { id: 'access', label: 'Access' },
   { id: 'hiring', label: 'Hiring' },
+  { id: 'payroll', label: 'Payroll' },
   { id: 'projects', label: 'Projects' },
   { id: 'integrations', label: 'Integrations' },
 ]
@@ -144,10 +146,13 @@ async function archiveCompany(): Promise<void> {
   router.push({ name: 'companies' })
 }
 
+// Payroll is only offered to payroll.summary holders; the function refuses everyone else anyway.
+const visibleTabs = computed(() => TABS.filter((t) => t.id !== 'payroll' || auth.can(companyId, 'payroll.summary')))
+
 const activeTab = computed<TabId>(() => {
   const raw = route.query.tab
   const id = Array.isArray(raw) ? raw[0] : raw
-  return TABS.some((t) => t.id === id) ? (id as TabId) : 'overview'
+  return visibleTabs.value.some((t) => t.id === id) ? (id as TabId) : 'overview'
 })
 
 function selectTab(id: TabId): void {
@@ -328,7 +333,7 @@ onMounted(load)
 
         <div class="tabs" role="tablist" aria-label="Company profile">
           <button
-            v-for="tab in TABS"
+            v-for="tab in visibleTabs"
             :key="tab.id"
             class="tab"
             :class="{ active: activeTab === tab.id }"
@@ -579,6 +584,8 @@ onMounted(load)
             </div>
           </div>
         </div>
+
+        <CompanyPayrollPanel v-else-if="activeTab === 'payroll'" :company-id="companyId" />
 
         <div v-else-if="activeTab === 'projects'" class="card">
           <div class="card-head"><h2>Projects</h2></div>

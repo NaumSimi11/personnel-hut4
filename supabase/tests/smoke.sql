@@ -1121,4 +1121,130 @@ begin
     'becoming former cancels pending changes';
 end $$;
 
+
+-- ------------------------------------------------------- compensation (0017)
+-- Alex (A) gets salary.propose; Fiona (Finance, A) gets salary.approve.
+-- Omar has an approved 50000 EUR annual since 2024 (seeded above; his
+-- period is now former, so use Alex's period 3000…01 as the subject).
+insert into public.grant_capabilities (grant_id, capability_key) values
+  ('40000000-0000-0000-0000-000000000001', 'salary.view'),
+  ('40000000-0000-0000-0000-000000000001', 'salary.propose'),
+  ('40000000-0000-0000-0000-000000000002', 'salary.approve');
+insert into public.compensation_records
+  (employment_period_id, amount, currency, pay_basis_key, effective_date, status) values
+  ('30000000-0000-0000-0000-000000000001', 60000, 'EUR', 'annual', '2024-01-01', 'approved');
+
+set app.test_uid = '00000000-0000-0000-0000-000000000001';  -- Alex proposes
+set role authenticated;
+do $$
+declare r jsonb; n int;
+begin
+  r := public.propose_compensation('30000000-0000-0000-0000-000000000001', 66000, 'eur', 'annual', current_date, 'Market adjustment');
+  assert (select status from public.compensation_records where id = (r->>'record_id')::uuid) = 'proposed', 'proposal recorded';
+  assert (select currency from public.compensation_records where id = (r->>'record_id')::uuid) = 'EUR', 'currency upper-cased';
+  begin
+    perform public.propose_compensation('30000000-0000-0000-0000-000000000001', 70000, 'EUR', 'annual', current_date, null);
+    raise exception 'FAIL: second open proposal accepted';
+  exception when raise_exception then
+    if sqlerrm like 'FAIL:%' then raise; end if;
+  end;
+  begin
+    perform public.decide_compensation((r->>'record_id')::uuid, 'approved', null);
+    raise exception 'FAIL: proposer approved their own proposal';
+  exception when insufficient_privilege then null;
+  end;
+  update public.compensation_records set status = 'approved' where id = (r->>'record_id')::uuid;
+  get diagnostics n = row_count;
+  assert n = 0, 'compensation status cannot be edited directly';
+end $$;
+reset role;
+
+set app.test_uid = '00000000-0000-0000-0000-000000000002';  -- Fiona approves
+set role authenticated;
+do $$
+declare v_id uuid;
+begin
+  select id into v_id from public.compensation_records
+    where employment_period_id = '30000000-0000-0000-0000-000000000001' and status = 'proposed';
+  perform public.decide_compensation(v_id, 'approved', 'Agreed');
+  assert (select status from public.compensation_records where id = v_id) = 'approved', 'approved';
+  assert (select approved_by from public.compensation_records where id = v_id) = '20000000-0000-0000-0000-000000000002', 'approver recorded';
+  assert (select status from public.compensation_records
+          where employment_period_id = '30000000-0000-0000-0000-000000000001' and amount = 60000) = 'superseded',
+    'the previous approved record is superseded';
+  assert (select end_date from public.compensation_records
+          where employment_period_id = '30000000-0000-0000-0000-000000000001' and amount = 60000) = current_date - 1,
+    'the previous record ends the day before';
+  assert (select count(*) from public.compensation_records
+          where employment_period_id = '30000000-0000-0000-0000-000000000001') = 2, 'history is kept';
+  -- Fiona (payroll.summary) sees the company total: Alex 66000 annual; Omar's
+  -- period is former so it is excluded.
+  assert ((public.compensation_summary('10000000-0000-0000-0000-00000000000a')->'totals'->0->>'annualised')::numeric) = 66000,
+    'payroll summary annualises current approved amounts';
+end $$;
+reset role;
+
+-- Omar (no salary.*) sees only his own record; Bea (B) nothing; Omar cannot propose.
+set app.test_uid = '00000000-0000-0000-0000-000000000003';
+set role authenticated;
+do $$
+begin
+  assert (select count(*) from public.compensation_records) = 1, 'a person sees only their own compensation';
+  begin
+    perform public.propose_compensation('30000000-0000-0000-0000-000000000003', 1, 'EUR', 'annual', current_date, null);
+    raise exception 'FAIL: proposal without salary.propose accepted';
+  exception when insufficient_privilege then null;
+  end;
+  begin
+    perform public.compensation_summary('10000000-0000-0000-0000-00000000000a');
+    raise exception 'FAIL: payroll summary without payroll.summary';
+  exception when insufficient_privilege then null;
+  end;
+end $$;
+reset role;
+set app.test_uid = '';
+
+-- Departure edges: a proposal effective after a scheduled end date is refused;
+-- a proposal left open when the employment ends can be rejected, never
+-- approved. Alex's period gets a far-future end date, then Dana's (4) goes
+-- former with an open proposal. Headcount counts people, not records.
+update public.employment_periods set end_date = '2100-01-01' where id = '30000000-0000-0000-0000-000000000001';
+insert into public.compensation_records
+  (employment_period_id, amount, currency, pay_basis_key, effective_date, status, proposed_by) values
+  ('30000000-0000-0000-0000-000000000004', 1000, 'EUR', 'monthly', current_date, 'proposed', '20000000-0000-0000-0000-000000000001');
+update public.employment_periods set status = 'former', end_date = current_date - 1 where id = '30000000-0000-0000-0000-000000000004';
+set app.test_uid = '00000000-0000-0000-0000-000000000001';  -- Alex proposes
+set role authenticated;
+do $$
+begin
+  begin
+    perform public.propose_compensation('30000000-0000-0000-0000-000000000001', 70000, 'EUR', 'annual', '2100-02-01', null);
+    raise exception 'FAIL: proposal effective after the employment ends accepted';
+  exception when raise_exception then
+    if sqlerrm not like '%after the employment ends%' then raise; end if;
+  end;
+end $$;
+reset role;
+set app.test_uid = '00000000-0000-0000-0000-000000000002';  -- Fiona decides
+set role authenticated;
+do $$
+declare v_id uuid := (select id from public.compensation_records where employment_period_id = '30000000-0000-0000-0000-000000000004');
+begin
+  begin
+    perform public.decide_compensation(v_id, 'approved', null);
+    raise exception 'FAIL: proposal approved on a former period';
+  exception when raise_exception then
+    if sqlerrm not like '%has ended%' then raise; end if;
+  end;
+  perform public.decide_compensation(v_id, 'rejected', 'Left the company');
+  assert (select status from public.compensation_records where id = v_id) = 'rejected', 'open proposal rejected after departure';
+  assert (public.compensation_summary('10000000-0000-0000-0000-00000000000a')->'totals'->0->>'people')::int = 1
+     and (public.compensation_summary('10000000-0000-0000-0000-00000000000a')->>'covered')::int = 1,
+    'headcount counts people on active employment';
+end $$;
+reset role;
+
+reset role;
+set app.test_uid = '';
+
 select 'SMOKE TESTS PASSED' as result;

@@ -3,6 +3,7 @@ import { computed, onMounted, ref } from 'vue'
 import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/stores/auth'
 import { departureState } from '@/lib/departure'
+import CompensationCard from '@/components/CompensationCard.vue'
 
 /**
  * My workspace: the signed-in person's own record — their profile, their
@@ -330,6 +331,8 @@ onMounted(load)
               </span>
             </div>
           </div>
+
+          <CompensationCard v-if="auth.personId" :person-id="auth.personId" :periods="employments" title="My compensation" />
 
           <div class="card">
             <div class="card-head">

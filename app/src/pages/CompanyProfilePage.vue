@@ -13,6 +13,7 @@ import CompanyTile from '@/components/CompanyTile.vue'
 import CompanyStructurePanel from '@/components/CompanyStructurePanel.vue'
 import CompanyPayrollPanel from '@/components/CompanyPayrollPanel.vue'
 import WorkflowOwnersPanel from '@/components/WorkflowOwnersPanel.vue'
+import DocumentsCard from '@/components/DocumentsCard.vue'
 import InviteAccessDialog from '@/components/InviteAccessDialog.vue'
 import { upcoming } from '@/lib/companyOps'
 import { todayLocal } from '@/lib/compensation'
@@ -29,7 +30,17 @@ import { todayLocal } from '@/lib/compensation'
  * links and history never 404.
  */
 
-type TabId = 'overview' | 'people' | 'structure' | 'access' | 'hiring' | 'payroll' | 'projects' | 'integrations' | 'settings'
+type TabId =
+  | 'overview'
+  | 'people'
+  | 'structure'
+  | 'access'
+  | 'hiring'
+  | 'documents'
+  | 'payroll'
+  | 'projects'
+  | 'integrations'
+  | 'settings'
 
 const TABS: { id: TabId; label: string }[] = [
   { id: 'overview', label: 'Overview' },
@@ -37,6 +48,7 @@ const TABS: { id: TabId; label: string }[] = [
   { id: 'structure', label: 'Structure' },
   { id: 'access', label: 'Access' },
   { id: 'hiring', label: 'Hiring' },
+  { id: 'documents', label: 'Documents' },
   { id: 'payroll', label: 'Payroll' },
   { id: 'projects', label: 'Projects' },
   { id: 'integrations', label: 'Integrations' },
@@ -164,6 +176,8 @@ const visibleTabs = computed(() =>
 )
 const inviteDialog = ref<InstanceType<typeof InviteAccessDialog> | null>(null)
 const upcomingPeople = computed(() => upcoming(employments.value, todayLocal()))
+// A stable array: a fresh literal on every render would make the card reload.
+const documentScope = computed(() => (company.value ? [{ id: companyId, name: company.value.name }] : []))
 
 const activeTab = computed<TabId>(() => {
   const raw = route.query.tab
@@ -648,6 +662,8 @@ onMounted(load)
             </div>
           </div>
         </div>
+
+        <DocumentsCard v-else-if="activeTab === 'documents'" :companies="documentScope" title="Company documents" />
 
         <CompanyPayrollPanel v-else-if="activeTab === 'payroll'" :company-id="companyId" />
 

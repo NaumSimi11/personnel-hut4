@@ -7,6 +7,7 @@ import PrivateDetailsCard from '@/components/PrivateDetailsCard.vue'
 import ScheduleDepartureDialog from '@/components/ScheduleDepartureDialog.vue'
 import ScheduleChangeDialog, { type ChangeTarget } from '@/components/ScheduleChangeDialog.vue'
 import CompensationCard from '@/components/CompensationCard.vue'
+import DocumentsCard from '@/components/DocumentsCard.vue'
 import { describeChanges, type Lookups } from '@/lib/employmentChanges'
 import { departureState, friendlyDepartureError } from '@/lib/departure'
 
@@ -45,6 +46,12 @@ const personId = route.params.personId as string
 const person = ref<{ full_name: string; work_email: string | null; user_id: string | null } | null>(null)
 const employments = ref<Employment[]>([])
 const grants = ref<Grant[]>([])
+// Companies the person has (had) employment with — where their documents may live.
+const personCompanies = computed(() => {
+  const seen = new Map<string, { id: string; name: string }>()
+  for (const e of employments.value) if (!seen.has(e.company_id)) seen.set(e.company_id, { id: e.company_id, name: e.company?.name ?? '' })
+  return [...seen.values()]
+})
 const companies = ref<{ id: string; name: string }[]>([])
 const employmentTypes = ref<{ key: string; label: string }[]>([])
 const loading = ref(true)
@@ -403,6 +410,7 @@ onMounted(async () => {
           </div>
 
           <CompensationCard :person-id="personId" :periods="employments" />
+          <DocumentsCard :person-id="personId" :companies="personCompanies" />
           <PrivateDetailsCard :person-id="personId" />
         </div>
       </div>

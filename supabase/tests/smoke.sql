@@ -1329,6 +1329,133 @@ begin
   end;
 end $$;
 
+-- --------------------------------------------------------- documents (0019)
+-- Alex (A) gets documents.view + documents.upload. Provenance is server-set,
+-- scope and categories are checked, a new version archives the old one,
+-- lineage is frozen, and storage objects follow the rows' visibility.
+insert into public.grant_capabilities (grant_id, capability_key) values
+  ('40000000-0000-0000-0000-000000000001', 'documents.view'),
+  ('40000000-0000-0000-0000-000000000001', 'documents.upload');
+set app.test_uid = '00000000-0000-0000-0000-000000000001';  -- Alex
+set role authenticated;
+do $$
+declare v1 uuid; v2 uuid;
+begin
+  insert into public.documents (company_id, person_id, category_key, title, storage_path, visibility, uploaded_by, version)
+    values ('10000000-0000-0000-0000-00000000000a', '20000000-0000-0000-0000-000000000003', 'employment_agreement',
+            '  Contract 2024 ', '10000000-0000-0000-0000-00000000000a/20000000-0000-0000-0000-000000000003/d1.pdf',
+            'person_and_hr', '20000000-0000-0000-0000-000000000002', 7)
+    returning id into v1;
+  assert (select uploaded_by from public.documents where id = v1) = '20000000-0000-0000-0000-000000000001',
+    'the uploader is the signed-in person, whatever the client sent';
+  assert (select version from public.documents where id = v1) = 1, 'first version is 1';
+  assert (select title from public.documents where id = v1) = 'Contract 2024', 'title trimmed';
+  begin
+    insert into public.documents (company_id, person_id, category_key, title, storage_path)
+      values ('10000000-0000-0000-0000-00000000000a', '20000000-0000-0000-0000-000000000003', 'registration', 'Test doc',
+              '10000000-0000-0000-0000-00000000000a/20000000-0000-0000-0000-000000000003/bad1.pdf');
+    raise exception 'FAIL: company category accepted on a person document';
+  exception when raise_exception then
+    if sqlerrm not like '%company documents%' then raise; end if;
+  end;
+  begin
+    insert into public.documents (company_id, person_id, category_key, title, storage_path)
+      values ('10000000-0000-0000-0000-00000000000a', '20000000-0000-0000-0000-000000000005', 'identification', 'Test doc',
+              '10000000-0000-0000-0000-00000000000a/20000000-0000-0000-0000-000000000005/bad2.pdf');
+    raise exception 'FAIL: document for a person with no employment in the company accepted';
+  exception when raise_exception then
+    if sqlerrm not like '%no employment%' then raise; end if;
+  end;
+  -- New version.
+  insert into public.documents (company_id, person_id, category_key, title, storage_path, supersedes_id)
+    values ('10000000-0000-0000-0000-00000000000a', '20000000-0000-0000-0000-000000000003', 'employment_agreement',
+            'Contract 2024', '10000000-0000-0000-0000-00000000000a/20000000-0000-0000-0000-000000000003/d2.pdf', v1)
+    returning id into v2;
+  assert (select version from public.documents where id = v2) = 2, 'new version is 2';
+  assert (select archived_at from public.documents where id = v1) is not null, 'the old version is archived';
+  begin
+    insert into public.documents (company_id, person_id, category_key, title, storage_path, supersedes_id)
+      values ('10000000-0000-0000-0000-00000000000a', '20000000-0000-0000-0000-000000000003', 'employment_agreement',
+              'Test doc', '10000000-0000-0000-0000-00000000000a/20000000-0000-0000-0000-000000000003/bad3.pdf', v1);
+    raise exception 'FAIL: superseding an archived document accepted';
+  exception when raise_exception then
+    if sqlerrm not like '%archived%' then raise; end if;
+  end;
+  update public.documents set version = 9, title = 'Renamed', uploaded_by = '20000000-0000-0000-0000-000000000002' where id = v2;
+  assert (select version from public.documents where id = v2) = 2, 'version is frozen';
+  assert (select uploaded_by from public.documents where id = v2) = '20000000-0000-0000-0000-000000000001', 'uploader is frozen';
+  assert (select title from public.documents where id = v2) = 'Renamed', 'title may change';
+  -- HR-only document and a company document.
+  insert into public.documents (company_id, person_id, category_key, title, storage_path, visibility)
+    values ('10000000-0000-0000-0000-00000000000a', '20000000-0000-0000-0000-000000000003', 'other', 'HR note',
+            '10000000-0000-0000-0000-00000000000a/20000000-0000-0000-0000-000000000003/d3.pdf', 'hr_only');
+  insert into public.documents (company_id, person_id, category_key, title, storage_path, visibility)
+    values ('10000000-0000-0000-0000-00000000000a', null, 'registration', 'Company registration',
+            '10000000-0000-0000-0000-00000000000a/company/c1.pdf', 'company_public');
+  begin
+    insert into public.documents (company_id, person_id, category_key, title, storage_path)
+      values ('10000000-0000-0000-0000-00000000000a', null, 'identification', 'Test doc',
+              '10000000-0000-0000-0000-00000000000a/company/bad4.pdf');
+    raise exception 'FAIL: person category accepted on a company document';
+  exception when raise_exception then
+    if sqlerrm not like '%person''s documents%' then raise; end if;
+  end;
+  -- Storage: objects only under a company where Alex may upload.
+  insert into storage.objects (bucket_id, name) values
+    ('employee-documents', '10000000-0000-0000-0000-00000000000a/20000000-0000-0000-0000-000000000003/d2.pdf'),
+    ('employee-documents', '10000000-0000-0000-0000-00000000000a/20000000-0000-0000-0000-000000000003/d3.pdf');
+  begin
+    insert into storage.objects (bucket_id, name) values ('employee-documents', '10000000-0000-0000-0000-00000000000b/company/z.pdf');
+    raise exception 'FAIL: upload into another company''s folder accepted';
+  exception when insufficient_privilege then null;
+  end;
+  begin
+    insert into storage.objects (bucket_id, name) values ('employee-documents', 'not-a-uuid/z.pdf');
+    raise exception 'FAIL: upload outside a company folder accepted';
+  exception when insufficient_privilege then null;
+  end;
+  -- An upload whose row was refused can be cleaned up by the uploader.
+  insert into storage.objects (bucket_id, name) values
+    ('employee-documents', '10000000-0000-0000-0000-00000000000a/20000000-0000-0000-0000-000000000003/orphan.pdf');
+  delete from storage.objects where bucket_id = 'employee-documents' and name like '%/orphan.pdf';
+  assert not exists (select 1 from storage.objects where name like '%/orphan.pdf'), 'the uploader can remove an orphaned object';
+end $$;
+reset role;
+
+-- Omar (self; former in A but still holding grants there): sees his
+-- person_and_hr versions and the public company document, never the HR-only
+-- note, and only the object a visible row points to.
+set app.test_uid = '00000000-0000-0000-0000-000000000003';
+set role authenticated;
+do $$
+begin
+  assert (select count(*) from public.documents where person_id = '20000000-0000-0000-0000-000000000003') = 2,
+    'the person sees both versions of their own document';
+  assert not exists (select 1 from public.documents where title = 'HR note'), 'hr_only stays with HR';
+  assert (select count(*) from storage.objects where bucket_id = 'employee-documents') = 1,
+    'only the object behind a visible row is readable';
+  assert exists (select 1 from public.documents where title = 'Company registration'),
+    'a grant holder in the company sees its public documents';
+  begin
+    insert into public.documents (company_id, person_id, category_key, title, storage_path)
+      values ('10000000-0000-0000-0000-00000000000a', '20000000-0000-0000-0000-000000000003', 'other', 'mine',
+              '10000000-0000-0000-0000-00000000000a/20000000-0000-0000-0000-000000000003/self.pdf');
+    raise exception 'FAIL: self-upload without documents.upload accepted';
+  exception when insufficient_privilege then null;
+  end;
+end $$;
+reset role;
+-- Bea (Company B HR) sees nothing of Company A.
+set app.test_uid = '00000000-0000-0000-0000-000000000005';
+set role authenticated;
+do $$
+begin
+  assert (select count(*) from public.documents) = 0, 'other-company HR sees no documents';
+  assert (select count(*) from storage.objects where bucket_id = 'employee-documents') = 0, 'nor their objects';
+end $$;
+reset role;
+set app.test_uid = '';
+
 reset role;
 set app.test_uid = '';
 

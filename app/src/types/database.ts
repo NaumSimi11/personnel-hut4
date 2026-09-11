@@ -1006,7 +1006,11 @@ export type Database = {
           company_id: string
           created_at: string
           id: string
+          mime_type: string | null
+          note: string | null
+          original_name: string | null
           person_id: string | null
+          size_bytes: number | null
           storage_path: string
           supersedes_id: string | null
           title: string
@@ -1020,7 +1024,11 @@ export type Database = {
           company_id: string
           created_at?: string
           id?: string
+          mime_type?: string | null
+          note?: string | null
+          original_name?: string | null
           person_id?: string | null
+          size_bytes?: number | null
           storage_path: string
           supersedes_id?: string | null
           title: string
@@ -1034,7 +1042,11 @@ export type Database = {
           company_id?: string
           created_at?: string
           id?: string
+          mime_type?: string | null
+          note?: string | null
+          original_name?: string | null
           person_id?: string | null
+          size_bytes?: number | null
           storage_path?: string
           supersedes_id?: string | null
           title?: string

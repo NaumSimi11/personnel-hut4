@@ -4,6 +4,7 @@ import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/stores/auth'
 import { departureState } from '@/lib/departure'
 import CompensationCard from '@/components/CompensationCard.vue'
+import DocumentsCard from '@/components/DocumentsCard.vue'
 
 /**
  * My workspace: the signed-in person's own record — their profile, their
@@ -73,6 +74,11 @@ const employments = ref<Employment[]>([])
 const plan = ref<MyPlan | null>(null)
 const myTasks = ref<MyTaskRow[]>([])
 const grants = ref<Grant[]>([])
+const myCompanies = computed(() => {
+  const seen = new Map<string, { id: string; name: string }>()
+  for (const e of employments.value) if (!seen.has(e.company_id)) seen.set(e.company_id, { id: e.company_id, name: e.company?.name ?? '' })
+  return [...seen.values()]
+})
 const capabilities = ref<Capability[]>([])
 const projects = ref<MyProjectRow[]>([])
 
@@ -333,6 +339,7 @@ onMounted(load)
           </div>
 
           <CompensationCard v-if="auth.personId" :person-id="auth.personId" :periods="employments" title="My compensation" />
+          <DocumentsCard v-if="auth.personId" :person-id="auth.personId" :companies="myCompanies" title="My documents" />
 
           <div class="card">
             <div class="card-head">

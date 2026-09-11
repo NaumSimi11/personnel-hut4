@@ -71,6 +71,18 @@ async function listedJobs(companyId: string): Promise<JobRow[]> {
 
 type Part = { field: string; value?: string; file?: { buffer: Buffer; filename: string; mimetype: string } }
 
+/**
+ * @fastify/multipart throws coded errors when a limit is hit while the body
+ * streams; the client reads `{ error }`, so those become a 413 in that shape.
+ */
+export function multipartLimitMessage(e: unknown): string | null {
+  const code = (e as { code?: string } | null)?.code
+  if (code === 'FST_REQ_FILE_TOO_LARGE') return 'Your CV must be 10 MB or smaller.'
+  if (code === 'FST_FILES_LIMIT') return 'Attach one CV only.'
+  if (code === 'FST_FIELDS_LIMIT' || code === 'FST_PARTS_LIMIT') return 'The form sent too many fields.'
+  return null
+}
+
 async function readParts(req: FastifyRequest): Promise<Part[]> {
   const parts: Part[] = []
   for await (const part of req.parts()) {
@@ -110,14 +122,23 @@ export async function registerCareersRoutes(app: FastifyInstance): Promise<void>
     '/api/careers/:code/jobs/:jobId/applications',
     async (req, reply) => {
       if (!req.isMultipart()) return fail(reply, 400, 'Send the application as a form with your CV attached.')
-      const parts = await readParts(req)
+      // Before the body is read: the limit is there to bound the work an
+      // abusive connection can cause, so it must not wait for a 10 MB upload.
+      if (!ipLimiter.allow(`ip:${req.ip}`)) return fail(reply, 429, 'Too many applications from this connection. Try again later.')
+
+      let parts: Part[]
+      try {
+        parts = await readParts(req)
+      } catch (e) {
+        const message = multipartLimitMessage(e)
+        if (!message) throw e
+        return fail(reply, 413, message)
+      }
       const fields = Object.fromEntries(parts.filter((p) => p.value !== undefined).map((p) => [p.field, p.value]))
       const cv = parts.find((p) => p.field === 'cv' && p.file)?.file
 
       // Bots fill the hidden field. Say nothing; store nothing.
       if (isHoneypotTripped(fields)) return reply.status(201).send({ reference: referenceFor(randomUUID()) })
-
-      if (!ipLimiter.allow(`ip:${req.ip}`)) return fail(reply, 429, 'Too many applications from this connection. Try again later.')
 
       const parsed = applicationInput.safeParse(fields)
       if (!parsed.success) return fail(reply, 400, parsed.error.issues[0]?.message ?? 'Check the form.')
@@ -170,6 +191,12 @@ export async function registerCareersRoutes(app: FastifyInstance): Promise<void>
           .maybeSingle()
 
         let candidateId = existingCandidate?.id ?? null
+        // Everything written for this submission, undone together if the CV
+        // cannot be stored — a first-time applicant's candidate row included.
+        const rollback = async (applicationId: string) => {
+          await db.from('applications').delete().eq('id', applicationId)
+          if (!existingCandidate && candidateId) await db.from('candidates').delete().eq('id', candidateId)
+        }
         if (!candidateId) {
           const { data: created, error: candErr } = await db
             .from('candidates')
@@ -202,6 +229,9 @@ export async function registerCareersRoutes(app: FastifyInstance): Promise<void>
           return fail(reply, 500, 'We could not save your application. Please try again.')
         }
 
+        // The CV is part of the application: if it cannot be stored, the
+        // application is taken back so the candidate can resubmit (the
+        // one-open-application index would otherwise refuse the retry).
         const fileId = randomUUID()
         const path = `${application.id}/${fileId}.${cvExtension(cv.mimetype)}`
         const { error: uploadErr } = await db.storage
@@ -209,24 +239,35 @@ export async function registerCareersRoutes(app: FastifyInstance): Promise<void>
           .upload(path, cv.buffer, { contentType: cv.mimetype })
         if (uploadErr) {
           req.log.error({ err: uploadErr }, 'careers: cv upload failed')
-        } else {
-          const { error: fileErr } = await db.from('application_files').insert({
-            id: fileId,
-            application_id: application.id,
-            company_id: company.id,
-            kind: 'cv',
-            storage_path: path,
-            original_name: cv.filename.slice(0, 200),
-            mime_type: cv.mimetype,
-            size_bytes: cv.buffer.length,
-          })
-          if (fileErr) req.log.error({ err: fileErr }, 'careers: application_files insert failed')
+          await rollback(application.id)
+          return fail(reply, 500, 'We could not store your CV. Please try again.')
+        }
+        const { error: fileErr } = await db.from('application_files').insert({
+          id: fileId,
+          application_id: application.id,
+          company_id: company.id,
+          kind: 'cv',
+          storage_path: path,
+          original_name: cv.filename.slice(0, 200),
+          mime_type: cv.mimetype,
+          size_bytes: cv.buffer.length,
+        })
+        if (fileErr) {
+          req.log.error({ err: fileErr }, 'careers: application_files insert failed')
+          await db.storage.from('candidate-files').remove([path])
+          await rollback(application.id)
+          return fail(reply, 500, 'We could not store your CV. Please try again.')
         }
 
+        // What the form said, kept on the timeline: an existing candidate
+        // record is reused by email, never silently overwritten.
+        const submitted = existingCandidate
+          ? ` Submitted as ${input.name}${input.phone ? `, ${input.phone}` : ''}.`
+          : ''
         await db.from('application_events').insert({
           application_id: application.id,
           kind: 'note',
-          body: `Applied through the ${company.name} careers page.`,
+          body: `Applied through the ${company.name} careers page.${submitted}`,
         })
 
         emailLimiter.record(`email:${input.email}`)

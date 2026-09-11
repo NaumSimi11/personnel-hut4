@@ -244,7 +244,7 @@ async function saveDescription(): Promise<void> {
   }
   descSaving.value = true
   const revision = job.value.description_revision + 1
-  const { error: err } = await supabase
+  const { data, error: err } = await supabase
     .from('jobs')
     .update({
       description: descriptionDraft.value,
@@ -253,9 +253,12 @@ async function saveDescription(): Promise<void> {
       description_revision: revision,
     })
     .eq('id', job.value.id)
+    .select('id')
+    .maybeSingle()
   descSaving.value = false
-  if (err) {
-    descError.value = friendlyJobsError(err.message)
+  // Zero rows back means RLS refused the write (a grant revoked since the page loaded).
+  if (err || !data) {
+    descError.value = friendlyJobsError(err?.message ?? 'row-level security')
     return
   }
   job.value = {

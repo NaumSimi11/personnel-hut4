@@ -130,9 +130,17 @@ async function upsert(key: string, patch: Record<string, unknown>): Promise<bool
  */
 async function openJobIfNeeded(): Promise<void> {
   if (props.jobStatus !== 'ready') return
-  const { error: err } = await supabase.from('jobs').update({ status: 'open' }).eq('id', props.jobId)
-  if (err) {
-    error.value = `Listed, but the job could not be opened: ${friendlyRecruitmentError(err.message)}`
+  // A refused UPDATE matches zero rows under RLS (jobs.publish does not imply
+  // jobs.edit), so select the row back and treat "nothing came back" as a refusal.
+  const { data, error: err } = await supabase
+    .from('jobs')
+    .update({ status: 'open' })
+    .eq('id', props.jobId)
+    .select('id')
+    .maybeSingle()
+  if (err || !data) {
+    const reason = err ? friendlyRecruitmentError(err.message) : 'opening a job needs jobs.edit in this company'
+    error.value = `Listed, but the job could not be opened: ${reason}`
     return
   }
   emit('opened')

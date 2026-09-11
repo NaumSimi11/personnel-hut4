@@ -8,7 +8,8 @@ import {
   currentRecord,
   formatAmount,
   proposalInput,
-  todayLocal,
+  recordLabel,
+  todayDb,
   type CompensationAction,
 } from '@/lib/compensation'
 
@@ -78,7 +79,7 @@ function recordsFor(periodId: string): Record_[] {
     .filter((r) => r.employment_period_id === periodId)
     .sort((a, b) => b.effective_date.localeCompare(a.effective_date) || b.created_at.localeCompare(a.created_at))
 }
-const current = (periodId: string) => currentRecord(recordsFor(periodId), todayLocal())
+const current = (periodId: string) => currentRecord(recordsFor(periodId), todayDb())
 const pending = (periodId: string) => recordsFor(periodId).find((r) => r.status === 'proposed') ?? null
 const history = (periodId: string) => recordsFor(periodId).filter((r) => r.status !== 'proposed')
 
@@ -129,7 +130,7 @@ function startProposal(period: Period): void {
     amount: now ? String(now.amount) : '',
     currency: now?.currency ?? '',
     payBasisKey: now?.pay_basis_key ?? 'annual',
-    effectiveDate: todayLocal(),
+    effectiveDate: todayDb(),
     note: '',
   }
   error.value = null
@@ -286,7 +287,7 @@ watch(() => props.periods.map((p) => p.id).join(','), load)
                 <template v-if="r.note"> · {{ r.note }}</template>
               </small>
             </div>
-            <span class="badge" :class="r.status">{{ STATUS_LABELS[r.status] ?? r.status }}</span>
+            <span class="badge" :class="recordLabel(r).toLowerCase()">{{ recordLabel(r) }}</span>
           </div>
         </div>
       </div>
@@ -316,6 +317,8 @@ watch(() => props.periods.map((p) => p.id).join(','), load)
 .history-title { padding: 12px 24px 4px; font-size: 10px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; }
 .comp-history-row { display: flex; align-items: center; gap: 13px; padding: 10px 24px; }
 .badge.superseded, .badge.rejected { background: #f1f1ee; color: var(--muted); }
+.badge.current { background: #edf5ed; color: #3e744e; }
+.badge.scheduled { background: #eef3fb; color: #3b5a8a; }
 .badge.approved { background: #edf5ed; color: #3e744e; }
 .notice { margin: 14px 24px 0; padding: 10px 14px; border-radius: 9px; background: #edf5ed; color: #3e744e; font-size: 12px; }
 .error { margin: 14px 24px 0; padding: 10px 14px; border-radius: 9px; background: #fbeaea; color: var(--red); font-size: 12px; }

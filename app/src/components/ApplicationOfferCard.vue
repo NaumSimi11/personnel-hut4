@@ -59,9 +59,11 @@ function actionsFor(o: Offer) {
   return offerActions(o, auth.personId, can)
 }
 
+/** Only a complete set of terms renders; a seeded `{}` shows as "no terms yet". */
 function terms(o: Offer): OfferTerms | null {
-  const t = o.terms
+  const t = o.terms as Partial<OfferTerms> | null
   if (!t || typeof t !== 'object') return null
+  if (typeof t.salary !== 'number' || typeof t.currency !== 'string' || typeof t.start_date !== 'string') return null
   return t as OfferTerms
 }
 

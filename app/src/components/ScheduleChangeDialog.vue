@@ -2,6 +2,7 @@
 import { ref } from 'vue'
 import { supabase } from '@/lib/supabase'
 import { changeInput, diffChanges, type ChangeForm, type PeriodFields } from '@/lib/employmentChanges'
+import { todayDb } from '@/lib/compensation'
 
 /**
  * Schedule a change to an employment period (plan 022): effective date,
@@ -35,7 +36,7 @@ const busy = ref(false)
 
 function empty(): ChangeForm {
   return {
-    effectiveDate: new Date().toISOString().slice(0, 10),
+    effectiveDate: todayDb(),
     jobTitle: '',
     departmentId: '',
     locationId: '',

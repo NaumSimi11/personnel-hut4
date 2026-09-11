@@ -1021,11 +1021,18 @@ end $$;
 reset role;
 update public.employment_changes set effective_date = current_date
   where status = 'scheduled' and changes->>'job_title' = 'Head of Finance';
-set app.test_uid = '00000000-0000-0000-0000-000000000003';  -- anyone signed in may trigger apply
+set app.test_uid = '00000000-0000-0000-0000-000000000003';  -- Omar: no employment.edit anywhere
 set role authenticated;
 do $$
 begin
-  assert public.apply_due_employment_changes() = 1, 'apply_due applies the one due change';
+  assert public.apply_due_employment_changes() = 0, 'apply_due does nothing for a caller who may not edit employment';
+end $$;
+reset role;
+set app.test_uid = '00000000-0000-0000-0000-000000000001';  -- Alex: employment.edit in A
+set role authenticated;
+do $$
+begin
+  assert public.apply_due_employment_changes() = 1, 'apply_due applies the one due change where the caller may edit';
 end $$;
 reset role;
 -- Read back as superuser: Omar cannot see Fiona's period under RLS.
@@ -1170,8 +1177,8 @@ begin
   assert (select status from public.compensation_records where id = v_id) = 'approved', 'approved';
   assert (select approved_by from public.compensation_records where id = v_id) = '20000000-0000-0000-0000-000000000002', 'approver recorded';
   assert (select status from public.compensation_records
-          where employment_period_id = '30000000-0000-0000-0000-000000000001' and amount = 60000) = 'superseded',
-    'the previous approved record is superseded';
+          where employment_period_id = '30000000-0000-0000-0000-000000000001' and amount = 60000) = 'approved',
+    'the previous record stays approved (closed by its end date, not a status flip)';
   assert (select end_date from public.compensation_records
           where employment_period_id = '30000000-0000-0000-0000-000000000001' and amount = 60000) = current_date - 1,
     'the previous record ends the day before';
@@ -1455,6 +1462,146 @@ begin
 end $$;
 reset role;
 set app.test_uid = '';
+
+-- ------------------------------------------------------ hardening 2 (0020)
+-- 1. Direct inserts cannot skip the offer / promotion state machines.
+set app.test_uid = '00000000-0000-0000-0000-000000000004';  -- Ada (admin holds jobs.edit)
+set role authenticated;
+do $$
+declare v_id uuid;
+begin
+  insert into public.promotions (job_id, company_id, channel_key, status, copy, drafted_by)
+    values ('70000000-0000-0000-0000-000000000001', '10000000-0000-0000-0000-00000000000a', 'other_manual', 'in_review',
+            'Copy written straight into review', null)
+    returning id into v_id;
+  assert (select status from public.promotions where id = v_id) = 'requested', 'a promotion always starts requested';
+  assert (select copy from public.promotions where id = v_id) is null, 'and without copy';
+  assert (select requested_by from public.promotions where id = v_id) = '20000000-0000-0000-0000-000000000004',
+    'requested by the signed-in person';
+end $$;
+reset role;
+set app.test_uid = '00000000-0000-0000-0000-000000000001';  -- Alex: candidates.review in A
+set role authenticated;
+do $$
+declare v_id uuid;
+begin
+  insert into public.offers (application_id, company_id, terms, status, approved_by, accepted_at)
+    values ((select id from public.applications where candidate_id = '80000000-0000-0000-0000-000000000018' limit 1),
+            '10000000-0000-0000-0000-00000000000a', '{"salary": 1}', 'accepted',
+            '20000000-0000-0000-0000-000000000002', now())
+    returning id into v_id;
+  assert (select status from public.offers where id = v_id) = 'draft', 'an offer always starts as a draft';
+  assert (select approved_by from public.offers where id = v_id) is null, 'with no approver';
+  assert (select accepted_at from public.offers where id = v_id) is null, 'and not accepted';
+  delete from public.offers where id = v_id;
+end $$;
+reset role;
+set app.test_uid = '';
+delete from public.offers where terms = '{"salary": 1}'::jsonb;
+
+-- 2. A promotion seeded into review with no drafter (service role only, now
+--    that inserts are pinned) is reviewable by an approver; the compare is
+--    null-safe so it never depends on SQL three-valued logic.
+update public.promotions set status = 'in_review', copy = 'Seeded straight into review', drafted_by = null
+  where channel_key = 'other_manual' and job_id = '70000000-0000-0000-0000-000000000001';
+set app.test_uid = '00000000-0000-0000-0000-000000000003';  -- Omar holds marketing.approve
+set role authenticated;
+do $$
+begin
+  perform public.advance_promotion(
+    (select id from public.promotions where channel_key = 'other_manual' and job_id = '70000000-0000-0000-0000-000000000001'),
+    'approved');
+  assert (select status from public.promotions where channel_key = 'other_manual'
+          and job_id = '70000000-0000-0000-0000-000000000001') = 'approved',
+    'a reviewer who is not the drafter approves';
+end $$;
+reset role;
+set app.test_uid = '';
+
+-- 3. Approving a future-dated raise keeps the current record in force.
+insert into public.compensation_records (employment_period_id, amount, currency, pay_basis_key, effective_date, status, proposed_by) values
+  ('30000000-0000-0000-0000-000000000021', 1000, 'EUR', 'monthly', '2025-01-01', 'approved', null),
+  ('30000000-0000-0000-0000-000000000021', 1200, 'EUR', 'monthly', current_date + 60, 'proposed', '20000000-0000-0000-0000-000000000001');
+insert into public.grant_capabilities (grant_id, capability_key) values
+  ('40000000-0000-0000-0000-000000000002', 'payroll.summary')
+on conflict do nothing;
+set app.test_uid = '00000000-0000-0000-0000-000000000002';  -- Fiona: salary.approve + payroll.summary
+set role authenticated;
+do $$
+declare v_before numeric; v_after numeric;
+begin
+  v_before := (select sum((t->>'annualised')::numeric) from jsonb_array_elements(
+    public.compensation_summary('10000000-0000-0000-0000-00000000000a')->'totals') t);
+  perform public.decide_compensation(
+    (select id from public.compensation_records where employment_period_id = '30000000-0000-0000-0000-000000000021' and status = 'proposed'),
+    'approved');
+  v_after := (select sum((t->>'annualised')::numeric) from jsonb_array_elements(
+    public.compensation_summary('10000000-0000-0000-0000-00000000000a')->'totals') t);
+  assert v_after = v_before, 'a future raise changes nothing in today''s payroll total';
+  assert (select status from public.compensation_records where employment_period_id = '30000000-0000-0000-0000-000000000021' and amount = 1000)
+         = 'approved', 'the current record stays approved';
+  assert (select end_date from public.compensation_records where employment_period_id = '30000000-0000-0000-0000-000000000021' and amount = 1000)
+         = current_date + 59, 'and ends the day before the raise';
+end $$;
+reset role;
+set app.test_uid = '';
+
+-- 4. Due changes apply only where the caller may edit employment.
+insert into public.employment_changes (employment_period_id, company_id, effective_date, changes, status)
+  values ('30000000-0000-0000-0000-000000000005', '10000000-0000-0000-0000-00000000000b', current_date - 1,
+          '{"job_title":"HR Lead"}', 'scheduled');
+set app.test_uid = '00000000-0000-0000-0000-000000000001';  -- Alex: employment.edit in A only
+set role authenticated;
+do $$
+begin
+  perform public.apply_due_employment_changes();
+end $$;
+reset role;
+set app.test_uid = '';
+do $$
+begin
+  assert (select status from public.employment_changes where employment_period_id = '30000000-0000-0000-0000-000000000005') = 'scheduled',
+    'a change in another company waits for someone who may apply it';
+  perform public.apply_due_employment_changes();   -- service role / scheduler: everywhere
+  assert (select status from public.employment_changes where employment_period_id = '30000000-0000-0000-0000-000000000005') = 'applied',
+    'the scheduler applies it';
+end $$;
+
+-- 5. A direct manager edit cannot create a loop: Quinn reports to Pia (0018 test).
+do $$
+begin
+  begin
+    update public.employment_periods set manager_id = '20000000-0000-0000-0000-000000000022'
+      where id = '30000000-0000-0000-0000-000000000021';
+    raise exception 'FAIL: direct update created a reporting loop';
+  exception when raise_exception then
+    if sqlerrm not like '%circular%' then raise; end if;
+  end;
+  begin
+    update public.employment_periods set manager_id = person_id where id = '30000000-0000-0000-0000-000000000021';
+    raise exception 'FAIL: self-management accepted';
+  exception when raise_exception then
+    if sqlerrm not like '%own manager%' then raise; end if;
+  end;
+end $$;
+
+-- 6. Candidate file audit rows carry no text or file names.
+do $$
+begin
+  assert not exists (select 1 from public.activity_log where entity_type = 'application_files'
+                     and (coalesce(after, '{}') ? 'extracted_text' or coalesce(after, '{}') ? 'original_name')),
+    'application_files audit is redacted';
+end $$;
+
+-- 7. A company website is a web URL or nothing.
+do $$
+begin
+  begin
+    update public.companies set website = 'javascript:alert(1)' where id = '10000000-0000-0000-0000-00000000000a';
+    raise exception 'FAIL: non-web website accepted';
+  exception when check_violation then null;
+  end;
+end $$;
 
 reset role;
 set app.test_uid = '';

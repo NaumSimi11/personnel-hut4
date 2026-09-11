@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import { departureState } from '@/lib/departure'
+import { todayDb } from '@/lib/compensation'
 
 /**
  * Employment changes (plan 022): the form that schedules a dated change to
@@ -81,7 +82,7 @@ type PeriodLite = { status: string; start_date: string; end_date: string | null 
  * already started (latest first), else the soonest upcoming one, else the
  * latest former one. A future transfer never hides the current job.
  */
-export function currentPeriod<T extends PeriodLite>(periods: T[], today = new Date().toISOString().slice(0, 10)): T | null {
+export function currentPeriod<T extends PeriodLite>(periods: T[], today = todayDb()): T | null {
   const live = periods.filter((p) => p.status !== 'former')
   const started = live.filter((p) => p.start_date <= today).sort((a, b) => b.start_date.localeCompare(a.start_date))
   if (started[0]) return started[0]

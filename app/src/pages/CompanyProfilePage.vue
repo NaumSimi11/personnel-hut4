@@ -16,7 +16,7 @@ import WorkflowOwnersPanel from '@/components/WorkflowOwnersPanel.vue'
 import DocumentsCard from '@/components/DocumentsCard.vue'
 import InviteAccessDialog from '@/components/InviteAccessDialog.vue'
 import { upcoming } from '@/lib/companyOps'
-import { todayLocal } from '@/lib/compensation'
+import { todayDb } from '@/lib/compensation'
 
 /**
  * One company, tabbed (plan 014): Overview / People / Access / Hiring /
@@ -175,7 +175,7 @@ const visibleTabs = computed(() =>
   }),
 )
 const inviteDialog = ref<InstanceType<typeof InviteAccessDialog> | null>(null)
-const upcomingPeople = computed(() => upcoming(employments.value, todayLocal()))
+const upcomingPeople = computed(() => upcoming(employments.value, todayDb()))
 // A stable array: a fresh literal on every render would make the card reload.
 const documentScope = computed(() => (company.value ? [{ id: companyId, name: company.value.name }] : []))
 
@@ -413,7 +413,7 @@ onMounted(load)
               <div v-for="e in upcomingPeople.starters" :key="e.id" class="row upcoming-row">
                 <div class="row-text">
                   <strong>{{ e.person?.full_name ?? '—' }}</strong>
-                  <small>{{ e.job_title }} · {{ e.start_date < todayLocal() ? 'was due to start' : 'starts' }} {{ e.start_date }}</small>
+                  <small>{{ e.job_title }} · {{ e.start_date < todayDb() ? 'was due to start' : 'starts' }} {{ e.start_date }}</small>
                 </div>
                 <span class="badge green">starting</span>
                 <router-link v-if="e.person" class="button secondary small-btn" :to="{ name: 'person', params: { personId: e.person.id } }">

@@ -44,14 +44,19 @@ export function formatAmount(amount: number, currency: string): string {
 
 type RecordLite = { status: string; effective_date: string; end_date: string | null }
 
-/** The calendar date where the viewer is (the database compares against its own current_date). */
-export function todayLocal(now = new Date()): string {
-  const pad = (n: number) => String(n).padStart(2, '0')
-  return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`
+/**
+ * "Today" as the database sees it. Every rule that mentions today
+ * (effective dates, due changes, payroll in force) runs on Postgres
+ * `current_date`, and the Supabase project is UTC — so the app must use the
+ * UTC calendar date too, or a viewer near local midnight would schedule a
+ * change the database still considers in the future (or already past).
+ */
+export function todayDb(now = new Date()): string {
+  return now.toISOString().slice(0, 10)
 }
 
 /** The approved record in force on `today`, or null when none covers it. */
-export function currentRecord<T extends RecordLite>(records: T[], today = todayLocal()): T | null {
+export function currentRecord<T extends RecordLite>(records: T[], today = todayDb()): T | null {
   return (
     records.find(
       (r) => r.status === 'approved' && r.effective_date <= today && (r.end_date === null || r.end_date >= today),
@@ -80,5 +85,16 @@ export const STATUS_LABELS: Record<string, string> = {
   proposed: 'Awaiting decision',
   approved: 'Approved',
   rejected: 'Rejected',
-  superseded: 'Superseded',
+}
+
+/**
+ * A closed record stays 'approved' with an end date (migration 0020), so
+ * what the reader sees — superseded, current, scheduled — comes from the
+ * dates, never from a status flip.
+ */
+export function recordLabel(record: RecordLite, today = todayDb()): string {
+  if (record.status !== 'approved') return STATUS_LABELS[record.status] ?? record.status
+  if (record.end_date !== null && record.end_date < today) return 'Superseded'
+  if (record.effective_date > today) return 'Scheduled'
+  return 'Current'
 }

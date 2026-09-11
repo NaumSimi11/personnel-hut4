@@ -277,7 +277,9 @@ async function changeStage(to: string, body?: string, extra: Record<string, unkn
     if (!err) await load()
     return
   }
-  await supabase.from('application_events').insert({
+  // The timeline entry feeds the recruitment report (interviewed, stale), so a
+  // failure here is shown rather than swallowed — the stage itself did move.
+  const { error: eventErr } = await supabase.from('application_events').insert({
     application_id: application.value.id,
     kind: 'stage_change',
     from_stage_key: from,
@@ -285,6 +287,10 @@ async function changeStage(to: string, body?: string, extra: Record<string, unkn
     body: body ?? null,
     actor_id: auth.personId,
   })
+  if (eventErr) {
+    stageError.value = `Stage moved, but the timeline entry could not be saved: ${eventErr.message}`
+    console.error('Stage-change event insert failed:', eventErr.message)
+  }
   stageBusy.value = false
   await load()
 }

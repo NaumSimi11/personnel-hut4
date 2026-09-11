@@ -13,6 +13,7 @@ import {
   referenceFor,
   validateCv,
 } from './careers.js'
+import { multipartLimitMessage } from './careersRoutes.js'
 
 describe('RateLimiter', () => {
   it('allows up to the limit inside the window, then refuses until it slides', () => {
@@ -244,5 +245,22 @@ describe('serialised', () => {
   it('releases the key when the call throws', async () => {
     await expect(serialised('c', async () => { throw new Error('boom') })).rejects.toThrow('boom')
     await expect(serialised('c', async () => 'ok')).resolves.toBe('ok')
+  })
+})
+
+describe('publicCompany website', () => {
+  const base = { id: 'c', name: 'Praedium', short_code: 'PRAE', brand: {} }
+  it('passes http(s) links through and drops anything else — the page renders it as a link for anonymous visitors', () => {
+    expect(publicCompany({ ...base, website: 'https://praedium.example' }, 'https://x.supabase.co').website).toBe('https://praedium.example')
+    expect(publicCompany({ ...base, website: 'javascript:alert(1)' }, 'https://x.supabase.co').website).toBeNull()
+    expect(publicCompany({ ...base, website: 'praedium.example' }, 'https://x.supabase.co').website).toBeNull()
+  })
+})
+
+describe('multipartLimitMessage', () => {
+  it('maps the multipart limit codes to the { error } contract and ignores other errors', () => {
+    expect(multipartLimitMessage({ code: 'FST_REQ_FILE_TOO_LARGE' })).toMatch(/10 MB/)
+    expect(multipartLimitMessage({ code: 'FST_FILES_LIMIT' })).toMatch(/one CV/)
+    expect(multipartLimitMessage(new Error('boom'))).toBeNull()
   })
 })

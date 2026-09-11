@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { annualise, compensationActions, currentRecord, formatAmount, proposalInput, todayLocal } from './compensation'
+import { annualise, compensationActions, currentRecord, formatAmount, proposalInput, recordLabel, todayDb } from './compensation'
 
 describe('proposalInput', () => {
   it('coerces the amount, upper-cases the currency and requires a date', () => {
@@ -51,9 +51,21 @@ describe('compensationActions', () => {
   })
 })
 
-describe('todayLocal', () => {
-  it('is the calendar date in the browser timezone, not UTC', () => {
-    const d = new Date(2026, 8, 11, 0, 30) // local midnight + 30 min
-    expect(todayLocal(d)).toBe('2026-09-11')
+describe('todayDb', () => {
+  it("is the UTC calendar date — the database's current_date — whatever the browser's zone", () => {
+    expect(todayDb(new Date(Date.UTC(2026, 8, 11, 23, 30)))).toBe('2026-09-11')
+    expect(todayDb(new Date(Date.UTC(2026, 8, 12, 0, 5)))).toBe('2026-09-12')
+  })
+})
+
+describe('recordLabel', () => {
+  const today = '2026-09-12'
+  it('reads the state from the dates, since a closed record stays approved', () => {
+    expect(recordLabel({ status: 'approved', effective_date: '2024-01-01', end_date: '2025-12-31' }, today)).toBe('Superseded')
+    expect(recordLabel({ status: 'approved', effective_date: '2026-01-01', end_date: null }, today)).toBe('Current')
+    expect(recordLabel({ status: 'approved', effective_date: '2026-01-01', end_date: '2026-12-31' }, today)).toBe('Current')
+    expect(recordLabel({ status: 'approved', effective_date: '2027-01-01', end_date: null }, today)).toBe('Scheduled')
+    expect(recordLabel({ status: 'rejected', effective_date: '2026-01-01', end_date: null }, today)).toBe('Rejected')
+    expect(recordLabel({ status: 'proposed', effective_date: '2026-01-01', end_date: null }, today)).toBe('Awaiting decision')
   })
 })

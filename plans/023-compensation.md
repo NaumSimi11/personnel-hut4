@@ -22,8 +22,9 @@
   effective date; one open proposal per period.
 - `decide_compensation(p_record_id, p_decision, p_note)`: `salary.approve`,
   approver ≠ proposer; approving closes the currently approved record the
-  day before the new effective date (status `superseded`) so the exclusion
-  constraint never fires; rejecting records the decision.
+  day before the new effective date (it stays `approved`; "superseded" is
+  read from the dates — migration 0020) so the exclusion constraint never
+  fires; rejecting records the decision.
 - `compensation_summary(p_company_id)`: `payroll.summary`; headcount with an
   approved record, totals annualised by currency (monthly ×12, daily ×260,
   hourly ×2080 — the standard working-year assumptions, stated in the UI),

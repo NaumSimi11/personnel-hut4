@@ -183,7 +183,7 @@ test('current → propose → no self-approval → colleague approves → histor
     .eq('employment_period_id', periodId)
     .order('effective_date')
   expect(records).toEqual([
-    { amount: 60000, status: 'superseded', end_date: '2025-12-31' },
+    { amount: 60000, status: 'approved', end_date: '2025-12-31' },
     { amount: 66000, status: 'approved', end_date: null },
   ])
 

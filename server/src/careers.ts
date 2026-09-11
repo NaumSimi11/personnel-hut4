@@ -145,7 +145,8 @@ export function publicCompany(company: CompanyRow, supabaseUrl: string): PublicC
   return {
     name: company.name,
     code: company.short_code,
-    website: company.website,
+    // Rendered as a link on an anonymous page: only web URLs, never javascript: or bare text.
+    website: company.website && /^https?:\/\//i.test(company.website) ? company.website : null,
     tagline: brandString(company.brand, 'tagline'),
     accentColor: brandString(company.brand, 'accent_color'),
     logoUrl: logoPath ? `${supabaseUrl.replace(/\/$/, '')}/storage/v1/object/public/company-logos/${logoPath}` : null,

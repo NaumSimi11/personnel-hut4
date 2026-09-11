@@ -14,18 +14,20 @@ prototype in `../prototype` is the UI spec. Updated as milestones land.
 | App slice 1: login, directory, access editor | `app/` | 5 unit + E2E |
 | Auth flow: invite-only, one-time temp password, forced first-login change, reset-as-reinvite (ported from the leave system) | `server/`, `shared/passwordPolicy.ts`, migration 0008 | 4 E2E incl. full invite lifecycle |
 | Employee records foundation (core): add person (record ≠ account), first employment, profile page with employment history + access summary, end employment | `app/` (AddPersonDialog, PersonProfilePage) | E2E add→directory→profile→end |
+| Records depth: invite attaches to an existing record (never duplicates), private personal details card | plan 008 | E2E attach + details persist |
+| Hiring workspace A: requests, approve / request changes / reject with DB-enforced no-self-approval | plan 009 | E2E incl. self-approval refusal |
+| Hiring workspace B: jobs from approved requests, candidates, stages, atomic idempotent confirm hire | plan 010 + migration 0009 | E2E request→job→candidate→hire→employee |
+| Onboarding: queue with readiness, plan detail, complete/reopen/block/skip, finish plan | plan 011 | E2E block→complete→ready→finish |
 
 ## Next (in order)
 
 1. **Employee records, remaining depth** — scheduled changes with effective
    dates, manager field + circular-reporting guard, private personal details
    (personal.view-gated), departments/locations management, import preview.
-2. **Hiring workspace** — request → approval → job → candidates → confirm hire
-   (idempotent, creates employment + onboarding plan), following the prototype
-   journey and the transition gates already in the database.
-3. **Onboarding** — templates → plans → task completion → readiness, with the
-   needs-action queue on a Home view.
-4. **Self-service** — my profile, my tasks, my access (the prototype's
+2. **Home / needs-action queue** — one place showing hiring requests awaiting
+   a decision, applications at offer, and onboarding readiness gaps (the
+   prototype's overview, from live data).
+3. **Self-service** — my profile, my tasks, my access (the prototype's
    view-as overview, now for the real signed-in person).
 5. **Company profiles & projects** — company pages; read-only Zoho Projects
    sync into `external_projects` via the auth service's sibling job.

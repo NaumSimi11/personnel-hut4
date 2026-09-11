@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
+import { useRouter } from 'vue-router'
 import { supabase } from '@/lib/supabase'
 import RequestHireDialog from '@/components/RequestHireDialog.vue'
 
@@ -13,11 +14,14 @@ type HiringRequestRow = {
   change_reason: string | null
   requested_by: string | null
   decided_at: string | null
+  company_id: string
   company: { name: string } | null
   requester: { full_name: string } | null
   manager: { full_name: string } | null
+  jobs: { id: string; status: string }[]
 }
 
+const router = useRouter()
 const requests = ref<HiringRequestRow[]>([])
 const loading = ref(true)
 const error = ref<string | null>(null)
@@ -43,10 +47,11 @@ async function load(): Promise<void> {
     .from('hiring_requests')
     .select(
       `id, title, reason, headcount, target_start_date, status, change_reason,
-       requested_by, decided_at,
+       requested_by, decided_at, company_id,
        company:companies(name),
        requester:people!hiring_requests_requested_by_fkey(full_name),
-       manager:people!hiring_requests_hiring_manager_id_fkey(full_name)`,
+       manager:people!hiring_requests_hiring_manager_id_fkey(full_name),
+       jobs:jobs!jobs_hiring_request_id_fkey(id, status)`,
     )
     .order('created_at', { ascending: false })
   if (err) {
@@ -93,6 +98,42 @@ function friendlyDecisionError(message: string): string {
     return 'Approving needs the jobs.approve capability in this company.'
   if (message.includes('their own'))
     return 'You requested this hire — a different approver must decide it.'
+  return message
+}
+
+function jobFor(row: HiringRequestRow): { id: string; status: string } | null {
+  return row.jobs[0] ?? null
+}
+
+async function prepareJob(row: HiringRequestRow): Promise<void> {
+  actionError.value = null
+  busyId.value = row.id
+  const { data, error: err } = await supabase
+    .from('jobs')
+    .insert({
+      company_id: row.company_id,
+      hiring_request_id: row.id,
+      title: row.title,
+      description: '',
+      status: 'open',
+    })
+    .select('id')
+    .single()
+  busyId.value = null
+  if (err || !data) {
+    actionError.value = friendlyJobError(err?.message ?? 'Could not prepare the job.')
+    return
+  }
+  router.push({ name: 'job', params: { jobId: data.id } })
+}
+
+function openJob(jobId: string): void {
+  router.push({ name: 'job', params: { jobId } })
+}
+
+function friendlyJobError(message: string): string {
+  if (/row-level security/.test(message))
+    return 'Preparing a job needs jobs.edit (or jobs.request/jobs.approve) in this company.'
   return message
 }
 
@@ -164,6 +205,25 @@ onMounted(load)
                 @click="reject(r)"
               >
                 Reject
+              </button>
+            </div>
+            <div v-else-if="r.status === 'approved'" class="row-actions">
+              <button
+                v-if="!jobFor(r)"
+                class="button secondary small-btn"
+                type="button"
+                :disabled="busyId === r.id"
+                @click="prepareJob(r)"
+              >
+                Prepare job
+              </button>
+              <button
+                v-else
+                class="button secondary small-btn"
+                type="button"
+                @click="openJob(jobFor(r)!.id)"
+              >
+                Open job
               </button>
             </div>
           </div>

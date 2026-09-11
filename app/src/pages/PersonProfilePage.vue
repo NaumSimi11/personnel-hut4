@@ -3,6 +3,7 @@ import { computed, onMounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/stores/auth'
+import PrivateDetailsCard from '@/components/PrivateDetailsCard.vue'
 
 type Employment = {
   id: string
@@ -228,26 +229,30 @@ onMounted(async () => {
           </div>
         </div>
 
-        <div class="card">
-          <div class="card-head">
-            <div>
-              <h2>Access</h2>
-              <p>Grants are per company and separate from employment.</p>
+        <div class="right-column">
+          <div class="card">
+            <div class="card-head">
+              <div>
+                <h2>Access</h2>
+                <p>Grants are per company and separate from employment.</p>
+              </div>
+            </div>
+            <div v-if="!grants.length" class="empty">No capabilities granted in any company.</div>
+            <div v-for="g in grants" :key="g.company_id" class="emp-row">
+              <div class="row-text">
+                <strong>{{ g.company?.name }}</strong>
+                <small>{{ g.grant_capabilities.length }} capabilities</small>
+              </div>
+              <router-link
+                class="button secondary small-btn"
+                :to="{ name: 'access-editor', params: { personId }, query: { company: g.company_id } }"
+              >
+                Edit
+              </router-link>
             </div>
           </div>
-          <div v-if="!grants.length" class="empty">No capabilities granted in any company.</div>
-          <div v-for="g in grants" :key="g.company_id" class="emp-row">
-            <div class="row-text">
-              <strong>{{ g.company?.name }}</strong>
-              <small>{{ g.grant_capabilities.length }} capabilities</small>
-            </div>
-            <router-link
-              class="button secondary small-btn"
-              :to="{ name: 'access-editor', params: { personId }, query: { company: g.company_id } }"
-            >
-              Edit
-            </router-link>
-          </div>
+
+          <PrivateDetailsCard :person-id="personId" />
         </div>
       </div>
     </template>
@@ -261,6 +266,7 @@ onMounted(async () => {
 .avatar.big { width: 62px; height: 62px; font-size: 20px; }
 .grid-two { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(260px, 1fr); gap: 22px; }
 @media (max-width: 900px) { .grid-two { grid-template-columns: 1fr; } }
+.right-column { display: grid; gap: 22px; align-content: start; }
 .emp-row { display: flex; align-items: center; gap: 13px; padding: 15px 24px; border-top: 1px solid #edf0eb; }
 .row-text { flex: 1; min-width: 0; }
 .row-text strong { display: block; font-size: 12px; font-weight: 550; }

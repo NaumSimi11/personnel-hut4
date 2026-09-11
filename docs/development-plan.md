@@ -29,15 +29,12 @@ prototype in `../prototype` is the UI spec. Updated as milestones land.
 | Interviews with a panel; blind scorecards (1–4 + evidence per criterion, recommendation) hidden from panel members until they submit, enforced in RLS; scorecard criteria per job; offer state machine (`advance_offer`: draft → in approval → approved by someone else → extended → accepted / declined, withdraw any time; author server-set and immutable); Confirm hire takes the accepted start date; job Interviews & Offer tab | migration 0014 + plan 018b | E2E schedule → hidden colleague card → submit → both visible → offer → self-approval blocked → withdraw → colleague's offer approved → extended → accepted → hired with agreed date; smoke tests for blind rule, forged author/company, transitions |
 | Public careers page + intake: branded per-company listing and application form (CV, screening answers, consent) through the auth service only; honeypot, per-IP and per-email limits, exact code lookup, server-side answer checks, one open application per person per role | plan 019 | E2E anonymous apply → reference → duplicate refused → honeypot dropped → recruiter sees file, answers, source; 15 server unit tests |
 | Recruitment reporting: per-company KPIs, funnel by job, source attribution, attention counts — counted in the database (`recruitment_report`, jobs.view), CSV export | migration 0015 + plan 021 | E2E seeded stages → KPIs, funnel, sources, attention, CSV; smoke tests for numbers and refusal |
+| Employment changes: dated title / department / location / manager / type changes with reason; immediate or scheduled, applied when due, guards re-run at apply time (cycle, company scoping, ended employment → failed with reason); Structure tab (departments, locations); directory state + company filters | migration 0016 + plan 022 | E2E structure → immediate change → scheduled + cancel → cycle refused → filters; smoke tests incl. apply-time cycle and former-cancels-pending |
 
 ## Next (in order)
 
 0. **020 AI assist** — summaries with references, never a score; blocked on
    ANTHROPIC_API_KEY in .env.local.
-1. **Employment changes** (plan 022) — scheduled job / manager / location
-   changes with effective dates, manager field + circular-reporting guard,
-   departments & locations management (tables exist, no UI), directory
-   filters (active / upcoming / departing / former).
 2. **Turn on Zoho sync** — supply credentials + per-company mapping, then
    run it for real (code is done; see [integrations-zoho.md](integrations-zoho.md)).
 3. **Compensation** — `compensation_records` UI (propose / approve, history),

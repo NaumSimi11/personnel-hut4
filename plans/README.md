@@ -51,7 +51,7 @@ round; merging it into `main` is the maintainer's decision.
 | 019 | Careers page + intake: public routes, auth-service endpoints (public brief only), honeypot + rate limits, answer validation, duplicate rule, CV to private bucket | DONE (reviewed, main; full suite 18/18) |
 | 020 | AI assist: CV summary with references, screening digest, JD and promo drafts — server-side, human-reviewed, never a score | TODO |
 | 021 | Recruitment reporting: `recruitment_report` (KPIs, funnel, sources, attention; counts only), Reports page with CSV export (migration 0015) | DONE (reviewed, main; full suite 19/19) |
-| 022 | Employment changes: scheduled job/manager/location changes, circular-reporting guard, departments & locations management | TODO |
+| 022 | Employment changes as dated events (`schedule_employment_change`, apply-time re-validation, cycle guard, former cancels pending), company Structure tab, directory filters (migration 0016) | DONE (reviewed, main; full suite 20/20) |
 
 Round-03 executors branch from `main` as `feature/NNN-<slug>`; the reviewer
 runs the full E2E suite serially and merges after review.

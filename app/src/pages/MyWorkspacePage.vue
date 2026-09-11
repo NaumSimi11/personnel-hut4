@@ -5,6 +5,8 @@ import { useAuthStore } from '@/stores/auth'
 import { departureState } from '@/lib/departure'
 import CompensationCard from '@/components/CompensationCard.vue'
 import DocumentsCard from '@/components/DocumentsCard.vue'
+import MyRequestsCard from '@/components/MyRequestsCard.vue'
+import MyPoliciesCard from '@/components/MyPoliciesCard.vue'
 
 /**
  * My workspace: the signed-in person's own record — their profile, their
@@ -253,6 +255,8 @@ onMounted(load)
 
       <div v-else class="grid-two">
         <div class="left-column">
+          <MyRequestsCard />
+          <MyPoliciesCard />
           <div v-if="plan" class="card plan-card">
             <div class="card-head">
               <div>

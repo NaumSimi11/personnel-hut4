@@ -2538,10 +2538,13 @@ export type Database = {
           company_id: string | null
           created_at: string
           id: string
+          mime_type: string | null
+          original_name: string | null
           published_at: string | null
           published_by: string | null
           status: string
           storage_path: string | null
+          summary: string | null
           title: string
           updated_at: string
           version: number
@@ -2550,10 +2553,13 @@ export type Database = {
           company_id?: string | null
           created_at?: string
           id?: string
+          mime_type?: string | null
+          original_name?: string | null
           published_at?: string | null
           published_by?: string | null
           status?: string
           storage_path?: string | null
+          summary?: string | null
           title: string
           updated_at?: string
           version?: number
@@ -2562,10 +2568,13 @@ export type Database = {
           company_id?: string | null
           created_at?: string
           id?: string
+          mime_type?: string | null
+          original_name?: string | null
           published_at?: string | null
           published_by?: string | null
           status?: string
           storage_path?: string | null
+          summary?: string | null
           title?: string
           updated_at?: string
           version?: number
@@ -3017,6 +3026,7 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      acknowledge_policy: { Args: { p_policy_id: string }; Returns: Json }
       advance_offer: {
         Args: { p_offer_id: string; p_reason?: string; p_to_status: string }
         Returns: Json
@@ -3032,6 +3042,7 @@ export type Database = {
         Returns: Json
       }
       apply_due_employment_changes: { Args: never; Returns: number }
+      archive_policy: { Args: { p_policy_id: string }; Returns: Json }
       cancel_employment_change: {
         Args: { p_change_id: string }
         Returns: undefined
@@ -3066,8 +3077,21 @@ export type Database = {
         }
         Returns: Json
       }
+      publish_policy: {
+        Args: {
+          p_mime_type?: string
+          p_original_name?: string
+          p_policy_id: string
+          p_storage_path?: string
+        }
+        Returns: Json
+      }
       recruitment_report: {
         Args: { p_company_id: string; p_from: string; p_to: string }
+        Returns: Json
+      }
+      review_document_request: {
+        Args: { p_decision: string; p_note?: string; p_request_id: string }
         Returns: Json
       }
       schedule_departure: {
@@ -3086,6 +3110,10 @@ export type Database = {
           p_period_id: string
           p_reason?: string
         }
+        Returns: Json
+      }
+      submit_requested_document: {
+        Args: { p_document_id: string; p_request_id: string }
         Returns: Json
       }
     }

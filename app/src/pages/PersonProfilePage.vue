@@ -8,6 +8,7 @@ import ScheduleDepartureDialog from '@/components/ScheduleDepartureDialog.vue'
 import ScheduleChangeDialog, { type ChangeTarget } from '@/components/ScheduleChangeDialog.vue'
 import CompensationCard from '@/components/CompensationCard.vue'
 import DocumentsCard from '@/components/DocumentsCard.vue'
+import DocumentRequestsCard from '@/components/DocumentRequestsCard.vue'
 import { describeChanges, type Lookups } from '@/lib/employmentChanges'
 import { departureState, friendlyDepartureError } from '@/lib/departure'
 
@@ -411,6 +412,7 @@ onMounted(async () => {
 
           <CompensationCard :person-id="personId" :periods="employments" />
           <DocumentsCard :person-id="personId" :companies="personCompanies" />
+          <DocumentRequestsCard :person-id="personId" :companies="personCompanies" />
           <PrivateDetailsCard :person-id="personId" />
         </div>
       </div>

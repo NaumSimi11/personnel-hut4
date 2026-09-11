@@ -14,6 +14,7 @@ import CompanyStructurePanel from '@/components/CompanyStructurePanel.vue'
 import CompanyPayrollPanel from '@/components/CompanyPayrollPanel.vue'
 import WorkflowOwnersPanel from '@/components/WorkflowOwnersPanel.vue'
 import DocumentsCard from '@/components/DocumentsCard.vue'
+import PoliciesPanel from '@/components/PoliciesPanel.vue'
 import InviteAccessDialog from '@/components/InviteAccessDialog.vue'
 import { upcoming } from '@/lib/companyOps'
 import { todayDb } from '@/lib/compensation'
@@ -663,7 +664,10 @@ onMounted(load)
           </div>
         </div>
 
-        <DocumentsCard v-else-if="activeTab === 'documents'" :companies="documentScope" title="Company documents" />
+        <div v-else-if="activeTab === 'documents'" class="stack">
+          <DocumentsCard :companies="documentScope" title="Company documents" />
+          <PoliciesPanel :company-id="company.kind === 'holding' ? null : companyId" />
+        </div>
 
         <CompanyPayrollPanel v-else-if="activeTab === 'payroll'" :company-id="companyId" />
 
@@ -751,6 +755,7 @@ onMounted(load)
 .detail-grid .address span { display: block; }
 .detail-grid dd a { color: var(--green); text-decoration: none; }
 .detail-grid dd a:hover { text-decoration: underline; }
+.stack { display: grid; gap: 22px; }
 .tabs { display: flex; gap: 22px; border-bottom: 1px solid var(--line); margin-bottom: 22px; overflow: auto; }
 .tab {
   border: 0;

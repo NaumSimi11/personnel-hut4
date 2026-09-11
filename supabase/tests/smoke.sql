@@ -1603,6 +1603,281 @@ begin
   end;
 end $$;
 
+-- ------------------------------------------ document requests & policies (0021)
+-- Alex (A) gets documents.request and policies.publish. Omar (self, still
+-- granted in A) fulfils a request through the self-service window and
+-- acknowledges policies; Ada publishes holding-wide.
+insert into public.grant_capabilities (grant_id, capability_key) values
+  ('40000000-0000-0000-0000-000000000001', 'documents.request'),
+  ('40000000-0000-0000-0000-000000000001', 'policies.publish');
+set app.test_uid = '00000000-0000-0000-0000-000000000001';  -- Alex
+set role authenticated;
+do $$
+declare v_req uuid;
+begin
+  insert into public.document_requests (company_id, person_id, category_key, due_date, status, note)
+    values ('10000000-0000-0000-0000-00000000000a', '20000000-0000-0000-0000-000000000003', 'identification',
+            current_date + 7, 'accepted', '  Passport copy ')
+    returning id into v_req;
+  assert (select status from public.document_requests where id = v_req) = 'pending', 'a request always starts pending';
+  assert (select reviewer_id from public.document_requests where id = v_req) = '20000000-0000-0000-0000-000000000001',
+    'the requester is the reviewer';
+  assert (select note from public.document_requests where id = v_req) = 'Passport copy', 'note trimmed';
+  begin
+    insert into public.document_requests (company_id, person_id, category_key)
+      values ('10000000-0000-0000-0000-00000000000a', '20000000-0000-0000-0000-000000000003', 'registration');
+    raise exception 'FAIL: company category accepted on a request';
+  exception when raise_exception then
+    if sqlerrm not like '%person document category%' then raise; end if;
+  end;
+  begin
+    perform public.review_document_request(v_req, 'accepted', null);
+    raise exception 'FAIL: accepted a request nothing was submitted for';
+  exception when raise_exception then
+    if sqlerrm not like '%Only a submitted%' then raise; end if;
+  end;
+end $$;
+reset role;
+
+-- Omar: no documents.upload, but an open request opens the self-service window.
+set app.test_uid = '00000000-0000-0000-0000-000000000003';
+set role authenticated;
+do $$
+declare v_req uuid := (select id from public.document_requests where person_id = '20000000-0000-0000-0000-000000000003' and category_key = 'identification');
+        v_doc uuid; n int;
+begin
+  assert v_req is not null, 'the person sees their own request';
+  insert into storage.objects (bucket_id, name) values
+    ('employee-documents', '10000000-0000-0000-0000-00000000000a/20000000-0000-0000-0000-000000000003/self1.pdf');
+  begin
+    insert into storage.objects (bucket_id, name) values
+      ('employee-documents', '10000000-0000-0000-0000-00000000000b/20000000-0000-0000-0000-000000000003/self-b.pdf');
+    raise exception 'FAIL: self upload into a company with no open request accepted';
+  exception when insufficient_privilege then null;
+  end;
+  insert into public.documents (company_id, person_id, category_key, title, storage_path, visibility)
+    values ('10000000-0000-0000-0000-00000000000a', '20000000-0000-0000-0000-000000000003', 'identification', 'My passport',
+            '10000000-0000-0000-0000-00000000000a/20000000-0000-0000-0000-000000000003/self1.pdf', 'hr_only')
+    returning id into v_doc;
+  assert (select visibility from public.documents where id = v_doc) = 'person_and_hr',
+    'a self-service upload is always person_and_hr';
+  begin
+    insert into public.documents (company_id, person_id, category_key, title, storage_path)
+      values ('10000000-0000-0000-0000-00000000000a', '20000000-0000-0000-0000-000000000003', 'other', 'Unrequested',
+              '10000000-0000-0000-0000-00000000000a/20000000-0000-0000-0000-000000000003/self2.pdf');
+    raise exception 'FAIL: self upload outside the requested category accepted';
+  exception when insufficient_privilege then null;
+  end;
+  update public.document_requests set status = 'accepted' where id = v_req;
+  get diagnostics n = row_count;
+  assert (select status from public.document_requests where id = v_req) = 'pending', 'status cannot be edited directly';
+  perform public.submit_requested_document(v_req, v_doc);
+  assert (select status from public.document_requests where id = v_req) = 'submitted', 'submitted through the function';
+  assert (select fulfilled_document_id from public.document_requests where id = v_req) = v_doc, 'linked to the document';
+  begin
+    perform public.review_document_request(v_req, 'accepted', null);
+    raise exception 'FAIL: the person reviewed their own request';
+  exception when insufficient_privilege then null;
+  end;
+end $$;
+reset role;
+
+-- Alex sends it back, Omar re-submits a new version, Alex accepts; the window closes.
+set app.test_uid = '00000000-0000-0000-0000-000000000001';
+set role authenticated;
+select public.review_document_request(
+  (select id from public.document_requests where person_id = '20000000-0000-0000-0000-000000000003' and category_key = 'identification'),
+  'needs_correction', 'Both pages please');
+reset role;
+set app.test_uid = '00000000-0000-0000-0000-000000000003';
+set role authenticated;
+do $$
+declare v_req uuid := (select id from public.document_requests where person_id = '20000000-0000-0000-0000-000000000003' and category_key = 'identification');
+        v_old uuid := (select id from public.documents where title = 'My passport' and archived_at is null);
+        v_doc uuid;
+begin
+  assert (select status from public.document_requests where id = v_req) = 'needs_correction', 'sent back';
+  assert (select note from public.document_requests where id = v_req) like '%Both pages please', 'with the reason';
+  insert into public.documents (company_id, person_id, category_key, title, storage_path, supersedes_id)
+    values ('10000000-0000-0000-0000-00000000000a', '20000000-0000-0000-0000-000000000003', 'identification', 'My passport',
+            '10000000-0000-0000-0000-00000000000a/20000000-0000-0000-0000-000000000003/self3.pdf', v_old)
+    returning id into v_doc;
+  assert (select version from public.documents where id = v_doc) = 2, 'the correction is a new version';
+  perform public.submit_requested_document(v_req, v_doc);
+end $$;
+reset role;
+set app.test_uid = '00000000-0000-0000-0000-000000000001';
+set role authenticated;
+select public.review_document_request(
+  (select id from public.document_requests where person_id = '20000000-0000-0000-0000-000000000003' and category_key = 'identification'),
+  'accepted', null);
+reset role;
+set app.test_uid = '00000000-0000-0000-0000-000000000003';
+set role authenticated;
+do $$
+begin
+  assert (select status from public.document_requests where person_id = '20000000-0000-0000-0000-000000000003'
+          and category_key = 'identification') = 'accepted', 'accepted';
+  begin
+    insert into storage.objects (bucket_id, name) values
+      ('employee-documents', '10000000-0000-0000-0000-00000000000a/20000000-0000-0000-0000-000000000003/late.pdf');
+    raise exception 'FAIL: self upload after the request closed accepted';
+  exception when insufficient_privilege then null;
+  end;
+end $$;
+reset role;
+
+-- Policies: draft → publish needs a file → v1 → acknowledged → re-publish v2.
+set app.test_uid = '00000000-0000-0000-0000-000000000001';  -- Alex publishes in A
+set role authenticated;
+do $$
+declare v_pol uuid;
+begin
+  insert into public.policies (company_id, title, status, version) values
+    ('10000000-0000-0000-0000-00000000000a', ' Code of conduct ', 'published', 9)
+    returning id into v_pol;
+  assert (select status from public.policies where id = v_pol) = 'draft', 'a policy starts as a draft';
+  assert (select version from public.policies where id = v_pol) = 1, 'at version 1';
+  assert (select title from public.policies where id = v_pol) = 'Code of conduct', 'title trimmed';
+  begin
+    perform public.publish_policy(v_pol);
+    raise exception 'FAIL: published without a file';
+  exception when raise_exception then
+    if sqlerrm not like '%Attach the policy document%' then raise; end if;
+  end;
+  insert into storage.objects (bucket_id, name) values ('policies', '10000000-0000-0000-0000-00000000000a/' || v_pol || '.pdf');
+  begin
+    insert into storage.objects (bucket_id, name) values ('policies', 'holding/' || v_pol || '.pdf');
+    raise exception 'FAIL: company publisher wrote a holding-wide object';
+  exception when insufficient_privilege then null;
+  end;
+  update public.policies set storage_path = '10000000-0000-0000-0000-00000000000a/' || v_pol || '.pdf', status = 'published' where id = v_pol;
+  assert (select status from public.policies where id = v_pol) = 'draft', 'status cannot be edited directly';
+  perform public.publish_policy(v_pol);
+  assert (select status from public.policies where id = v_pol) = 'published', 'published';
+  assert (select published_by from public.policies where id = v_pol) = '20000000-0000-0000-0000-000000000001', 'by Alex';
+  begin
+    insert into public.policies (company_id, title) values (null, 'Holding-wide by Alex');
+    raise exception 'FAIL: company publisher created a holding-wide policy';
+  exception when insufficient_privilege then null;
+  end;
+end $$;
+reset role;
+set app.test_uid = '00000000-0000-0000-0000-000000000003';  -- Omar reads and acknowledges
+set role authenticated;
+do $$
+declare v_pol uuid := (select id from public.policies where title = 'Code of conduct');
+begin
+  assert v_pol is not null, 'a person in the company sees the published policy';
+  assert (select count(*) from storage.objects where bucket_id = 'policies') = 1, 'and can read its file';
+  perform public.acknowledge_policy(v_pol);
+  perform public.acknowledge_policy(v_pol);
+  assert (select count(*) from public.policy_acknowledgements where policy_id = v_pol) = 1, 'acknowledged once per version';
+  assert (select version from public.policy_acknowledgements where policy_id = v_pol) = 1, 'version 1';
+end $$;
+reset role;
+set app.test_uid = '00000000-0000-0000-0000-000000000001';
+set role authenticated;
+do $$
+declare v_pol uuid := (select id from public.policies where title = 'Code of conduct');
+begin
+  insert into storage.objects (bucket_id, name) values ('policies', '10000000-0000-0000-0000-00000000000a/' || v_pol || '/v2.pdf');
+  perform public.publish_policy(v_pol, '10000000-0000-0000-0000-00000000000a/' || v_pol || '/v2.pdf', 'conduct-v2.pdf', 'application/pdf');
+  assert (select version from public.policies where id = v_pol) = 2, 'a re-publish with a new file is a new version';
+  assert (select count(*) from public.policy_acknowledgements where policy_id = v_pol and version = 2) = 0,
+    'earlier acknowledgements do not count for it';
+  assert (select count(*) from public.policy_acknowledgements where policy_id = v_pol) = 1, 'HR sees who acknowledged';
+end $$;
+reset role;
+-- Holding-wide: Ada publishes, Bea (Company B) sees and acknowledges.
+set app.test_uid = '00000000-0000-0000-0000-000000000004';  -- Ada, admin
+set role authenticated;
+do $$
+declare v_pol uuid;
+begin
+  insert into public.policies (company_id, title) values (null, 'Group travel policy') returning id into v_pol;
+  insert into storage.objects (bucket_id, name) values ('policies', 'holding/' || v_pol || '.pdf');
+  update public.policies set storage_path = 'holding/' || v_pol || '.pdf' where id = v_pol;
+  perform public.publish_policy(v_pol);
+end $$;
+reset role;
+set app.test_uid = '00000000-0000-0000-0000-000000000005';  -- Bea
+set role authenticated;
+do $$
+declare v_pol uuid := (select id from public.policies where title = 'Group travel policy');
+begin
+  assert v_pol is not null, 'everyone sees a holding-wide policy';
+  assert not exists (select 1 from public.policies where title = 'Code of conduct'), 'but not another company''s';
+  perform public.acknowledge_policy(v_pol);
+  assert (select count(*) from public.policy_acknowledgements where policy_id = v_pol) = 1, 'acknowledged';
+end $$;
+reset role;
+set app.test_uid = '';
+
+-- 0021 review fixes: no direct acknowledgements, a published file is frozen,
+-- a new version needs a new file, the self window allows cleanup, a
+-- superseding upload keeps the category.
+set app.test_uid = '00000000-0000-0000-0000-000000000003';  -- Omar
+set role authenticated;
+do $$
+declare v_pol uuid := (select id from public.policies where title = 'Code of conduct');
+begin
+  begin
+    insert into public.policy_acknowledgements (policy_id, person_id, version) values (v_pol, '20000000-0000-0000-0000-000000000003', 3);
+    raise exception 'FAIL: direct acknowledgement accepted';
+  exception when insufficient_privilege then null;
+  end;
+  assert app.has_open_document_request('20000000-0000-0000-0000-000000000001', '10000000-0000-0000-0000-00000000000a', 'identification') = false,
+    'the window function never answers for someone else';
+end $$;
+reset role;
+set app.test_uid = '00000000-0000-0000-0000-000000000001';  -- Alex
+set role authenticated;
+do $$
+declare v_pol uuid := (select id from public.policies where title = 'Code of conduct');
+        v_old uuid := (select id from public.documents where title = 'My passport' and archived_at is null);
+begin
+  begin
+    update public.policies set storage_path = 'x/y.pdf' where id = v_pol;
+    raise exception 'FAIL: changed the file of a published policy';
+  exception when raise_exception then
+    if sqlerrm not like '%Publish a new version%' then raise; end if;
+  end;
+  begin
+    perform public.publish_policy(v_pol);
+    raise exception 'FAIL: re-published without a new file';
+  exception when raise_exception then
+    if sqlerrm not like '%Attach the new file%' then raise; end if;
+  end;
+  insert into storage.objects (bucket_id, name) values ('policies', '10000000-0000-0000-0000-00000000000a/' || v_pol || '/v3.pdf');
+  perform public.publish_policy(v_pol, '10000000-0000-0000-0000-00000000000a/' || v_pol || '/v3.pdf', 'conduct-v3.pdf', 'application/pdf');
+  assert (select version from public.policies where id = v_pol) = 3, 'new file, new version';
+  assert (select storage_path from public.policies where id = v_pol) like '%/v3.pdf', 'file attached with the version';
+  begin
+    insert into public.documents (company_id, person_id, category_key, title, storage_path, supersedes_id)
+      values ('10000000-0000-0000-0000-00000000000a', '20000000-0000-0000-0000-000000000003', 'other', 'Wrong category',
+              '10000000-0000-0000-0000-00000000000a/20000000-0000-0000-0000-000000000003/wrong.pdf', v_old);
+    raise exception 'FAIL: a new version changed category';
+  exception when raise_exception then
+    if sqlerrm not like '%same person, company and category%' then raise; end if;
+  end;
+  -- A fresh request re-opens Omar's window so the cleanup path can be shown.
+  insert into public.document_requests (company_id, person_id, category_key)
+    values ('10000000-0000-0000-0000-00000000000a', '20000000-0000-0000-0000-000000000003', 'onboarding_form');
+end $$;
+reset role;
+set app.test_uid = '00000000-0000-0000-0000-000000000003';  -- Omar
+set role authenticated;
+do $$
+begin
+  insert into storage.objects (bucket_id, name) values
+    ('employee-documents', '10000000-0000-0000-0000-00000000000a/20000000-0000-0000-0000-000000000003/orphan-self.pdf');
+  delete from storage.objects where name like '%/orphan-self.pdf';
+  assert not exists (select 1 from storage.objects where name like '%/orphan-self.pdf'), 'the person can take back an orphaned self upload';
+end $$;
+reset role;
+set app.test_uid = '';
+
 reset role;
 set app.test_uid = '';
 

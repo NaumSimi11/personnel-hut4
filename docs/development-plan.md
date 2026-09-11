@@ -1,4 +1,6 @@
 | Compensation: one amount + currency + pay basis per record; proposed by one person, decided by another (`salary.propose` / `salary.approve`), approving closes the previous approved record the day before so history never overlaps; refused after a departure; Payroll tab totals annualised per currency with distinct active headcount (`payroll.summary`) | migration 0017 + plan 023 | E2E current → propose → no self-approval → colleague approves → history → payroll total matches independent sum → own compensation; smoke tests for gating, self-approval, direct-write refusal, supersede, departure edges |
+| Company operations: Upcoming starters / departures on the company overview, workflow owners per role on a Settings tab (Unassigned never skips approval), submitted hiring requests name the configured approver, invite from the company Access tab | plan 024 | E2E upcoming → owner saved → request names approver → invite dialog; unit tests |
+| Hardening: audit log redacts blind scorecards, compensation amounts and offer terms (existing rows too); reporting-loop guard walks within the company; deferred employment changes re-run every guard; one open application per candidate per job; careers per-email budget spent only after a saved application, serialised per email | migration 0018 + plan 025 | smoke assertions per rule; server unit tests; full suite |
 # Personnel: development plan
 
 Working plan for the real build (Vue app + Supabase). Derives its order from
@@ -40,10 +42,9 @@ prototype in `../prototype` is the UI spec. Updated as milestones land.
    run it for real (code is done; see [integrations-zoho.md](integrations-zoho.md)).
 3. **Leave-system linking** — shared auth pool with the leave app (one
    password for both), then read-only leave indicators via `leave_links`.
-4. **Company profile leftovers** — upcoming starters / departures and open
-   tasks on the overview; `settings` overrides (notification contacts,
-   workflow owners); Integrations tab connect / configure; invite from the
-   company Access tab.
+4. **Company profile leftovers (needs credentials)** — notification contacts
+   once an email path exists (RESEND_API_KEY); Integrations tab connect /
+   configure once provider credentials exist.
 5. **Later, per blueprint** — documents & policies, equipment/IT, payroll
    preparation, audit history tab, reports, recruitment marketing + channel
    integrations, import preview, rehire.

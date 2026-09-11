@@ -21,15 +21,15 @@ prototype in `../prototype` is the UI spec. Updated as milestones land.
 | Home: needs-action queue (approvals, offers, readiness gaps), metrics, my tasks; post-login landing | plan 012 | E2E queue rows + deep links |
 | Self-service: My workspace — own profile and employment history, own onboarding (read-only), tasks assigned to me, my access per company, my synced projects | plan 013 | E2E own-task complete + admin note |
 | Company profiles: holding list with headcounts; per-company tabs (overview, people, access, hiring, projects, integrations), deep-linkable | plan 014 | E2E all tabs + `?tab=` deep link |
+| Zoho Projects read-only sync: OAuth client, per-company mapping with routing exceptions, idempotent mirror upserts, CLI with dry-run ([docs](integrations-zoho.md)) | plan 015 | 15 tests incl. live-DB sync with a fixture client; awaiting Zoho credentials to go live |
 
 ## Next (in order)
 
 1. **Employee records, remaining depth** — scheduled changes with effective
    dates, manager field + circular-reporting guard, private personal details
    (personal.view-gated), departments/locations management, import preview.
-2. **Zoho Projects sync** — a job in `server/` that fills
-   `external_projects` / `external_project_members` from the real Zoho
-   account (the read-only panels already render it).
+2. **Turn on Zoho sync** — supply credentials + per-company mapping, then
+   run it for real (code is done; see [integrations-zoho.md](integrations-zoho.md)).
 5. **Company profiles & projects** — company pages; read-only Zoho Projects
    sync into `external_projects` via the auth service's sibling job.
 6. **Leave-system linking** — shared auth pool with the leave app (one

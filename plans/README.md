@@ -41,6 +41,7 @@ round; merging it into `main` is the maintainer's decision.
 | 012 | Home: needs-action queue, metrics, my tasks | DONE (reviewed, merged to main @ `412d1a3`; reviewer then switched the post-login landing to it; full suite 10/10) |
 | 013 | Self-service: My workspace (profile, onboarding, tasks, access, projects) | DONE (reviewed, merged to main @ `3839087`; full suite 11/11) |
 | 014 | Company profiles: holding list + per-company tabs | DONE (reviewed, merged to main @ `8082763`; full suite 12/12) |
+| 015 | Zoho Projects read-only sync (client, mapping, CLI, docs) | DONE (reviewed, merged to main @ `53ce3ab`; server 23/23, app 12/12; live HTTP calls await credentials) |
 
 Round-03 executors branch from `main` as `feature/NNN-<slug>`; the reviewer
 runs the full E2E suite serially and merges after review.

@@ -7,9 +7,8 @@ import { friendlyRecruitmentError, type ChannelLite } from '@/lib/jobWorkspace'
 
 /**
  * Where the job is listed (plan 017). One row per channel:
- * - careers: the owned listing — publish / unpublish here; the public page
- *   itself arrives with plan 019, so today this is the honest status of the
- *   listing, not yet its audience.
+ * - careers: the owned listing — publish / unpublish here; live listings
+ *   appear on the public careers page (plan 019).
  * - job boards / social with a provider: shown as not connected until an
  *   integration is authorised (no fake publishing).
  * - manual: a posting somebody made by hand — recorded with its URL and who
@@ -29,6 +28,7 @@ type JobChannel = ChannelLite & {
 const props = defineProps<{
   jobId: string
   companyId: string
+  companyCode: string
   jobStatus: string
   descriptionRevision: number
 }>()
@@ -204,7 +204,11 @@ defineExpose({ reload: load })
         <div class="row-text">
           <strong>{{ c.label }}</strong>
           <small>
-            <template v-if="c.kind === 'careers'">Owned listing · public page arrives with the careers site.</template>
+            <template v-if="c.kind === 'careers'">
+              Owned listing ·
+              <a v-if="statusOf(c.key) === 'live'" :href="`/careers/${companyCode.toLowerCase()}/${jobId}`" target="_blank" rel="noopener">open the public page</a>
+              <template v-else>publishes to /careers/{{ companyCode.toLowerCase() }}</template>
+            </template>
             <template v-else-if="c.kind === 'manual'">Posted by hand somewhere else — record the link so it is tracked.</template>
             <template v-else-if="providerConnected(c)">Connected · publishing arrives with the provider integration.</template>
             <template v-else>Not connected · configure the provider under the company's Integrations.</template>

@@ -52,7 +52,7 @@ type Job = {
   scorecard_criteria: unknown
   status: string
   company_id: string
-  company: { name: string } | null
+  company: { name: string; short_code: string } | null
   request: {
     title: string
     headcount: number
@@ -164,7 +164,7 @@ async function loadJob(): Promise<void> {
     .from('jobs')
     .select(
       `id, title, description, description_revision, screening_questions, scorecard_criteria, status, company_id,
-       company:companies(name),
+       company:companies(name, short_code),
        request:hiring_requests(title, headcount, target_start_date,
          hiring_manager:people!hiring_requests_hiring_manager_id_fkey(full_name))`,
     )
@@ -550,6 +550,7 @@ onMounted(async () => {
         ref="channelsPanel"
         :job-id="job.id"
         :company-id="job.company_id"
+        :company-code="job.company?.short_code ?? ''"
         :job-status="job.status"
         :description-revision="job.description_revision"
         @changed="onChannelsChanged"

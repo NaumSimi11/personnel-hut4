@@ -15,6 +15,20 @@ export const router = createRouter({
       name: 'change-password',
       component: () => import('@/pages/ChangePasswordPage.vue'),
     },
+    // The public careers pages (plan 019): no sign-in, no app shell, and
+    // no Supabase access — they read and submit through the auth service.
+    {
+      path: '/careers/:code',
+      name: 'careers-company',
+      component: () => import('@/pages/CareersCompanyPage.vue'),
+      meta: { public: true },
+    },
+    {
+      path: '/careers/:code/:jobId',
+      name: 'careers-job',
+      component: () => import('@/pages/CareersJobPage.vue'),
+      meta: { public: true },
+    },
     {
       path: '/',
       component: () => import('@/components/AppShell.vue'),

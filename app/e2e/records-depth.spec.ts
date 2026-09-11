@@ -60,6 +60,7 @@ test('add person → invite attaches (no duplicate) → private details persist 
   await page.locator('#email').fill(ADMIN_EMAIL)
   await page.locator('#password').fill(ADMIN_PASSWORD)
   await page.getByRole('button', { name: 'Sign in' }).click()
+  await page.getByRole('link', { name: 'People & access', exact: true }).click()
 
   // 1. Add a record-only person (no account yet).
   await page.getByRole('button', { name: 'Add person' }).click()

@@ -27,7 +27,7 @@ async function submit() {
   busy.value = true
   try {
     await auth.signIn(parsed.data.email, parsed.data.password)
-    router.push({ name: 'directory' })
+    router.push({ name: 'overview' })
   } catch (e) {
     error.value = e instanceof Error ? e.message : 'Sign-in failed. Try again.'
   } finally {

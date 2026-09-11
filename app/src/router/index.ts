@@ -19,7 +19,7 @@ export const router = createRouter({
       path: '/',
       component: () => import('@/components/AppShell.vue'),
       children: [
-        { path: '', redirect: { name: 'directory' } },
+        { path: '', redirect: { name: 'overview' } },
         {
           path: 'overview',
           name: 'overview',
@@ -77,8 +77,8 @@ router.beforeEach(async (to) => {
     return { name: 'change-password' }
   }
   if (auth.isAuthenticated && !auth.mustChangePassword && to.name === 'change-password') {
-    return { name: 'directory' }
+    return { name: 'overview' }
   }
-  if (to.name === 'login' && auth.isAuthenticated) return { name: 'directory' }
+  if (to.name === 'login' && auth.isAuthenticated) return { name: 'overview' }
   return true
 })

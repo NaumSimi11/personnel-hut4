@@ -41,6 +41,7 @@ test('add person → directory → profile → end employment', async ({ page })
   await page.locator('#email').fill(ADMIN_EMAIL)
   await page.locator('#password').fill(ADMIN_PASSWORD)
   await page.getByRole('button', { name: 'Sign in' }).click()
+  await page.getByRole('link', { name: 'People & access', exact: true }).click()
 
   // Create the record with its first employment at Praedium.
   await page.getByRole('button', { name: 'Add person' }).click()

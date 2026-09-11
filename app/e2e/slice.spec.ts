@@ -12,6 +12,9 @@ async function signIn(page: Page): Promise<void> {
   await page.locator('#email').fill(EMAIL)
   await page.locator('#password').fill(PASSWORD)
   await page.getByRole('button', { name: 'Sign in' }).click()
+  // Sign-in lands on the overview; this suite works from the directory.
+  await expect(page).toHaveURL(/\/overview$/)
+  await page.goto('/directory')
   await expect(page.getByRole('heading', { name: 'The right access for every person.' })).toBeVisible()
 }
 

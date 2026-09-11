@@ -51,6 +51,7 @@ test('invite → temp password → forced change → self-service access', async
   await page.locator('#email').fill(ADMIN_EMAIL)
   await page.locator('#password').fill(ADMIN_PASSWORD)
   await page.getByRole('button', { name: 'Sign in' }).click()
+  await page.getByRole('link', { name: 'People & access', exact: true }).click()
   await page.getByRole('button', { name: 'Invite person' }).click()
   await page.locator('#invite-name').fill(INVITEE_NAME)
   await page.locator('#invite-email').fill(INVITEE_EMAIL)
@@ -84,8 +85,10 @@ test('invite → temp password → forced change → self-service access', async
   await expect(page.locator('.password-rules li.met')).toHaveCount(5)
   await page.getByRole('button', { name: 'Set password' }).click()
 
-  // In: the invitee lands on the directory and sees ONLY themself (no grants).
-  await expect(page).toHaveURL(/\/directory$/)
+  // In: the invitee lands on the overview, and in the directory sees ONLY
+  // themself (no grants).
+  await expect(page).toHaveURL(/\/overview$/)
+  await page.goto('/directory')
   await expect(page.locator('tr', { hasText: INVITEE_NAME })).toBeVisible()
   await expect(page.locator('tbody tr')).toHaveCount(1)
   await expect(page.getByRole('button', { name: 'Invite person' })).toHaveCount(0)

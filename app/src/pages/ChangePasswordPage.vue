@@ -46,7 +46,7 @@ async function submit() {
     // password is the only reliable way to a JWT without the must-change flag.
     await auth.signOut()
     await auth.signIn(email, next.value)
-    router.push({ name: 'directory' })
+    router.push({ name: 'overview' })
   } catch (e) {
     error.value = e instanceof Error ? e.message : 'Could not change the password.'
   } finally {

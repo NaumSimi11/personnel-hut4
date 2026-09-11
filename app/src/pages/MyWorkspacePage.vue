@@ -2,6 +2,7 @@
 import { computed, onMounted, ref } from 'vue'
 import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/stores/auth'
+import { departureState } from '@/lib/departure'
 
 /**
  * My workspace: the signed-in person's own record — their profile, their
@@ -80,7 +81,8 @@ const taskError = ref<string | null>(null)
 const busyId = ref<string | null>(null)
 
 const firstName = computed(() => auth.personName?.split(' ')[0] ?? 'there')
-const current = computed(() => employments.value.find((e) => !e.end_date) ?? null)
+// A scheduled departure keeps the person current until they are marked former.
+const current = computed(() => employments.value.find((e) => departureState(e) !== 'former') ?? null)
 
 const criticalOpen = computed(() => {
   if (!plan.value) return 0

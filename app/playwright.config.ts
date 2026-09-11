@@ -6,13 +6,15 @@ import { defineConfig } from '@playwright/test'
 // credentials live in the repo-root .env.local (gitignored), never here.
 function loadRootEnv(): Record<string, string> {
   const raw = readFileSync(fileURLToPath(new URL('../.env.local', import.meta.url)), 'utf8')
+  // Split on either line ending: a CRLF file would otherwise leave a trailing
+  // "\r" on every value, which sign-in tolerates but exact DB lookups don't.
   return Object.fromEntries(
     raw
-      .split('\n')
+      .split(/\r?\n/)
       .filter((line) => /^[A-Z0-9_]+=/.test(line))
       .map((line) => {
         const idx = line.indexOf('=')
-        return [line.slice(0, idx), line.slice(idx + 1)] as const
+        return [line.slice(0, idx), line.slice(idx + 1).trim()] as const
       }),
   )
 }

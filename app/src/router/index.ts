@@ -72,6 +72,18 @@ export const router = createRouter({
           component: () => import('@/pages/OnboardingPlanPage.vue'),
         },
         {
+          path: 'offboarding',
+          name: 'offboarding',
+          component: () => import('@/pages/OffboardingPage.vue'),
+        },
+        {
+          // Same plan detail component; it switches labels and the finish
+          // action on plan.kind.
+          path: 'offboarding/:planId',
+          name: 'offboarding-plan',
+          component: () => import('@/pages/OnboardingPlanPage.vue'),
+        },
+        {
           path: 'people/:personId',
           name: 'person',
           component: () => import('@/pages/PersonProfilePage.vue'),

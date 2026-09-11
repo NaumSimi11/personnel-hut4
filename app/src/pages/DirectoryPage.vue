@@ -2,6 +2,7 @@
 import { computed, onMounted, ref } from 'vue'
 import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/stores/auth'
+import { departureState } from '@/lib/departure'
 import InviteAccessDialog from '@/components/InviteAccessDialog.vue'
 import AddPersonDialog from '@/components/AddPersonDialog.vue'
 
@@ -12,6 +13,8 @@ type DirectoryRow = {
   employment_periods: {
     job_title: string
     status: string
+    end_date: string | null
+    last_working_date: string | null
     company: { name: string } | null
   }[]
 }
@@ -51,7 +54,7 @@ async function load(): Promise<void> {
   const { data, error: err } = await supabase
     .from('people')
     .select(
-      'id, full_name, work_email, employment_periods!person_id(job_title, status, company:companies(name))',
+      'id, full_name, work_email, employment_periods!person_id(job_title, status, end_date, last_working_date, company:companies(name))',
     )
     .is('archived_at', null)
     .order('full_name')
@@ -137,6 +140,13 @@ onMounted(load)
                 >
                   {{ currentEmployment(p)?.status ?? 'no employment' }}
                 </span>
+                <span
+                  v-if="currentEmployment(p) && departureState(currentEmployment(p)!) === 'departing'"
+                  class="badge amber departing-badge"
+                  :title="`Last day ${currentEmployment(p)!.last_working_date ?? currentEmployment(p)!.end_date}`"
+                >
+                  Departing
+                </span>
               </td>
               <td>
                 <div class="row-actions">
@@ -167,6 +177,7 @@ onMounted(load)
 </template>
 
 <style scoped>
+.departing-badge { margin-left: 6px; }
 .search {
   border: 1px solid var(--line);
   background: #fafbf9;

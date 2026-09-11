@@ -22,6 +22,16 @@ async function removeTestPerson(): Promise<void> {
   const db = serviceClient()
   const { data: people } = await db.from('people').select('id').eq('full_name', PERSON_NAME)
   for (const person of people ?? []) {
+    // Scheduling a departure adds a plan with tasks and restricted details.
+    const { data: plans } = await db.from('plans').select('id').eq('person_id', person.id)
+    const planIds = (plans ?? []).map((p) => p.id)
+    if (planIds.length) await db.from('plan_tasks').delete().in('plan_id', planIds)
+    await db.from('plans').delete().eq('person_id', person.id)
+    const { data: periods } = await db.from('employment_periods').select('id').eq('person_id', person.id)
+    const periodIds = (periods ?? []).map((p) => p.id)
+    if (periodIds.length) {
+      await db.from('employment_departure_details').delete().in('employment_period_id', periodIds)
+    }
     await db.from('employment_periods').delete().eq('person_id', person.id)
     await db.from('people').delete().eq('id', person.id)
   }
@@ -65,9 +75,18 @@ test('add person → directory → profile → end employment', async ({ page })
   await expect(empRow).toBeVisible()
   await expect(empRow.locator('.badge')).toHaveText('active')
 
-  // End the employment (native confirm) — history stays, status flips.
-  page.once('dialog', (dialog) => dialog.accept())
-  await empRow.getByRole('button', { name: 'End employment' }).click()
-  await expect(empRow.locator('.badge')).toHaveText('former')
-  await expect(empRow).toContainText('→ ')
+  // Departure is a workflow (plan 016): schedule first, then the explicit
+  // act of becoming former. History stays; the row shows both dates.
+  await empRow.getByRole('button', { name: 'Schedule departure' }).click()
+  const dialog = page.getByRole('dialog')
+  const endDate = new Date(Date.now() + 14 * 86400000).toISOString().slice(0, 10)
+  await dialog.locator('#dep-end').fill(endDate)
+  await dialog.getByRole('button', { name: 'Schedule departure' }).click()
+  await expect(empRow).toContainText(`Departing · last day ${endDate}`)
+  await expect(empRow.locator('.badge', { hasText: 'active' })).toBeVisible()
+
+  page.once('dialog', (confirm) => confirm.accept())
+  await empRow.getByRole('button', { name: 'Mark as former' }).click()
+  await expect(empRow.locator('.badge', { hasText: 'former' })).toBeVisible()
+  await expect(empRow).toContainText(`→ ${endDate}`)
 })

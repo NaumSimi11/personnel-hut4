@@ -38,20 +38,22 @@ export function logoPublicUrl(path: string): string {
   return supabase.storage.from(LOGO_BUCKET).getPublicUrl(path).data.publicUrl
 }
 
-/** Upload a company's logo, remove the one it replaces, return the new path. */
-export async function uploadCompanyLogo(
-  companyId: string,
-  file: File,
-  previousPath: string | undefined,
-): Promise<string> {
+/** Upload a company's logo and return its object path. */
+export async function uploadCompanyLogo(companyId: string, file: File): Promise<string> {
   const path = logoObjectPath(companyId, file.type)
   const { error } = await supabase.storage
     .from(LOGO_BUCKET)
     .upload(path, file, { contentType: file.type, cacheControl: '31536000' })
   if (error) throw new Error(error.message)
-  if (previousPath && previousPath !== path) {
-    const { error: removeError } = await supabase.storage.from(LOGO_BUCKET).remove([previousPath])
-    if (removeError) console.warn('Old company logo not removed:', removeError.message)
-  }
   return path
+}
+
+/**
+ * Remove a superseded logo. Call this only after the row points at the new
+ * object, so a failed update can never leave the company with a dead link.
+ * Best effort: an orphaned object is harmless, a missing one is not.
+ */
+export async function removeCompanyLogo(path: string): Promise<void> {
+  const { error } = await supabase.storage.from(LOGO_BUCKET).remove([path])
+  if (error) console.warn('Old company logo not removed:', error.message)
 }

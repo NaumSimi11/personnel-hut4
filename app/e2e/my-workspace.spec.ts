@@ -44,15 +44,29 @@ async function findAdminPerson(): Promise<{
   work_email: string | null
 }> {
   const db = serviceClient()
-  const { data, error } = await db
+  const { data } = await db
     .from('people')
     .select('id, full_name, work_email')
     .eq('work_email', ADMIN_EMAIL)
-    .single()
-  if (error || !data) {
-    throw new Error(`Could not find the admin's person row by TEST_USER_EMAIL: ${error?.message}`)
+    .maybeSingle()
+  if (data) return data
+
+  // The person's work_email may differ from the sign-in email (the record
+  // is attached to the account by user_id, not by address) — resolve via auth.
+  const { data: users, error: usersErr } = await db.auth.admin.listUsers({ perPage: 1000 })
+  const user = users?.users.find((u) => u.email?.toLowerCase() === ADMIN_EMAIL.toLowerCase())
+  if (usersErr || !user) {
+    throw new Error(`Could not find the auth user for TEST_USER_EMAIL: ${usersErr?.message}`)
   }
-  return data
+  const { data: byUser, error } = await db
+    .from('people')
+    .select('id, full_name, work_email')
+    .eq('user_id', user.id)
+    .single()
+  if (error || !byUser) {
+    throw new Error(`Could not find the admin's person row by user id: ${error?.message}`)
+  }
+  return byUser
 }
 
 async function cleanup(): Promise<void> {

@@ -16,7 +16,13 @@ import {
   type CompanyForm,
   type CompanyProfileRow,
 } from '@/lib/companyForm'
-import { LOGO_ACCEPT, logoPublicUrl, uploadCompanyLogo, validateLogoFile } from '@/lib/companyLogo'
+import {
+  LOGO_ACCEPT,
+  logoPublicUrl,
+  removeCompanyLogo,
+  uploadCompanyLogo,
+  validateLogoFile,
+} from '@/lib/companyLogo'
 
 /**
  * Create or edit a company's full profile — one page, three sections:
@@ -179,16 +185,21 @@ async function update(id: string, row: CompanyWrite): Promise<string> {
 async function attachLogo(id: string, file: File): Promise<void> {
   let path: string
   try {
-    path = await uploadCompanyLogo(id, file, existingBrand.value.logo_path)
+    path = await uploadCompanyLogo(id, file)
   } catch (e) {
     const reason = e instanceof Error ? e.message : 'upload failed'
     throw new Error(`The company was saved, but the logo could not be uploaded: ${reason}`)
   }
   // Re-read brand so the update carries whatever the row already holds.
   const { data: current } = await supabase.from('companies').select('brand').eq('id', id).single()
-  const brand = { ...brandOf({ brand: current?.brand ?? {} }), logo_path: path }
-  const { error: err } = await supabase.from('companies').update({ brand }).eq('id', id)
+  const previous = brandOf({ brand: current?.brand ?? {} })
+  const { error: err } = await supabase
+    .from('companies')
+    .update({ brand: { ...previous, logo_path: path } })
+    .eq('id', id)
   if (err) throw new Error(err.message)
+  // Only now is the old object unreferenced.
+  if (previous.logo_path && previous.logo_path !== path) await removeCompanyLogo(previous.logo_path)
 }
 
 onMounted(load)

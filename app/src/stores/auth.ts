@@ -8,6 +8,9 @@ export const useAuthStore = defineStore('auth', () => {
   const personName = ref<string | null>(null)
   const personId = ref<string | null>(null)
   const isAdmin = ref(false)
+  // Own grants, company → capability keys. Only a UI hint for showing
+  // actions: RLS and the RPCs re-check every capability server-side.
+  const capabilities = ref<Record<string, ReadonlySet<string>>>({})
   const ready = ref(false)
 
   const isAuthenticated = computed(() => session.value !== null)
@@ -42,16 +45,31 @@ export const useAuthStore = defineStore('auth', () => {
     }
     personName.value = data?.full_name ?? null
     personId.value = data?.id ?? null
-    if (personId.value) {
-      const { data: admin } = await supabase
-        .from('platform_admins')
-        .select('person_id')
-        .eq('person_id', personId.value)
-        .maybeSingle()
-      isAdmin.value = admin !== null
-    } else {
+    if (!personId.value) {
       isAdmin.value = false
+      capabilities.value = {}
+      return
     }
+    const [adminRes, grantsRes] = await Promise.all([
+      supabase.from('platform_admins').select('person_id').eq('person_id', personId.value).maybeSingle(),
+      supabase
+        .from('access_grants')
+        .select('company_id, grant_capabilities(capability_key)')
+        .eq('person_id', personId.value),
+    ])
+    isAdmin.value = adminRes.data !== null
+    if (grantsRes.error) console.error('Failed to load own grants:', grantsRes.error.message)
+    capabilities.value = Object.fromEntries(
+      (grantsRes.data ?? []).map((g) => [
+        g.company_id,
+        new Set(g.grant_capabilities.map((c) => c.capability_key)),
+      ]),
+    )
+  }
+
+  /** May the signed-in person do `capability` in `companyId`? Admins may do everything. */
+  function can(companyId: string, capability: string): boolean {
+    return isAdmin.value || (capabilities.value[companyId]?.has(capability) ?? false)
   }
 
   /** Pull fresh JWT claims (e.g. after the must-change flag is cleared). */
@@ -72,6 +90,7 @@ export const useAuthStore = defineStore('auth', () => {
     personName.value = null
     personId.value = null
     isAdmin.value = false
+    capabilities.value = {}
   }
 
   function friendlyAuthError(message: string): string {
@@ -86,6 +105,8 @@ export const useAuthStore = defineStore('auth', () => {
     personName,
     personId,
     isAdmin,
+    capabilities,
+    can,
     ready,
     isAuthenticated,
     mustChangePassword,

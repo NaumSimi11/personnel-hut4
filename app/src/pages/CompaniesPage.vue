@@ -64,7 +64,8 @@ async function load(): Promise<void> {
       .is('archived_at', null)
       .order('kind', { ascending: false })
       .order('name'),
-    supabase.from('employment_periods').select('company_id').is('end_date', null),
+    // Departing people (end date set, not yet former) still count as employed.
+    supabase.from('employment_periods').select('company_id').neq('status', 'former'),
   ])
 
   if (companiesRes.error) {

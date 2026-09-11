@@ -226,7 +226,7 @@ async function load(): Promise<void> {
          person:people!employment_periods_person_id_fkey(id, full_name, work_email)`,
       )
       .eq('company_id', companyId)
-      .is('end_date', null),
+      .neq('status', 'former'),
     supabase.from('hiring_requests').select('id, title, status').eq('company_id', companyId),
     supabase.from('jobs').select('id, title, status').eq('company_id', companyId),
     supabase

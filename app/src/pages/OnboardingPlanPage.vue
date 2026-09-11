@@ -3,18 +3,29 @@ import { computed, onMounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/stores/auth'
+import { friendlyDepartureError } from '@/lib/departure'
 import type { Database } from '@/types/database'
 
 type PlanTaskPatch = Database['public']['Tables']['plan_tasks']['Update']
 
+/**
+ * One plan, either kind. Onboarding and offboarding share phases, tasks and
+ * task actions; they differ in wording and in what "finish" means —
+ * onboarding closes the plan, offboarding is the explicit act of becoming
+ * Former (complete_departure, migration 0010) and may leave tasks open.
+ */
+type PlanKind = 'onboarding' | 'offboarding'
+
 type PlanDetail = {
   id: string
+  kind: PlanKind
   start_date: string
   status: string
   completed_at: string | null
   person: { id: string; full_name: string } | null
   company: { name: string } | null
   hr_owner: { full_name: string } | null
+  employment_period: { id: string; end_date: string | null } | null
 }
 
 type PlanTaskRow = {
@@ -54,14 +65,51 @@ const criticalOpen = computed(() =>
   tasks.value.filter((t) => t.critical && t.status !== 'done' && t.status !== 'skipped').length,
 )
 const readinessBadgeClass = computed(() => (criticalOpen.value ? 'amber' : 'green'))
-const readinessLabel = computed(() =>
-  criticalOpen.value ? `${criticalOpen.value} readiness gaps` : 'Ready for day one',
+// Before the plan loads (or when it fails to), the route says which queue we came from.
+const isOffboarding = computed(() =>
+  plan.value ? plan.value.kind === 'offboarding' : route.name === 'offboarding-plan',
 )
-// Once a plan is completed only "Reopen" stays available on a done task (so a
-// mistake stays fixable) — every other task action requires the plan to
-// still be in progress.
-const canAct = computed(() => plan.value?.status === 'in_progress')
-const canFinish = computed(() => plan.value?.status === 'in_progress' && criticalOpen.value === 0)
+const readinessLabel = computed(() => {
+  const n = criticalOpen.value
+  if (isOffboarding.value) return n ? `${n} ${n === 1 ? 'blocker' : 'blockers'}` : 'Ready to close'
+  return n ? `${n} readiness gaps` : 'Ready for day one'
+})
+const labels = computed(() =>
+  isOffboarding.value
+    ? {
+        eyebrow: 'Offboarding',
+        queue: 'offboarding' as const,
+        back: '← Back to Offboarding',
+        loading: 'Loading offboarding plan…',
+        notFound: 'Offboarding plan not found or not visible with your access.',
+        date: 'last day',
+        critical: 'Blocker',
+        finish: 'Finish offboarding',
+        finishing: 'Finishing…',
+      }
+    : {
+        eyebrow: 'Onboarding',
+        queue: 'onboarding' as const,
+        back: '← Back to Onboarding',
+        loading: 'Loading onboarding plan…',
+        notFound: 'Onboarding plan not found or not visible with your access.',
+        date: 'starts',
+        critical: 'Required before start',
+        finish: 'Finish onboarding',
+        finishing: 'Finishing…',
+      },
+)
+// Once an onboarding plan is completed only "Reopen" stays available on a
+// done task (so a mistake stays fixable) — every other task action requires
+// the plan to still be in progress. Offboarding tasks stay actionable after
+// the person is former: that is the whole point of allowing an early finish.
+const canAct = computed(() => plan.value?.status === 'in_progress' || isOffboarding.value)
+// Onboarding needs every critical task closed first. Offboarding does not:
+// equipment can legitimately outlive the employment, so becoming Former is
+// always available and the open count is reported instead.
+const canFinish = computed(
+  () => plan.value?.status === 'in_progress' && (isOffboarding.value || criticalOpen.value === 0),
+)
 
 const phasesGrouped = computed(() =>
   phases.value
@@ -88,16 +136,17 @@ async function loadPlan(): Promise<void> {
   const { data, error: err } = await supabase
     .from('plans')
     .select(
-      `id, start_date, status, completed_at,
+      `id, kind, start_date, status, completed_at,
        person:people!plans_person_id_fkey(id, full_name),
        company:companies(name),
-       hr_owner:people!plans_hr_owner_id_fkey(full_name)`,
+       hr_owner:people!plans_hr_owner_id_fkey(full_name),
+       employment_period:employment_periods!plans_employment_period_id_fkey(id, end_date)`,
     )
     .eq('id', planId)
     .maybeSingle()
   if (err || !data) {
-    error.value = 'Onboarding plan not found or not visible with your access.'
-    console.error('Onboarding plan load failed:', err?.message)
+    error.value = labels.value.notFound
+    console.error('Plan load failed:', err?.message)
     return
   }
   plan.value = data as PlanDetail
@@ -170,8 +219,9 @@ function skip(task: PlanTaskRow): void {
   void updateTask(task, { status: 'skipped', skip_reason: reason.trim() })
 }
 
-async function finishOnboarding(): Promise<void> {
+async function finishPlan(): Promise<void> {
   if (!plan.value) return
+  if (isOffboarding.value) return finishOffboarding()
   finishError.value = null
   finishBusy.value = true
   const { error: err } = await supabase
@@ -187,6 +237,33 @@ async function finishOnboarding(): Promise<void> {
   await loadPlan()
 }
 
+/** The explicit act of becoming Former; the RPC closes the plan too. */
+async function finishOffboarding(): Promise<void> {
+  const periodId = plan.value?.employment_period?.id
+  if (!plan.value || !periodId) {
+    finishError.value = 'This plan is not linked to an employment period.'
+    return
+  }
+  const open = criticalOpen.value
+  const warning = open
+    ? ` ${open} critical ${open === 1 ? 'task is' : 'tasks are'} still open; they stay on the plan.`
+    : ''
+  if (!window.confirm(`Mark ${plan.value.person?.full_name ?? 'this person'} as former?${warning}`)) return
+  finishError.value = null
+  finishBusy.value = true
+  const { data, error: err } = await supabase.rpc('complete_departure', { p_employment_period_id: periodId })
+  finishBusy.value = false
+  if (err) {
+    finishError.value = friendlyDepartureError(err.message)
+    return
+  }
+  const left = (data as { open_tasks: number })?.open_tasks ?? 0
+  finishSuccess.value = left
+    ? `Now former. ${left} ${left === 1 ? 'task' : 'tasks'} still open — finish them from this plan.`
+    : 'Now former. Every offboarding task is closed.'
+  await Promise.all([loadPlan(), loadTasks()])
+}
+
 onMounted(async () => {
   loading.value = true
   await Promise.all([loadPlan(), loadTasks(), loadPhases()])
@@ -197,17 +274,20 @@ onMounted(async () => {
 <template>
   <div>
     <p v-if="error" class="error-note" role="alert">{{ error }}</p>
-    <div v-if="loading" class="empty">Loading onboarding plan…</div>
+    <div v-if="loading" class="empty">{{ labels.loading }}</div>
 
     <template v-else-if="plan">
-      <router-link :to="{ name: 'onboarding' }" class="back-link">← Back to Onboarding</router-link>
+      <router-link :to="{ name: labels.queue }" class="back-link">{{ labels.back }}</router-link>
       <div class="page-head">
         <div>
-          <div class="eyebrow">Onboarding</div>
+          <div class="eyebrow">{{ labels.eyebrow }}</div>
           <h1>{{ plan.person?.full_name ?? '—' }}</h1>
           <p class="plan-meta">
-            {{ plan.company?.name ?? '—' }} · starts {{ plan.start_date }} · HR owner
-            {{ plan.hr_owner?.full_name ?? '—' }}
+            {{ plan.company?.name ?? '—' }} · {{ labels.date }} {{ plan.start_date }}
+            <template v-if="isOffboarding && plan.employment_period?.end_date && plan.employment_period.end_date !== plan.start_date">
+              · employment ends {{ plan.employment_period.end_date }}
+            </template>
+            · HR owner {{ plan.hr_owner?.full_name ?? '—' }}
           </p>
           <router-link
             v-if="plan.person"
@@ -217,7 +297,7 @@ onMounted(async () => {
             Open employee profile
           </router-link>
         </div>
-        <span class="badge" :class="readinessBadgeClass">{{ readinessLabel }}</span>
+        <span class="badge readiness-badge" :class="readinessBadgeClass">{{ readinessLabel }}</span>
       </div>
 
       <p v-if="taskError" class="error-note" role="alert">{{ taskError }}</p>
@@ -239,7 +319,7 @@ onMounted(async () => {
               <p v-if="task.blocked_reason" class="reason-note">Blocked: {{ task.blocked_reason }}</p>
               <p v-if="task.skip_reason" class="reason-note">Skipped: {{ task.skip_reason }}</p>
             </div>
-            <span v-if="task.critical" class="badge">Required before start</span>
+            <span v-if="task.critical" class="badge">{{ labels.critical }}</span>
             <span class="badge" :class="statusBadgeClass(task.status)">{{ task.status }}</span>
             <div class="row-actions">
               <button
@@ -291,8 +371,8 @@ onMounted(async () => {
             Completed {{ (plan.completed_at ?? '').slice(0, 10) }}
           </span>
           <div v-else class="actions">
-            <button class="button" type="button" :disabled="finishBusy" @click="finishOnboarding">
-              {{ finishBusy ? 'Finishing…' : 'Finish onboarding' }}
+            <button class="button" type="button" :disabled="finishBusy" @click="finishPlan">
+              {{ finishBusy ? labels.finishing : labels.finish }}
             </button>
           </div>
         </div>

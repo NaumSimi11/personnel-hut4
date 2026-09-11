@@ -24,6 +24,7 @@ async function signOut() {
         <router-link :to="{ name: 'directory' }">People &amp; access</router-link>
         <router-link :to="{ name: 'hiring' }">Hiring</router-link>
         <router-link :to="{ name: 'onboarding' }">Onboarding</router-link>
+        <router-link :to="{ name: 'offboarding' }">Offboarding</router-link>
         <router-link :to="{ name: 'my-workspace' }">My workspace</router-link>
       </nav>
       <div class="sidebar-bottom">

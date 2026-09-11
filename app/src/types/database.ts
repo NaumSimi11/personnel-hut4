@@ -2619,7 +2619,16 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      confirm_hire: {
+        Args: {
+          p_application_id: string
+          p_full_name: string
+          p_job_title: string
+          p_manager_id?: string
+          p_start_date: string
+        }
+        Returns: Json
+      }
     }
     Enums: {
       [_ in never]: never

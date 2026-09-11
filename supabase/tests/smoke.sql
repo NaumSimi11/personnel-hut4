@@ -285,6 +285,55 @@ begin
   end;
 end $$;
 
+-- confirm_hire: atomic, idempotent, capability-gated (migration 0009).
+insert into public.candidates (id, full_name, email) values
+  ('80000000-0000-0000-0000-000000000002','Hired Candidate','hired-candidate@example.test');
+insert into public.applications (id, job_id, company_id, candidate_id, stage_key) values
+  ('90000000-0000-0000-0000-000000000002','70000000-0000-0000-0000-000000000001',
+   '10000000-0000-0000-0000-00000000000a','80000000-0000-0000-0000-000000000002','offer');
+
+-- Alex (Director, NO employment.edit) is refused.
+set app.test_uid = '00000000-0000-0000-0000-000000000001';
+set role authenticated;
+do $$
+begin
+  begin
+    perform public.confirm_hire('90000000-0000-0000-0000-000000000002',
+      'Hired Candidate', 'Coordinator', current_date);
+    raise exception 'FAIL: director confirmed a hire without employment.edit';
+  exception when insufficient_privilege then null;
+  end;
+end $$;
+reset role;
+
+-- Ada (admin) confirms; a second confirm is a no-op returning the same result.
+set app.test_uid = '00000000-0000-0000-0000-000000000004';
+set role authenticated;
+do $$
+declare first jsonb; again jsonb;
+begin
+  first := public.confirm_hire('90000000-0000-0000-0000-000000000002',
+    'Hired Candidate', 'Coordinator', current_date);
+  assert (first->>'already_hired')::boolean = false, 'first confirm creates';
+  assert (select stage_key from public.applications
+          where id = '90000000-0000-0000-0000-000000000002') = 'hired',
+    'application moved to hired';
+  assert (select count(*) from public.plan_tasks
+          where plan_id = (first->>'plan_id')::uuid) = 5,
+    'onboarding plan carries the 5 template tasks';
+  again := public.confirm_hire('90000000-0000-0000-0000-000000000002',
+    'Hired Candidate', 'Coordinator', current_date);
+  assert (again->>'already_hired')::boolean = true, 'second confirm is a no-op';
+  assert again->>'employment_period_id' = first->>'employment_period_id',
+    'retry returns the same employment period';
+  assert (select count(*) from public.employment_periods ep
+          join public.people p on p.id = ep.person_id
+          where p.work_email = 'hired-candidate@example.test') = 1,
+    'exactly one employee results from one application';
+end $$;
+reset role;
+set app.test_uid = '';
+
 -- Audit trail captured the grant writes.
 do $$
 begin

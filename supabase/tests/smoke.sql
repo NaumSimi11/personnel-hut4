@@ -2205,6 +2205,49 @@ end $$;
 reset role;
 set app.test_uid = '';
 
+-- ------------------------------------- equipment on offboarding (0025)
+-- Pia holds LT-001 (reserved in the 0022 block). Scheduling her departure
+-- adds a return task; taking the asset back completes it; re-scheduling
+-- adds tasks for equipment handed out since; a leaver with nothing on
+-- hand gets no equipment task.
+insert into public.grant_capabilities (grant_id, capability_key) values
+  ('40000000-0000-0000-0000-000000000001', 'departure.start')
+on conflict do nothing;
+set app.test_uid = '00000000-0000-0000-0000-000000000001';  -- Alex
+set role authenticated;
+do $$
+declare r jsonb; v_plan uuid; v_task uuid; v_asset2 uuid; v_a2 uuid;
+begin
+  r := public.schedule_departure('30000000-0000-0000-0000-000000000021', current_date + 30, current_date + 28, null);
+  v_plan := (r->>'plan_id')::uuid;
+  select id into v_task from public.plan_tasks where plan_id = v_plan and asset_id = current_setting('app.smoke_asset')::uuid;
+  assert v_task is not null, 'a return task for the held asset';
+  assert (select title from public.plan_tasks where id = v_task) like 'Return LT-001 · Laptop%', 'named after the asset';
+  assert (select owner_role from public.plan_tasks where id = v_task) = 'it', 'owned by IT';
+  assert (select critical from public.plan_tasks where id = v_task), 'critical';
+  assert (select due_date from public.plan_tasks where id = v_task) = current_date + 28, 'due on the last working day';
+  perform public.cancel_reservation((select id from public.asset_assignments where asset_id = current_setting('app.smoke_asset')::uuid and returned_at is null));
+  assert (select status from public.plan_tasks where id = v_task) = 'done', 'taking it back completes the task';
+  assert (select done_by from public.plan_tasks where id = v_task) = '20000000-0000-0000-0000-000000000001', 'by whoever took it back';
+  -- Equipment handed out after scheduling: re-scheduling adds its task.
+  insert into public.assets (company_id, asset_tag, type_key) values ('10000000-0000-0000-0000-00000000000a', 'PH-001', 'phone') returning id into v_asset2;
+  r := public.reserve_asset(v_asset2, '20000000-0000-0000-0000-000000000021', null);
+  v_a2 := (r->>'assignment_id')::uuid;
+  perform public.issue_asset(v_a2);
+  r := public.schedule_departure('30000000-0000-0000-0000-000000000021', current_date + 40, current_date + 38, null);
+  assert (r->>'already_scheduled')::boolean, 'same plan';
+  assert (select start_date from public.plans where id = v_plan) = current_date + 38, 'the plan follows the new last day';
+  assert exists (select 1 from public.plan_tasks where plan_id = v_plan and asset_id = v_asset2 and status = 'open' and due_date = current_date + 38), 'a task for the phone, due on the new last day';
+  assert (select count(*) from public.plan_tasks where plan_id = v_plan and asset_id = current_setting('app.smoke_asset')::uuid) = 1, 'no duplicate for the laptop';
+  perform public.return_asset(v_a2, 'fine', 'available');
+  assert (select status from public.plan_tasks where plan_id = v_plan and asset_id = v_asset2) = 'done', 'returning completes it too';
+  -- Quinn holds nothing.
+  r := public.schedule_departure('30000000-0000-0000-0000-000000000022', current_date + 9, null, null);
+  assert not exists (select 1 from public.plan_tasks where plan_id = (r->>'plan_id')::uuid and asset_id is not null), 'no equipment task without equipment';
+end $$;
+reset role;
+set app.test_uid = '';
+
 reset role;
 set app.test_uid = '';
 

@@ -68,6 +68,19 @@ const empForm = ref({
   startDate: new Date().toISOString().slice(0, 10),
 })
 const busy = ref(false)
+// Adding a period needs employment.edit in the chosen company (RLS); a
+// person whose employment has all ended is rehired — same record, new period.
+const editableCompanies = computed(() => companies.value.filter((c) => auth.can(c.id, 'employment.edit')))
+const isRehire = computed(() => employments.value.length > 0 && employments.value.every((e) => departureState(e) === 'former'))
+// Periods never overlap, former ones included: a rehire starts after the last end date.
+const lastEndDate = computed(() => employments.value.map((e) => e.end_date).filter((d): d is string => !!d).sort().at(-1) ?? null)
+function nextAvailableStart(): string {
+  const today = new Date().toISOString().slice(0, 10)
+  if (!lastEndDate.value || lastEndDate.value < today) return today
+  const next = new Date(`${lastEndDate.value}T00:00:00Z`)
+  next.setUTCDate(next.getUTCDate() + 1)
+  return next.toISOString().slice(0, 10)
+}
 const departureDialog = ref<InstanceType<typeof ScheduleDepartureDialog> | null>(null)
 const changeDialog = ref<InstanceType<typeof ScheduleChangeDialog> | null>(null)
 const lookups = ref<Lookups>({ departments: {}, locations: {}, people: {}, employmentTypes: {} })
@@ -220,14 +233,33 @@ async function addEmployment(): Promise<void> {
   })
   busy.value = false
   if (err) {
-    error.value = /no_overlapping_employment/.test(err.message)
-      ? 'This person already has an open employment period — schedule its departure and mark them former first (a transfer ends one period and starts the next).'
-      : err.message
+    if (/no_overlapping_employment/.test(err.message)) {
+      error.value = isRehire.value
+        ? `Their previous employment runs until ${lastEndDate.value ?? 'its end date'}; start the new period after that.`
+        : 'This person already has an open employment period — schedule its departure and mark them former first (a transfer ends one period and starts the next).'
+    } else {
+      error.value = err.message
+    }
     return
   }
   showAddEmployment.value = false
-  notice.value = 'Employment added.'
+  notice.value = isRehire.value ? 'Rehired — a new employment period starts; the old one stays on record.' : 'Employment added.'
   await load()
+}
+
+/** A rehire starts from the last employment: same company, title and type, dated today. */
+function toggleAddEmployment(): void {
+  if (!showAddEmployment.value) {
+    const last = [...employments.value].sort((a, b) => b.start_date.localeCompare(a.start_date))[0]
+    const company = last && editableCompanies.value.some((c) => c.id === last.company_id) ? last.company_id : editableCompanies.value[0]?.id ?? ''
+    empForm.value = {
+      companyId: company,
+      jobTitle: isRehire.value && last ? last.job_title : '',
+      employmentType: (isRehire.value && last?.employment_type_key) || 'full_time',
+      startDate: nextAvailableStart(),
+    }
+  }
+  showAddEmployment.value = !showAddEmployment.value
 }
 
 onMounted(async () => {
@@ -279,12 +311,12 @@ onMounted(async () => {
               <p>Transfers and rehires add periods; history is never overwritten.</p>
             </div>
             <button
-              v-if="auth.isAdmin"
+              v-if="editableCompanies.length"
               class="button secondary"
               type="button"
-              @click="showAddEmployment = !showAddEmployment"
+              @click="toggleAddEmployment"
             >
-              Add employment
+              {{ isRehire ? 'Rehire' : 'Add employment' }}
             </button>
           </div>
 
@@ -292,7 +324,7 @@ onMounted(async () => {
             <div class="field">
               <label for="emp-company">Company</label>
               <select id="emp-company" v-model="empForm.companyId">
-                <option v-for="c in companies" :key="c.id" :value="c.id">{{ c.name }}</option>
+                <option v-for="c in editableCompanies" :key="c.id" :value="c.id">{{ c.name }}</option>
               </select>
             </div>
             <div class="field">

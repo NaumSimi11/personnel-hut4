@@ -2412,6 +2412,7 @@ export type Database = {
       }
       plan_tasks: {
         Row: {
+          asset_id: string | null
           blocked_reason: string | null
           critical: boolean
           description: string | null
@@ -2433,6 +2434,7 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          asset_id?: string | null
           blocked_reason?: string | null
           critical?: boolean
           description?: string | null
@@ -2454,6 +2456,7 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          asset_id?: string | null
           blocked_reason?: string | null
           critical?: boolean
           description?: string | null
@@ -2475,6 +2478,13 @@ export type Database = {
           updated_at?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "plan_tasks_asset_id_fkey"
+            columns: ["asset_id"]
+            isOneToOne: false
+            referencedRelation: "assets"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "plan_tasks_done_by_fkey"
             columns: ["done_by"]

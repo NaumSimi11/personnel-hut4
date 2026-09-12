@@ -2611,4 +2611,133 @@ end $$;
 reset role;
 set app.test_uid = '';
 
+-- ================================================================ 0028
+-- Field Notebook import: dry run writes nothing, commit links an existing
+-- person by email, creates the rest, keeps legacy ids, reconciles and
+-- verifies balances, skips per-faith holidays, grants approvers, and
+-- refuses non-admins and mismatched balances.
+set app.test_uid = '00000000-0000-0000-0000-000000000003';
+set role authenticated;
+do $$
+begin
+  begin
+    perform public.import_field_notebook('{"companies":[],"people":[]}'::jsonb, false);
+    raise exception 'FAIL: non-admin ran the import';
+  exception when insufficient_privilege then null;
+  end;
+end $$;
+reset role;
+set app.test_uid = '00000000-0000-0000-0000-000000000004';
+set role authenticated;
+do $$
+declare
+  payload jsonb := $j${
+    "year": 2026,
+    "companies": [{"fn_name": "Company A", "short_code": "A"}, {"fn_name": "Old B", "short_code": "B", "rename_to": "Company Bee", "new_short_code": "BEE"}],
+    "people": [
+      {"fn_id": 1, "name": "Omar Employee", "email": "OMAR@a.test", "company": "Company A", "country": "North Macedonia", "department": "Finance", "position": "Engineer", "is_active": true, "allowance": 22, "remaining": 15},
+      {"fn_id": 2, "name": "Nina New", "email": "nina@b.test", "phone": "+389 70 000 000", "company": "Old B", "country": "Serbia", "department": "Sales", "position": "Sales Lead", "is_active": true, "allowance": 20, "remaining": 18, "first_request": "2025-12-29"},
+      {"fn_id": 3, "name": "Gone Gary", "email": "gary@b.test", "company": "Old B", "country": "North Macedonia", "is_active": false, "allowance": 20, "remaining": 20, "updated_at": "2026-03-01T10:00:00Z"},
+      {"fn_id": 4, "name": "No Mail", "email": "", "company": "Old B", "country": "Malta", "is_active": true, "allowance": 1, "remaining": 1}
+    ],
+    "requests": [
+      {"fn_id": 101, "person_fn_id": 1, "type": "Annual leave", "start": "2026-02-02", "end": "2026-02-06", "working_days": 5, "carry_over_used": 0, "note": "Ski", "status": "approved", "submitted_by_email": "omar@a.test", "decided_by_email": "ada@holding.test", "decided_at": "2026-01-20T09:00:00Z", "created_at": "2026-01-19T09:00:00Z"},
+      {"fn_id": 102, "person_fn_id": 1, "type": "Annual leave", "start": "2026-03-02", "end": "2026-03-03", "working_days": 2, "carry_over_used": 0, "status": "rejected", "created_at": "2026-02-19T09:00:00Z"},
+      {"fn_id": 103, "person_fn_id": 2, "type": "Justified day", "start": "2026-04-01", "end": "2026-04-01", "working_days": 1, "carry_over_used": 0, "status": "approved", "created_at": "2026-03-19T09:00:00Z"},
+      {"fn_id": 104, "person_fn_id": 2, "type": "Annual leave", "start": "2025-12-29", "end": "2025-12-30", "working_days": 2, "carry_over_used": 0, "status": "approved", "created_at": "2025-12-01T09:00:00Z"},
+      {"fn_id": 105, "person_fn_id": 2, "type": "Mystery", "start": "2026-05-01", "end": "2026-05-01", "working_days": 1, "status": "approved"}
+    ],
+    "adjustments": [
+      {"person_fn_id": 1, "days": -1, "kind": "manual_adjustment", "reason": "Took a half day twice", "created_by_email": "ada@holding.test", "created_at": "2026-05-01T10:00:00Z"},
+      {"person_fn_id": 1, "days": -5, "kind": "leave_approved", "reason": "mirrors 101"}
+    ],
+    "holidays": [
+      {"country": "North Macedonia", "date": "2026-10-11", "name": "Day of the Uprising", "universal": true},
+      {"country": "North Macedonia", "date": "2026-12-25", "name": "Christmas (Catholic)", "universal": false},
+      {"country": "Serbia", "date": "2026-02-15", "name": "Statehood Day", "universal": true}
+    ],
+    "approvers": [{"email": "omar@a.test", "short_codes": ["A", "BEE"]}, {"email": "nobody@x.test", "short_codes": ["A"]}]
+  }$j$;
+  report jsonb;
+  b jsonb;
+  nina uuid;
+  n int;
+begin
+  -- Dry run: verdicts, nothing written.
+  report := public.import_field_notebook(payload, false);
+  assert (report->>'committed') = 'false', 'dry run';
+  assert (report->'counts'->>'people_created')::int = 2 and (report->'counts'->>'people_linked')::int = 1, 'two created, Omar linked: ' || (report->'counts')::text;
+  assert (report->'counts'->>'refused')::int = 3, 'no-mail person, mystery type, unknown approver refused: ' || (report->'counts')::text;
+  assert (report->'counts'->>'requests')::int = 4, 'four requests ready';
+  assert (report->'counts'->>'holidays')::int = 2 and (report->'counts'->>'holidays_skipped')::int = 1, 'per-faith holiday skipped';
+  assert (select x->>'reconciled_by' from jsonb_array_elements(report->'balances') x where x->>'name' = 'Omar Employee') = '-1', 'dry run predicts the reconciliation: ' || (report->'balances')::text;
+  assert (select count(*) from jsonb_array_elements(report->'assumptions') x where x ? 'country_code') = 1, 'one country assumption per company (A already has MK): ' || (report->'assumptions')::text;
+  assert jsonb_array_length(report->'grants') = 2, 'BEE resolves through the rename during the dry run: ' || (report->'grants')::text;
+  assert not exists (select 1 from public.people where lower(work_email) = 'nina@b.test'), 'dry run wrote nothing';
+  assert (select name from public.companies where id = '10000000-0000-0000-0000-00000000000b') = 'Company B', 'dry run did not rename';
+
+  -- Commit with refusals is refused.
+  begin
+    perform public.import_field_notebook(payload, true);
+    raise exception 'FAIL: committed with refused rows';
+  exception when others then
+    if sqlerrm not like '%refused%' then raise; end if;
+  end;
+  assert not exists (select 1 from public.people where lower(work_email) = 'nina@b.test'), 'refused commit rolled back';
+
+  -- Clean payload commits.
+  payload := jsonb_set(payload, '{people}', (payload->'people') - 3);
+  payload := jsonb_set(payload, '{requests}', (payload->'requests') - 4);
+  payload := jsonb_set(payload, '{approvers}', jsonb_build_array(payload->'approvers'->0));
+  report := public.import_field_notebook(payload, true);
+  assert (report->>'committed') = 'true', 'committed';
+  select id into nina from public.people where work_email = 'nina@b.test';
+  assert nina is not null and (select phone from public.people where id = nina) = '+389 70 000 000', 'Nina created with phone';
+  assert (select custom->'field_notebook'->>'id' from public.people where id = nina) = '2', 'source id kept';
+  assert (select count(*) from public.people where lower(work_email) = 'omar@a.test') = 1, 'Omar linked, not duplicated';
+  assert (select name || '/' || short_code from public.companies where id = '10000000-0000-0000-0000-00000000000b') = 'Company Bee/BEE', 'renamed on commit';
+  assert (select country_code from public.companies where id = '10000000-0000-0000-0000-00000000000b') = 'RS', 'majority country of active people (Nina in Serbia; Gary is former)';
+  -- Nina's period: Sales Lead, shared Sales department, started with her earliest request, no location (RS = company country).
+  select count(*) into n from public.employment_periods ep join public.departments d on d.id = ep.department_id
+    where ep.person_id = nina and ep.job_title = 'Sales Lead' and d.company_id is null and d.name = 'Sales'
+      and ep.start_date = '2025-12-29' and ep.status = 'active' and ep.location_id is null;
+  assert n = 1, 'Nina''s employment';
+  assert (select status || '/' || end_date::text from public.employment_periods ep join public.people p on p.id = ep.person_id where p.work_email = 'gary@b.test') = 'former/2026-03-01', 'Gary former with the last update as end';
+  -- Gary is in MK at an RS company: a location was created for him.
+  assert (select l.country_code from public.employment_periods ep join public.people p on p.id = ep.person_id join public.locations l on l.id = ep.location_id where p.work_email = 'gary@b.test') = 'MK', 'Gary''s location';
+  assert (select country_code from public.companies where id = '10000000-0000-0000-0000-00000000000a') = 'MK', 'Company A country';
+  -- Requests with legacy ids, actors resolved.
+  assert (select count(*) from public.leave_requests where legacy_id in (101, 102, 103, 104)) = 4, 'four requests';
+  assert (select decided_by from public.leave_requests where legacy_id = 101) = '20000000-0000-0000-0000-000000000004', 'decider resolved by email';
+  assert (select status from public.leave_requests where legacy_id = 102) = 'rejected', 'status kept';
+  -- Balances reconciled to the source and verified.
+  b := public.leave_balance('20000000-0000-0000-0000-000000000003', '10000000-0000-0000-0000-00000000000a', 2026);
+  assert (b->>'entitlement')::numeric = 22 and (b->>'used')::numeric = 5 and (b->>'remaining')::numeric = 15, 'Omar: 22 - 5 - 1 manual - 1 reconciliation = 15: ' || (b)::text;
+  assert (select count(*) from public.leave_adjustments a join public.leave_balances lb on lb.id = a.balance_id
+          where lb.person_id = '20000000-0000-0000-0000-000000000003' and lb.year = 2026 and a.kind = 'import') = 2, 'manual adjustment + reconciliation, the mirror row ignored';
+  b := public.leave_balance(nina, '10000000-0000-0000-0000-00000000000b', 2026);
+  assert (b->>'remaining')::numeric = 18 and (b->>'used')::numeric = 0, 'Nina: justified day does not deduct; 2025 request is another year; reconciled -2: ' || (b)::text;
+  assert (select count(*) from jsonb_array_elements(report->'balances') x where (x->>'verified')::boolean) = 3, 'every balance verified: ' || (report->'balances')::text;
+  -- Holidays and grants.
+  assert (select count(*) from public.public_holidays where country_code = 'MK' and date = '2026-10-11') = 1, 'MK holiday';
+  assert (select count(*) from public.public_holidays where date = '2026-12-25' and country_code = 'MK') = 0, 'per-faith skipped';
+  assert (select count(*) from public.grant_capabilities gc join public.access_grants g on g.id = gc.grant_id
+          where g.person_id = '20000000-0000-0000-0000-000000000003' and gc.capability_key = 'leave.approve') = 2, 'Omar approves in A and BEE';
+  -- Re-run: legacy ids already there, nothing duplicated.
+  report := public.import_field_notebook(payload, true);
+  assert (report->'counts'->>'requests_already_there')::int = 4 and (report->'counts'->>'requests')::int = 0, 'idempotent requests';
+  assert (select count(*) from public.people where lower(work_email) = 'nina@b.test') = 1, 'Nina not duplicated';
+  assert (select count(*) from public.leave_requests where legacy_id in (101, 102, 103, 104)) = 4, 'no duplicate requests';
+  -- A linked person employed elsewhere over the same dates is refused, not double-employed.
+  report := public.import_field_notebook(jsonb_set(payload, '{people}', jsonb_build_array(
+    jsonb_build_object('fn_id', 9, 'name', 'Fiona Finance', 'email', 'fiona@a.test', 'company', 'Old B', 'country', 'Serbia', 'is_active', true, 'allowance', 20, 'remaining', 20))), false);
+  assert (report->'rows'->0->'problems'->>0) like 'already employed in another company%', 'overlap refused: ' || (report->'rows')::text;
+  -- A second run reconciles nothing further: the ledger already shows the source numbers.
+  assert (select count(*) from public.leave_adjustments a join public.leave_balances lb on lb.id = a.balance_id
+          where lb.person_id = '20000000-0000-0000-0000-000000000003' and lb.year = 2026 and a.kind = 'import') = 2, 'no second reconciliation';
+  assert (select count(*) from jsonb_array_elements(report->'balances') x where (x->>'reconciled_by')::numeric <> 0) = 0, 'nothing to reconcile on a re-run: ' || (report->'balances')::text;
+end $$;
+reset role;
+set app.test_uid = '';
+
 select 'SMOKE TESTS PASSED' as result;

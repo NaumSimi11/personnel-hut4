@@ -3614,6 +3614,10 @@ export type Database = {
         Args: { p_note: string; p_request_id: string }
         Returns: Json
       }
+      import_field_notebook: {
+        Args: { p_commit?: boolean; p_payload: Json }
+        Returns: Json
+      }
       import_people: {
         Args: { p_commit?: boolean; p_company_id: string; p_rows: Json }
         Returns: Json

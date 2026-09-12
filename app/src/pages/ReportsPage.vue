@@ -65,7 +65,6 @@ async function loadCompanies(): Promise<void> {
   const { data } = await supabase
     .from('companies')
     .select('id, name')
-    .eq('kind', 'company')
     .is('archived_at', null)
     .order('name')
   companies.value = (data ?? []).filter((c) => auth.can(c.id, 'jobs.view'))

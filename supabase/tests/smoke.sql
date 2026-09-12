@@ -2248,6 +2248,159 @@ end $$;
 reset role;
 set app.test_uid = '';
 
+-- ------------------------------------------------- company structure (0026)
+-- Alex gets employment.edit in B as well. Rhea moves from A to B today;
+-- Sven moves next week; a company with people cannot be archived, an empty
+-- one can, the holding never.
+insert into public.people (id, full_name) values
+  ('20000000-0000-0000-0000-000000000023', 'Rhea Relocate'),
+  ('20000000-0000-0000-0000-000000000024', 'Sven Soon');
+insert into public.employment_periods (id, person_id, company_id, job_title, employment_type_key, status, start_date) values
+  ('30000000-0000-0000-0000-000000000025', '20000000-0000-0000-0000-000000000023', '10000000-0000-0000-0000-00000000000a', 'Accountant', 'full_time', 'active', '2024-01-01'),
+  ('30000000-0000-0000-0000-000000000026', '20000000-0000-0000-0000-000000000024', '10000000-0000-0000-0000-00000000000a', 'Designer', 'part_time', 'active', '2024-01-01');
+insert into public.companies (id, kind, name, short_code, archived_at) values
+  ('10000000-0000-0000-0000-00000000000c', 'company', 'Company C (closed)', 'C', now()),
+  ('10000000-0000-0000-0000-00000000000d', 'company', 'Company D (empty)', 'D', null),
+  ('10000000-0000-0000-0000-00000000000e', 'holding', 'The Holding', 'HOLD', null);
+insert into public.access_grants (id, person_id, company_id) values
+  ('40000000-0000-0000-0000-000000000026', '20000000-0000-0000-0000-000000000001', '10000000-0000-0000-0000-00000000000b');
+insert into public.grant_capabilities (grant_id, capability_key) values
+  ('40000000-0000-0000-0000-000000000026', 'people.view'),
+  ('40000000-0000-0000-0000-000000000026', 'employment.edit');
+set app.test_uid = '00000000-0000-0000-0000-000000000001';  -- Alex
+set role authenticated;
+do $$
+declare r jsonb; v_new uuid;
+begin
+  begin
+    perform public.transfer_employment('30000000-0000-0000-0000-000000000025', '10000000-0000-0000-0000-00000000000c', current_date);
+    raise exception 'FAIL: transferred into an archived company';
+  exception when raise_exception then
+    if sqlerrm not like '%not available%' then raise; end if;
+  end;
+  begin
+    perform public.transfer_employment('30000000-0000-0000-0000-000000000025', '10000000-0000-0000-0000-00000000000a', current_date);
+    raise exception 'FAIL: transferred into the same company';
+  exception when raise_exception then
+    if sqlerrm not like '%already works for%' then raise; end if;
+  end;
+  begin
+    perform public.transfer_employment('30000000-0000-0000-0000-000000000025', '10000000-0000-0000-0000-00000000000b', '2024-01-01');
+    raise exception 'FAIL: transfer dated on the start date accepted';
+  exception when raise_exception then
+    if sqlerrm not like '%after the employment started%' then raise; end if;
+  end;
+  begin
+    perform public.transfer_employment('30000000-0000-0000-0000-000000000025', '10000000-0000-0000-0000-00000000000d', current_date);
+    raise exception 'FAIL: transferred without employment.edit in the target';
+  exception when insufficient_privilege then null;
+  end;
+  -- Today: the old period ends yesterday and is former, the new one is active.
+  r := public.transfer_employment('30000000-0000-0000-0000-000000000025', '10000000-0000-0000-0000-00000000000b', current_date, null, null, 'Moves with the finance function');
+  v_new := (r->>'new_period_id')::uuid;
+  assert (r->>'applied')::boolean, 'applied at once';
+  assert (select status from public.employment_periods where id = '30000000-0000-0000-0000-000000000025') = 'former', 'old period former';
+  assert (select end_date from public.employment_periods where id = '30000000-0000-0000-0000-000000000025') = current_date - 1, 'ended the day before';
+  assert (select last_working_date from public.employment_periods where id = '30000000-0000-0000-0000-000000000025') = current_date - 1, 'last day the day before';
+  assert (select transferred_to_period_id from public.employment_periods where id = '30000000-0000-0000-0000-000000000025') = v_new, 'linked';
+  assert (select status from public.employment_periods where id = v_new) = 'active', 'new period active';
+  assert (select company_id from public.employment_periods where id = v_new) = '10000000-0000-0000-0000-00000000000b', 'at the target';
+  assert (select job_title || '/' || employment_type_key from public.employment_periods where id = v_new) = 'Accountant/full_time', 'title and type carried';
+  assert (select start_date from public.employment_periods where id = v_new) = current_date, 'starts on the date';
+  assert not exists (select 1 from public.plans where employment_period_id = '30000000-0000-0000-0000-000000000025'), 'a transfer is not a departure: no plan';
+  assert exists (select 1 from public.employment_changes where employment_period_id = v_new and reason = 'Moves with the finance function' and status = 'applied'), 'the reason is on record';
+  begin
+    perform public.transfer_employment('30000000-0000-0000-0000-000000000025', '10000000-0000-0000-0000-00000000000b', current_date);
+    raise exception 'FAIL: transferred an ended period';
+  exception when raise_exception then
+    if sqlerrm not like '%has ended%' then raise; end if;
+  end;
+  -- Next week: old stays active until the day, new waits as pre-start.
+  r := public.transfer_employment('30000000-0000-0000-0000-000000000026', '10000000-0000-0000-0000-00000000000b', current_date + 7, 'Senior Designer', null, null);
+  assert not (r->>'applied')::boolean, 'a future transfer waits';
+  assert (select status from public.employment_periods where id = '30000000-0000-0000-0000-000000000026') = 'active', 'old still active';
+  assert (select end_date from public.employment_periods where id = '30000000-0000-0000-0000-000000000026') = current_date + 6, 'old ends the day before';
+  assert (select status || '/' || job_title from public.employment_periods where id = (r->>'new_period_id')::uuid) = 'pre_start/Senior Designer', 'new pre-start with the new title';
+  begin
+    perform public.transfer_employment('30000000-0000-0000-0000-000000000026', '10000000-0000-0000-0000-00000000000b', current_date + 8);
+    raise exception 'FAIL: second transfer scheduled on the same period';
+  exception when raise_exception then
+    if sqlerrm not like '%already scheduled%' then raise; end if;
+  end;
+end $$;
+reset role;
+set app.test_uid = '';
+-- The day arrives (simulated): the nightly job completes the transfer.
+update public.employment_periods set end_date = current_date - 2, last_working_date = current_date - 2 where id = '30000000-0000-0000-0000-000000000026';
+update public.employment_periods set start_date = current_date - 1 where person_id = '20000000-0000-0000-0000-000000000024' and status = 'pre_start';
+do $$
+begin
+  perform public.apply_due_employment_changes();
+  assert (select status from public.employment_periods where id = '30000000-0000-0000-0000-000000000026') = 'former', 'old period completed on the day';
+  assert (select status from public.employment_periods where person_id = '20000000-0000-0000-0000-000000000024' and company_id = '10000000-0000-0000-0000-00000000000b') = 'active', 'new period started';
+end $$;
+-- Archiving.
+set app.test_uid = '00000000-0000-0000-0000-000000000004';  -- Ada, admin
+set role authenticated;
+do $$
+declare r jsonb;
+begin
+  begin
+    perform public.archive_company('10000000-0000-0000-0000-00000000000b');
+    raise exception 'FAIL: archived a company with people';
+  exception when raise_exception then
+    if sqlerrm not like '%people are still employed here%' then raise; end if;
+  end;
+  begin
+    perform public.archive_company('10000000-0000-0000-0000-00000000000e');
+    raise exception 'FAIL: archived the holding';
+  exception when raise_exception then
+    if sqlerrm not like '%holding cannot be archived%' then raise; end if;
+  end;
+  r := public.archive_company('10000000-0000-0000-0000-00000000000d');
+  assert (r->>'archived')::boolean and not (r->>'already')::boolean, 'an empty company archives';
+  r := public.archive_company('10000000-0000-0000-0000-00000000000c');
+  assert (r->>'already')::boolean, 'archiving twice is a no-op';
+  begin
+    update public.companies set archived_at = now() where id = '10000000-0000-0000-0000-00000000000b';
+    raise exception 'FAIL: direct archive slipped past the guard';
+  exception when raise_exception then
+    if sqlerrm not like '%still employed here%' then raise; end if;
+  end;
+end $$;
+reset role;
+set app.test_uid = '';
+
+-- 0026 review fixes: a scheduled departure blocks a transfer; a change due
+-- before the move applies to the old employment first.
+insert into public.people (id, full_name) values
+  ('20000000-0000-0000-0000-000000000027', 'Tara Leaving'),
+  ('20000000-0000-0000-0000-000000000028', 'Uma Upgraded');
+insert into public.employment_periods (id, person_id, company_id, job_title, status, start_date) values
+  ('30000000-0000-0000-0000-000000000027', '20000000-0000-0000-0000-000000000027', '10000000-0000-0000-0000-00000000000a', 'Clerk', 'active', '2024-01-01'),
+  ('30000000-0000-0000-0000-000000000028', '20000000-0000-0000-0000-000000000028', '10000000-0000-0000-0000-00000000000a', 'Junior', 'active', '2024-01-01');
+insert into public.employment_changes (employment_period_id, company_id, effective_date, changes, status)
+  values ('30000000-0000-0000-0000-000000000028', '10000000-0000-0000-0000-00000000000a', current_date - 1, '{"job_title":"Senior"}', 'scheduled');
+set app.test_uid = '00000000-0000-0000-0000-000000000001';  -- Alex
+set role authenticated;
+do $$
+declare r jsonb;
+begin
+  perform public.schedule_departure('30000000-0000-0000-0000-000000000027', current_date + 20, null, null);
+  begin
+    perform public.transfer_employment('30000000-0000-0000-0000-000000000027', '10000000-0000-0000-0000-00000000000b', current_date + 5);
+    raise exception 'FAIL: transferred an employment with a scheduled departure';
+  exception when raise_exception then
+    if sqlerrm not like '%departure is already scheduled%' then raise; end if;
+  end;
+  r := public.transfer_employment('30000000-0000-0000-0000-000000000028', '10000000-0000-0000-0000-00000000000b', current_date);
+  assert (select job_title from public.employment_periods where id = '30000000-0000-0000-0000-000000000028') = 'Senior', 'the due change applied to the old employment first';
+  assert (select job_title from public.employment_periods where id = (r->>'new_period_id')::uuid) = 'Senior', 'and the new one carries the applied title';
+  assert (select status from public.employment_changes where employment_period_id = '30000000-0000-0000-0000-000000000028') = 'applied', 'not cancelled';
+end $$;
+reset role;
+set app.test_uid = '';
+
 reset role;
 set app.test_uid = '';
 

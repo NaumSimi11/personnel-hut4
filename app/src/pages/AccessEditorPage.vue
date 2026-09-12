@@ -145,7 +145,7 @@ onMounted(async () => {
   await catalog.load()
   const [personRes, companiesRes] = await Promise.all([
     supabase.from('people').select('full_name').eq('id', personId).maybeSingle(),
-    supabase.from('companies').select('id, name').eq('kind', 'company').is('archived_at', null).order('name'),
+    supabase.from('companies').select('id, name').is('archived_at', null).order('name'),
   ])
   if (personRes.error || !personRes.data) {
     error.value = 'Person not found or not visible with your access.'

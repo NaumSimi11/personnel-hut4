@@ -6,6 +6,7 @@ import { useAuthStore } from '@/stores/auth'
 import PrivateDetailsCard from '@/components/PrivateDetailsCard.vue'
 import ScheduleDepartureDialog from '@/components/ScheduleDepartureDialog.vue'
 import ScheduleChangeDialog, { type ChangeTarget } from '@/components/ScheduleChangeDialog.vue'
+import TransferDialog from '@/components/TransferDialog.vue'
 import CompensationCard from '@/components/CompensationCard.vue'
 import DocumentsCard from '@/components/DocumentsCard.vue'
 import DocumentRequestsCard from '@/components/DocumentRequestsCard.vue'
@@ -34,6 +35,8 @@ type Employment = {
   plans: { id: string; kind: string; status: string }[]
   // Scheduled employment changes not yet applied (plan 022).
   employment_changes: { id: string; effective_date: string; changes: Record<string, unknown>; reason: string | null; status: string }[]
+  // Set once a transfer is scheduled or done (plan 035a).
+  transferred_to_period_id: string | null
 }
 type Grant = {
   company_id: string
@@ -83,6 +86,7 @@ function nextAvailableStart(): string {
 }
 const departureDialog = ref<InstanceType<typeof ScheduleDepartureDialog> | null>(null)
 const changeDialog = ref<InstanceType<typeof ScheduleChangeDialog> | null>(null)
+const transferDialog = ref<InstanceType<typeof TransferDialog> | null>(null)
 const lookups = ref<Lookups>({ departments: {}, locations: {}, people: {}, employmentTypes: {} })
 
 function canEditEmployment(emp: Employment): boolean {
@@ -101,6 +105,13 @@ function employmentFacts(emp: Employment): string {
   if (emp.location) parts.push(emp.location.name)
   if (emp.manager) parts.push(`reports to ${emp.manager.full_name}`)
   return parts.join(' · ')
+}
+
+function onTransferred(result: { applied: boolean; effectiveDate: string; companyName: string }): void {
+  notice.value = result.applied
+    ? `Transferred to ${result.companyName}. The previous employment is on record as former.`
+    : `Transfer to ${result.companyName} scheduled for ${result.effectiveDate}; the current employment continues until then.`
+  void load()
 }
 
 function onChangeSaved(result: { applied: boolean; effectiveDate: string }): void {
@@ -178,7 +189,7 @@ async function load(): Promise<void> {
       .from('employment_periods')
       .select(
         `id, company_id, person_id, job_title, status, start_date, end_date, last_working_date,
-         employment_type_key, department_id, location_id, manager_id,
+         employment_type_key, department_id, location_id, manager_id, transferred_to_period_id,
          company:companies(name),
          department:departments(name),
          location:locations(name),
@@ -264,7 +275,7 @@ function toggleAddEmployment(): void {
 
 onMounted(async () => {
   const [companiesRes, typesRes] = await Promise.all([
-    supabase.from('companies').select('id, name').eq('kind', 'company').is('archived_at', null).order('name'),
+    supabase.from('companies').select('id, name').is('archived_at', null).order('name'),
     supabase.from('employment_types').select('key, label').is('archived_at', null).order('sort_order'),
   ])
   companies.value = companiesRes.data ?? []
@@ -372,7 +383,10 @@ onMounted(async () => {
                   Cancel
                 </button>
               </small>
-              <small v-if="departureState(emp) === 'departing'" class="departing">
+              <small v-if="departureState(emp) === 'departing' && emp.transferred_to_period_id" class="departing">
+                Transferring · last day here {{ emp.last_working_date ?? emp.end_date }}
+              </small>
+              <small v-else-if="departureState(emp) === 'departing'" class="departing">
                 Departing · last day {{ emp.last_working_date ?? emp.end_date }}
                 <template v-if="offboardingPlanId(emp)">
                   ·
@@ -394,6 +408,15 @@ onMounted(async () => {
             >
               Schedule change
             </button>
+            <button
+              v-if="canEditEmployment(emp) && departureState(emp) !== 'former' && !emp.transferred_to_period_id"
+              class="button secondary small-btn"
+              type="button"
+              :disabled="busy"
+              @click="transferDialog?.open(emp, person.full_name)"
+            >
+              Transfer
+            </button>
             <template v-if="canStartDeparture(emp)">
               <button
                 v-if="departureState(emp) === 'employed'"
@@ -405,7 +428,7 @@ onMounted(async () => {
                 Schedule departure
               </button>
               <button
-                v-else-if="departureState(emp) === 'departing'"
+                v-else-if="departureState(emp) === 'departing' && !emp.transferred_to_period_id"
                 class="button secondary small-btn"
                 type="button"
                 :disabled="busy"
@@ -419,6 +442,7 @@ onMounted(async () => {
 
         <ScheduleDepartureDialog ref="departureDialog" @scheduled="onDepartureScheduled" />
         <ScheduleChangeDialog ref="changeDialog" @saved="onChangeSaved" />
+        <TransferDialog ref="transferDialog" @transferred="onTransferred" />
 
         <div class="right-column">
           <div class="card">

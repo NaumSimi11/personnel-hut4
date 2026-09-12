@@ -67,7 +67,7 @@ async function load(): Promise<void> {
   // Scheduled employment changes whose date has arrived apply on the way in.
   const due = await supabase.rpc('apply_due_employment_changes')
   if (due.error) console.error('Applying due employment changes failed:', due.error.message)
-  const companiesRes = await supabase.from('companies').select('id, name').eq('kind', 'company').is('archived_at', null).order('name')
+  const companiesRes = await supabase.from('companies').select('id, name').is('archived_at', null).order('name')
   companies.value = companiesRes.data ?? []
   const { data, error: err } = await supabase
     .from('people')

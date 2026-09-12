@@ -1208,6 +1208,7 @@ export type Database = {
           person_id: string
           start_date: string
           status: string
+          transferred_to_period_id: string | null
           updated_at: string
         }
         Insert: {
@@ -1225,6 +1226,7 @@ export type Database = {
           person_id: string
           start_date: string
           status?: string
+          transferred_to_period_id?: string | null
           updated_at?: string
         }
         Update: {
@@ -1242,6 +1244,7 @@ export type Database = {
           person_id?: string
           start_date?: string
           status?: string
+          transferred_to_period_id?: string | null
           updated_at?: string
         }
         Relationships: [
@@ -1293,6 +1296,13 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "employment_statuses"
             referencedColumns: ["key"]
+          },
+          {
+            foreignKeyName: "employment_periods_transferred_to_period_id_fkey"
+            columns: ["transferred_to_period_id"]
+            isOneToOne: false
+            referencedRelation: "employment_periods"
+            referencedColumns: ["id"]
           },
         ]
       }
@@ -3165,6 +3175,7 @@ export type Database = {
       }
       apply_due_employment_changes: { Args: never; Returns: number }
       approve_payroll_period: { Args: { p_period_id: string }; Returns: Json }
+      archive_company: { Args: { p_company_id: string }; Returns: Json }
       archive_policy: { Args: { p_policy_id: string }; Returns: Json }
       cancel_employment_change: {
         Args: { p_change_id: string }
@@ -3267,6 +3278,17 @@ export type Database = {
       }
       submit_requested_document: {
         Args: { p_document_id: string; p_request_id: string }
+        Returns: Json
+      }
+      transfer_employment: {
+        Args: {
+          p_company_id: string
+          p_effective_date: string
+          p_employment_type_key?: string
+          p_job_title?: string
+          p_period_id: string
+          p_reason?: string
+        }
         Returns: Json
       }
     }

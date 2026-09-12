@@ -89,7 +89,7 @@ function friendly(message: string): string {
 
 onMounted(async () => {
   const [companiesRes, peopleRes] = await Promise.all([
-    supabase.from('companies').select('id, name').eq('kind', 'company').is('archived_at', null).order('name'),
+    supabase.from('companies').select('id, name').is('archived_at', null).order('name'),
     supabase.from('people').select('id, full_name').order('full_name'),
   ])
   companies.value = companiesRes.data ?? []

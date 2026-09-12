@@ -19,6 +19,7 @@ import PoliciesPanel from '@/components/PoliciesPanel.vue'
 import EquipmentPanel from '@/components/EquipmentPanel.vue'
 import ActivityPanel from '@/components/ActivityPanel.vue'
 import InviteAccessDialog from '@/components/InviteAccessDialog.vue'
+import TransferDialog, { type TransferTarget } from '@/components/TransferDialog.vue'
 import { upcoming } from '@/lib/companyOps'
 import { todayDb } from '@/lib/compensation'
 
@@ -73,6 +74,8 @@ type EmploymentRow = {
   start_date: string
   end_date: string | null
   last_working_date: string | null
+  employment_type_key: string | null
+  transferred_to_period_id: string | null
   person: { id: string; full_name: string; work_email: string | null } | null
 }
 
@@ -154,24 +157,34 @@ async function archiveCompany(): Promise<void> {
 
   archiving.value = true
   archiveError.value = null
-  // A refused UPDATE matches zero rows under RLS rather than erroring, so
-  // select the row back and treat "nothing came back" as a refusal.
-  const { data, error: err } = await supabase
-    .from('companies')
-    .update({ archived_at: new Date().toISOString() })
-    .eq('id', companyId)
-    .select('id')
-    .maybeSingle()
+  // archive_company (migration 0026) refuses while anyone is still employed
+  // here; the people are listed below with Transfer so the way out is clear.
+  const { error: err } = await supabase.rpc('archive_company', { p_company_id: companyId })
   archiving.value = false
 
-  if (err || !data) {
-    const message = err?.message ?? 'row-level security'
-    archiveError.value = friendlyCompanyError(message)
-    console.error('Company archive failed:', message)
+  if (err) {
+    archiveError.value = friendlyCompanyError(err.message)
+    archiveBlocked.value = /still employed here/.test(err.message)
+    console.error('Company archive failed:', err.message)
     return
   }
   router.push({ name: 'companies' })
 }
+
+const archiveBlocked = ref(false)
+const stillEmployed = computed(() => employments.value.filter((e) => e.status !== 'former'))
+const transferDialog = ref<InstanceType<typeof TransferDialog> | null>(null)
+
+function onTransferred(result: { applied: boolean; effectiveDate: string; companyName: string }): void {
+  archiveError.value = null
+  archiveBlocked.value = false
+  error.value = null
+  void load()
+  notice.value = result.applied
+    ? `Transferred to ${result.companyName}.`
+    : `Transfer to ${result.companyName} scheduled for ${result.effectiveDate}.`
+}
+const notice = ref<string | null>(null)
 
 // Payroll is only offered to payroll.summary holders (the function refuses
 // everyone else anyway); Settings writes are admin-only by RLS.
@@ -208,6 +221,20 @@ const submittedHiringCount = computed(
 const connectedChannelsCount = computed(
   () => integrations.value.filter((i) => i.status === 'connected').length,
 )
+
+/** The People tab and the archive list open the same transfer dialog. */
+function asTransferTarget(emp: EmploymentRow): TransferTarget {
+  return {
+    id: emp.id,
+    company_id: companyId,
+    person_id: emp.person?.id ?? '',
+    job_title: emp.job_title,
+    employment_type_key: emp.employment_type_key,
+    start_date: emp.start_date,
+    end_date: emp.end_date,
+    company: company.value ? { name: company.value.name } : null,
+  }
+}
 
 function initials(name: string): string {
   return name.split(' ').map((p) => p[0] ?? '').slice(0, 2).join('')
@@ -271,7 +298,7 @@ async function load(): Promise<void> {
     supabase
       .from('employment_periods')
       .select(
-        `id, job_title, status, start_date, end_date, last_working_date,
+        `id, job_title, status, start_date, end_date, last_working_date, employment_type_key, transferred_to_period_id,
          person:people!employment_periods_person_id_fkey(id, full_name, work_email)`,
       )
       .eq('company_id', companyId)
@@ -372,6 +399,7 @@ onMounted(load)
         </div>
 
         <p v-if="error" class="error-note" role="alert">{{ error }}</p>
+        <p v-if="notice" class="notice" role="status">{{ notice }}</p>
 
         <div class="tabs" role="tablist" aria-label="Company profile">
           <button
@@ -569,6 +597,22 @@ onMounted(load)
               </button>
             </div>
             <p v-if="archiveError" class="error-note archive-error" role="alert">{{ archiveError }}</p>
+            <div v-if="archiveBlocked && stillEmployed.length" class="still-employed">
+              <div v-for="emp in stillEmployed" :key="emp.id" class="row">
+                <div class="row-text">
+                  <strong>{{ emp.person?.full_name ?? '—' }}</strong>
+                  <small>{{ emp.job_title }} · {{ emp.status.replace('_', ' ') }}</small>
+                </div>
+                <button
+                  v-if="auth.can(companyId, 'employment.edit') && !emp.transferred_to_period_id"
+                  class="button secondary small-btn"
+                  type="button"
+                  @click="transferDialog?.open(asTransferTarget(emp), emp.person?.full_name ?? '')"
+                >
+                  Transfer
+                </button>
+              </div>
+            </div>
           </div>
         </div>
 
@@ -583,6 +627,7 @@ onMounted(load)
                   <th>Role</th>
                   <th>Status</th>
                   <th>Start date</th>
+                  <th></th>
                 </tr>
               </thead>
               <tbody>
@@ -608,6 +653,16 @@ onMounted(load)
                     </span>
                   </td>
                   <td>{{ emp.start_date }}</td>
+                  <td>
+                    <button
+                      v-if="auth.can(companyId, 'employment.edit') && emp.status !== 'former' && !emp.transferred_to_period_id"
+                      class="button secondary small-btn"
+                      type="button"
+                      @click="transferDialog?.open(asTransferTarget(emp), emp.person?.full_name ?? '')"
+                    >
+                      Transfer
+                    </button>
+                  </td>
                 </tr>
               </tbody>
             </table>
@@ -733,6 +788,7 @@ onMounted(load)
         </div>
       </template>
       <InviteAccessDialog ref="inviteDialog" @invited="load" />
+      <TransferDialog ref="transferDialog" @transferred="onTransferred" />
     </template>
   </div>
 </template>
@@ -774,6 +830,8 @@ onMounted(load)
 .detail-grid dd a { color: var(--green); text-decoration: none; }
 .detail-grid dd a:hover { text-decoration: underline; }
 .stack { display: grid; gap: 22px; }
+.notice { padding: 12px 15px; border-radius: 9px; background: #edf5ed; color: #3e744e; font-size: 12px; margin-bottom: 16px; }
+.still-employed { border-top: 1px solid #edf0eb; margin-top: 12px; }
 .tabs { display: flex; gap: 22px; border-bottom: 1px solid var(--line); margin-bottom: 22px; overflow: auto; }
 .tab {
   border: 0;

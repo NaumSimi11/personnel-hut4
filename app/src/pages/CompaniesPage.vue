@@ -115,8 +115,11 @@ onMounted(load)
           <CompanyTile :short-code="holding.short_code" :brand="brandOf(holding)" size="small" />
           <div>
             <strong>{{ holding.name }}</strong>
-            <small>Parent organization</small>
+            <small>Parent organization · {{ cardMeta(holding) }}</small>
           </div>
+          <router-link class="button secondary small-btn holding-link" :to="{ name: 'company', params: { companyId: holding.id } }">
+            Open →
+          </router-link>
         </div>
 
         <div class="company-grid">
@@ -158,6 +161,7 @@ onMounted(load)
 }
 .holding-banner strong { display: block; font-size: 14px; font-weight: 650; }
 .holding-banner small { display: block; font-size: 11px; color: var(--muted); margin-top: 3px; }
+.holding-link { margin-left: auto; font-size: 11px; padding: 7px 11px; text-decoration: none; }
 .company-grid {
   display: grid;
   grid-template-columns: repeat(2, 1fr);

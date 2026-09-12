@@ -38,6 +38,7 @@ prototype in `../prototype` is the UI spec. Updated as milestones land.
 | Document requests: HR asks for a document with due date and note; the person uploads it from My workspace (only while a request is open; always person_and_hr) and HR accepts or sends it back. Policies: per company or holding-wide, drafts publish with a file, a new version needs a new file and resets acknowledgements, each person acknowledges the version read; counts on the company Documents tab | migration 0021 + plan 028 | E2E HR request → employee signs in and submits → accepted; publish → acknowledge → count; smoke for pinning, window, review, versions, storage |
 | Equipment & IT: assets per company (tag, type, model, serial, location) with status derived from handovers — reserve for a person, issue, return with condition and next status, cancel a reservation; IT requests for a person with systems and due date, worked open → in progress → blocked (reason) → done by it.assign / it.complete; holders see their own equipment | migration 0022 + plan 029 | E2E asset → reserve → issue → profile → return damaged; request → start → done; smoke for status sync, employment check, gates, pinning |
 | Activity history: the company's audit trail, readable — who changed what and which fields, filtered by entity or text; restricted content never enters the trail | plan 030 | E2E UI change → shown with actor and diff → filter narrows; unit tests for the summaries |
+| Payroll preparation: a period per company, range and currency snapshots every approved record in force day by day (amount, basis, from / to, days covered — facts, not computed pay); prepared by one person, approved by another, reopened or marked exported; CSV for the accountant | migration 0023 + plan 031 | E2E prepare → lines → self-approval refused → colleague-prepared approved → CSV content → exported; smoke for mid-period changes, currency filter, transitions, RLS |
 
 ## Next (in order)
 
@@ -50,9 +51,9 @@ prototype in `../prototype` is the UI spec. Updated as milestones land.
 4. **Company profile leftovers (needs credentials)** — notification contacts
    once an email path exists (RESEND_API_KEY); Integrations tab connect /
    configure once provider credentials exist.
-5. **Later, per blueprint** — payroll preparation, recruitment marketing +
-   channel integrations, import preview, rehire, equipment on onboarding /
-   offboarding checklists.
+5. **Later, per blueprint** — recruitment marketing + channel integrations,
+   import preview, rehire, equipment on onboarding / offboarding checklists,
+   payroll allowances and one-off items.
 
 ## Standing rules
 

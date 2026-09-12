@@ -60,6 +60,7 @@ round; merging it into `main` is the maintainer's decision.
 | 028 | Document requests (pinned pending, self-service window on documents + storage, submit / review functions) and policies (publish with versioned files, archive, acknowledge per version, holding-wide by admins, private bucket); profile requests card, My workspace requests + policies, company Policies section (migration 0021) | DONE (reviewed, main; full suite 24/24) |
 | 029 | Equipment & IT: asset register with derived status, reserve / issue / return / cancel functions, holders read what they hold, IT requests pinned and advanced (assign, block with reason, done); company Equipment tab, profile + workspace cards (migration 0022) | DONE (reviewed, main; full suite 25/25) |
 | 030 | Activity history: company Activity tab over the redacted audit trail (entity / text filters, who / what / changed fields), lib/activity summaries — no migration | DONE (reviewed, main; full suite 26/26) |
+| 031 | Payroll preparation: periods per range and currency, snapshot lines (facts: amount, basis, from/to, days covered), prepare / approve (not the preparer) / reopen / mark exported functions, CSV export; Payroll periods panel on the company Payroll tab (migration 0023) | DONE (reviewed, main; full suite 27/27) |
 
 Round-03 executors branch from `main` as `feature/NNN-<slug>`; the reviewer
 runs the full E2E suite serially and merges after review.

@@ -39,6 +39,7 @@ prototype in `../prototype` is the UI spec. Updated as milestones land.
 | Equipment & IT: assets per company (tag, type, model, serial, location) with status derived from handovers — reserve for a person, issue, return with condition and next status, cancel a reservation; IT requests for a person with systems and due date, worked open → in progress → blocked (reason) → done by it.assign / it.complete; holders see their own equipment | migration 0022 + plan 029 | E2E asset → reserve → issue → profile → return damaged; request → start → done; smoke for status sync, employment check, gates, pinning |
 | Activity history: the company's audit trail, readable — who changed what and which fields, filtered by entity or text; restricted content never enters the trail | plan 030 | E2E UI change → shown with actor and diff → filter narrows; unit tests for the summaries |
 | Payroll preparation: a period per company, range and currency snapshots every approved record in force day by day (amount, basis, from / to, days covered — facts, not computed pay); prepared by one person, approved by another, reopened or marked exported; CSV for the accountant | migration 0023 + plan 031 | E2E prepare → lines → self-approval refused → colleague-prepared approved → CSV content → exported; smoke for mid-period changes, currency filter, transitions, RLS |
+| People import: paste or upload a CSV on the directory, preview the database's verdict per row (missing fields, bad dates, unknown departments, managers, duplicates — existing emails refused, never merged), import all rows or none: people, first employment, manager links | migration 0024 + plan 032 | E2E preview with a refused row → fixed file imported → directory + manager link; smoke for verdicts, no writes on preview, atomic commit, cross-company refusal |
 
 ## Next (in order)
 
@@ -52,8 +53,8 @@ prototype in `../prototype` is the UI spec. Updated as milestones land.
    once an email path exists (RESEND_API_KEY); Integrations tab connect /
    configure once provider credentials exist.
 5. **Later, per blueprint** — recruitment marketing + channel integrations,
-   import preview, rehire, equipment on onboarding / offboarding checklists,
-   payroll allowances and one-off items.
+   rehire, equipment on onboarding / offboarding checklists, payroll
+   allowances and one-off items.
 
 ## Standing rules
 

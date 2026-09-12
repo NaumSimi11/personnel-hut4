@@ -5,6 +5,7 @@
 | Hardening 2: offers/promotions always start in their initial state; a future raise keeps the current record approved until the day before; due changes apply for editors and nightly via pg_cron; direct manager edits cannot loop; candidate file audit redacted; careers submissions roll back on CV failure, limits answer in contract | migration 0020 + plan 027 | smoke per rule; server unit tests; full suite |
 | Document requests: HR asks for a document with due date and note; the person uploads it from My workspace (only while a request is open; always person_and_hr) and HR accepts or sends it back. Policies: per company or holding-wide, drafts publish with a file, a new version needs a new file and resets acknowledgements, each person acknowledges the version read; counts on the company Documents tab | migration 0021 + plan 028 | E2E HR request → employee signs in and submits → accepted; publish → acknowledge → count; smoke for pinning, window, review, versions, storage |
 | Equipment & IT: assets per company (tag, type, model, serial, location) with status derived from handovers — reserve for a person, issue, return with condition and next status, cancel a reservation; IT requests for a person with systems and due date, worked open → in progress → blocked (reason) → done by it.assign / it.complete; holders see their own equipment | migration 0022 + plan 029 | E2E asset → reserve → issue → profile → return damaged; request → start → done; smoke for status sync, employment check, gates, pinning |
+| Activity history: the company's audit trail, readable — who changed what and which fields, filtered by entity or text; restricted content never enters the trail | plan 030 | E2E UI change → shown with actor and diff → filter narrows; unit tests for the summaries |
 # Personnel: development plan
 
 Working plan for the real build (Vue app + Supabase). Derives its order from
@@ -49,9 +50,9 @@ prototype in `../prototype` is the UI spec. Updated as milestones land.
 4. **Company profile leftovers (needs credentials)** — notification contacts
    once an email path exists (RESEND_API_KEY); Integrations tab connect /
    configure once provider credentials exist.
-5. **Later, per blueprint** — payroll preparation, audit history tab,
-   recruitment marketing + channel integrations, import preview, rehire,
-   equipment on onboarding / offboarding checklists.
+5. **Later, per blueprint** — payroll preparation, recruitment marketing +
+   channel integrations, import preview, rehire, equipment on onboarding /
+   offboarding checklists.
 
 ## Standing rules
 

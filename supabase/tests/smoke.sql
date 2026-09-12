@@ -2401,6 +2401,213 @@ end $$;
 reset role;
 set app.test_uid = '';
 
+-- ------------------------------------------------------------- leave (0027)
+-- Alex (A) gets the leave capabilities; Pia (A, signed in as …21) is the
+-- employee. Company A follows the MK calendar and closes for one day.
+insert into public.grant_capabilities (grant_id, capability_key) values
+  ('40000000-0000-0000-0000-000000000001', 'leave.view'),
+  ('40000000-0000-0000-0000-000000000001', 'leave.approve'),
+  ('40000000-0000-0000-0000-000000000001', 'leave.adjust'),
+  ('40000000-0000-0000-0000-000000000001', 'holidays.manage')
+on conflict do nothing;
+update public.companies set country_code = 'MK' where id = '10000000-0000-0000-0000-00000000000a';
+update public.employment_periods set end_date = null, last_working_date = null, status = 'active', transferred_to_period_id = null
+  where id = '30000000-0000-0000-0000-000000000021';   -- Pia stays (the 0025 departure test is over)
+delete from public.plans where employment_period_id = '30000000-0000-0000-0000-000000000021';
+insert into public.public_holidays (country_code, date, name) values ('MK', '2027-03-03', 'Test holiday');
+insert into public.company_closures (company_id, date, name) values ('10000000-0000-0000-0000-00000000000a', '2027-03-04', 'Team building');
+do $$
+begin
+  assert app.working_days('2027-03-01', '2027-03-07', 'MK', '10000000-0000-0000-0000-00000000000a') = 3,
+    'a week minus the weekend, a holiday and a closure';
+  assert app.working_days('2027-03-01', '2027-03-07', 'RS', '10000000-0000-0000-0000-00000000000a') = 4,
+    'another country does not get the MK holiday';
+  assert app.working_days('2027-03-01', '2027-03-07', 'MK', '10000000-0000-0000-0000-00000000000b') = 4,
+    'another company does not get the closure';
+  assert app.employment_country('30000000-0000-0000-0000-000000000021') = 'MK', 'country from the company when there is no location';
+end $$;
+set app.test_uid = '00000000-0000-0000-0000-000000000001';  -- Alex
+set role authenticated;
+select public.set_leave_entitlement('20000000-0000-0000-0000-000000000021', '10000000-0000-0000-0000-00000000000a', 2027, 20, 'Standard entitlement');
+reset role;
+update public.leave_balances set carry_over_days = 4 where person_id = '20000000-0000-0000-0000-000000000021' and year = 2027;
+set app.test_uid = '00000000-0000-0000-0000-000000000021';  -- Pia
+set role authenticated;
+do $$
+declare r jsonb; v_first uuid; v_second uuid; b jsonb;
+begin
+  r := public.request_leave('20000000-0000-0000-0000-000000000021', 'annual', '2027-03-01', '2027-03-07', 'Skiing');
+  v_first := (r->>'request_id')::uuid;
+  assert (r->>'working_days')::int = 3 and r->>'status' = 'pending', 'three working days, pending';
+  begin
+    perform public.request_leave('20000000-0000-0000-0000-000000000021', 'annual', '2027-03-02', '2027-03-02');
+    raise exception 'FAIL: overlapping request accepted';
+  exception when raise_exception then
+    if sqlerrm not like '%already requested%' then raise; end if;
+  end;
+  r := public.request_leave('20000000-0000-0000-0000-000000000021', 'annual', '2027-03-08', '2027-03-12');
+  v_second := (r->>'request_id')::uuid;
+  assert (r->>'working_days')::int = 5, 'five working days';
+  begin
+    perform public.request_leave('20000000-0000-0000-0000-000000000021', 'annual', '2027-08-02', '2027-08-20');   -- 15 days
+    raise exception 'FAIL: request beyond the requestable balance accepted';
+  exception when raise_exception then
+    if sqlerrm not like '%Not enough annual leave%' then raise; end if;
+  end;
+  begin
+    perform public.request_leave('20000000-0000-0000-0000-000000000021', 'annual', '2027-12-30', '2028-01-03');
+    raise exception 'FAIL: annual leave across two years accepted';
+  exception when raise_exception then
+    if sqlerrm not like '%per leave year%' then raise; end if;
+  end;
+  begin
+    perform public.request_leave('20000000-0000-0000-0000-000000000021', 'sick', '2027-04-05', '2027-04-06');
+    raise exception 'FAIL: sick leave without a document or a promise accepted';
+  exception when raise_exception then
+    if sqlerrm not like '%supporting document%' then raise; end if;
+  end;
+  r := public.request_leave('20000000-0000-0000-0000-000000000021', 'sick', '2027-04-05', '2027-04-06', null, true);
+  assert r->>'status' = 'pending', 'sick leave with a promise is filed';
+  begin
+    perform public.request_leave('20000000-0000-0000-0000-000000000001', 'annual', '2027-05-03', '2027-05-04');
+    raise exception 'FAIL: filed leave for someone else';
+  exception when insufficient_privilege then null;
+  end;
+  begin
+    perform public.decide_leave(v_first, 'approved');
+    raise exception 'FAIL: decided own leave';
+  exception when insufficient_privilege then null;
+  end;
+  b := public.leave_balance('20000000-0000-0000-0000-000000000021', '10000000-0000-0000-0000-00000000000a', 2027);
+  assert (b->>'pending')::numeric = 8 and (b->>'remaining')::numeric = 20, 'pending reserves, nothing used yet';
+  -- Self-cancel before it starts.
+  perform public.cancel_leave(v_second, 'Plans changed');
+  assert (select status from public.leave_requests where id = v_second) = 'cancelled', 'cancelled by the owner';
+  b := public.leave_balance('20000000-0000-0000-0000-000000000021', '10000000-0000-0000-0000-00000000000a', 2027);
+  assert (b->>'pending')::numeric = 3, 'the cancelled request no longer reserves';
+end $$;
+reset role;
+set app.test_uid = '00000000-0000-0000-0000-000000000001';  -- Alex decides
+set role authenticated;
+do $$
+declare v_first uuid := (select id from public.leave_requests where person_id = '20000000-0000-0000-0000-000000000021' and start_date = '2027-03-01');
+        r jsonb; b jsonb;
+begin
+  r := public.decide_leave(v_first, 'approved', 'Enjoy');
+  assert (r->>'carry_over_days_used')::int = 3, 'March days draw the carry-over first';
+  b := public.leave_balance('20000000-0000-0000-0000-000000000021', '10000000-0000-0000-0000-00000000000a', 2027);
+  assert (b->>'remaining')::numeric = 20 and (b->>'carry_over_remaining')::numeric = 1 and (b->>'used')::numeric = 0,
+    'entitlement untouched, one carry-over day left';
+  -- Recording something agreed: approver files and approves at once, after the window.
+  r := public.request_leave('20000000-0000-0000-0000-000000000021', 'annual', '2027-08-02', '2027-08-03', 'Agreed verbally', false, true);
+  assert r->>'status' = 'approved', 'filed as approved';
+  b := public.leave_balance('20000000-0000-0000-0000-000000000021', '10000000-0000-0000-0000-00000000000a', 2027);
+  assert (b->>'remaining')::numeric = 18 and (b->>'carry_over_remaining')::numeric = 1, 'August days come from the year, not the expired window';
+  begin
+    perform public.decide_leave(v_first, 'rejected');
+    raise exception 'FAIL: decided an already approved request';
+  exception when raise_exception then
+    if sqlerrm not like '%Only a pending%' then raise; end if;
+  end;
+  -- Adjustments.
+  begin
+    perform public.adjust_leave_balance('20000000-0000-0000-0000-000000000021', '10000000-0000-0000-0000-00000000000a', 2027, -30, 'Oops');
+    raise exception 'FAIL: adjusted below zero';
+  exception when raise_exception then
+    if sqlerrm not like '%below zero%' then raise; end if;
+  end;
+  perform public.adjust_leave_balance('20000000-0000-0000-0000-000000000021', '10000000-0000-0000-0000-00000000000a', 2027, 2, 'Worked a holiday');
+  b := public.leave_balance('20000000-0000-0000-0000-000000000021', '10000000-0000-0000-0000-00000000000a', 2027);
+  assert (b->>'remaining')::numeric = 20, 'adjustment adds two days';
+end $$;
+reset role;
+-- Leave that has started: the owner must ask; HR declines, the ask is repeated, HR cancels.
+set app.test_uid = '';
+insert into public.leave_requests (id, person_id, employment_period_id, company_id, leave_type_key, deducts_balance, requires_document, start_date, end_date, working_days, status)
+  values ('a1000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000021', '30000000-0000-0000-0000-000000000021', '10000000-0000-0000-0000-00000000000a',
+          'annual', true, false, current_date - 2, current_date + 2, 3, 'approved');
+set app.test_uid = '00000000-0000-0000-0000-000000000021';  -- Pia
+set role authenticated;
+do $$
+begin
+  begin
+    perform public.cancel_leave('a1000000-0000-0000-0000-000000000001', 'Came back early');
+    raise exception 'FAIL: cancelled started leave herself';
+  exception when raise_exception then
+    if sqlerrm not like '%has started%' then raise; end if;
+  end;
+  perform public.request_leave_cancellation('a1000000-0000-0000-0000-000000000001', 'I returned to work early');
+  assert (select cancellation_requested_at from public.leave_requests where id = 'a1000000-0000-0000-0000-000000000001') is not null, 'asked';
+end $$;
+reset role;
+set app.test_uid = '00000000-0000-0000-0000-000000000001';  -- Alex
+set role authenticated;
+do $$
+begin
+  perform public.decline_leave_cancellation('a1000000-0000-0000-0000-000000000001', 'The days were already paid out');
+  assert (select cancellation_declined_at from public.leave_requests where id = 'a1000000-0000-0000-0000-000000000001') is not null, 'declined';
+end $$;
+reset role;
+set app.test_uid = '00000000-0000-0000-0000-000000000021';
+set role authenticated;
+select public.request_leave_cancellation('a1000000-0000-0000-0000-000000000001', 'Please check again');
+reset role;
+set app.test_uid = '00000000-0000-0000-0000-000000000001';
+set role authenticated;
+do $$
+begin
+  assert (select cancellation_declined_at from public.leave_requests where id = 'a1000000-0000-0000-0000-000000000001') is null, 'asking again clears the decline';
+  perform public.cancel_leave('a1000000-0000-0000-0000-000000000001', 'Confirmed: back at work');
+  assert (select status from public.leave_requests where id = 'a1000000-0000-0000-0000-000000000001') = 'cancelled', 'HR cancelled it';
+end $$;
+reset role;
+-- Colleagues see that Pia is away, never why; HR sees the type.
+set app.test_uid = '00000000-0000-0000-0000-000000000003';  -- Omar: in A by grant, no leave capability
+set role authenticated;
+do $$
+declare t jsonb;
+begin
+  t := public.team_leave('10000000-0000-0000-0000-00000000000a', '2027-03-01', '2027-03-31');
+  assert jsonb_array_length(t) >= 1, 'the calendar shows the absence';
+  assert (t->0->>'leave_type_key') = 'away' and (t->0->>'note') is null, 'redacted for a colleague';
+  assert (select count(*) from public.leave_requests) = 0, 'no direct read of colleagues'' requests';
+end $$;
+reset role;
+set app.test_uid = '00000000-0000-0000-0000-000000000001';
+set role authenticated;
+do $$
+declare t jsonb;
+begin
+  t := public.team_leave('10000000-0000-0000-0000-00000000000a', '2027-03-01', '2027-03-31');
+  assert (t->0->>'leave_type_key') = 'annual' and (t->0->>'note') = 'Skiing', 'HR sees the type and note';
+end $$;
+reset role;
+set app.test_uid = '00000000-0000-0000-0000-000000000005';  -- Bea: Company B
+set role authenticated;
+do $$
+begin
+  assert (select count(*) from public.leave_requests) = 0, 'other-company HR sees nothing';
+  begin
+    perform public.team_leave('10000000-0000-0000-0000-00000000000a', '2027-03-01', '2027-03-31');
+    raise exception 'FAIL: read another company''s calendar';
+  exception when insufficient_privilege then null;
+  end;
+end $$;
+reset role;
+set app.test_uid = '';
+-- Rollover: next year's row per current employment, idempotent.
+do $$
+declare n int; b jsonb;
+begin
+  n := public.roll_leave_year(2028);
+  assert n >= 1, 'rolled at least Pia';
+  assert public.roll_leave_year(2028) = 0, 'a second run adds nothing';
+  b := public.leave_balance('20000000-0000-0000-0000-000000000021', '10000000-0000-0000-0000-00000000000a', 2028);
+  assert (b->>'entitlement')::numeric = 20 and (b->>'carry_over')::numeric = 20,
+    'entitlement carried; the remainder carries over, the old carry-over does not (its window ended in June)';
+  assert (b->>'carry_over_expires_on') = '2028-06-30', 'expires per the company rule';
+end $$;
+
 reset role;
 set app.test_uid = '';
 

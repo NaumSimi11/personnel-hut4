@@ -3,6 +3,21 @@ import { computed, onMounted, ref } from 'vue'
 import type { RouteLocationRaw } from 'vue-router'
 import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/stores/auth'
+import {
+  compensationToRows,
+  documentReviewsToRows,
+  itRequestsToRows,
+  myRequestsToRows,
+  payrollToRows,
+  policiesToRows,
+  type AckLite,
+  type CompensationQueueRow,
+  type DocumentReviewRow,
+  type ItQueueRow,
+  type MyRequestRow,
+  type PayrollQueueRow,
+  type PolicyQueueRow,
+} from '@/lib/homeQueue'
 
 /**
  * Overview: the post-login "what needs me" screen (blueprint §7.1). Four
@@ -64,6 +79,13 @@ const queueRows = ref<QueueRow[]>([])
 const myTasks = ref<MyTaskRow[]>([])
 
 const firstName = computed(() => auth.personName?.split(' ')[0] ?? 'there')
+// Read lazily: the person id lands with the profile, the queue is built on load.
+const viewer = {
+  get personId() {
+    return auth.personId
+  },
+  can: (companyId: string, cap: string) => auth.can(companyId, cap),
+}
 const queueBadgeClass = computed(() => (queueRows.value.length > 0 ? 'amber' : 'green'))
 
 function criticalOpenCount(tasks: PlanTaskLite[]): number {
@@ -122,6 +144,38 @@ async function loadMyTasks(): Promise<{
     .order('due_date', { ascending: true })
 }
 
+/** The modules that arrived later (plan 034): what each viewer can read is RLS's call; what they can act on is the converters'. */
+function loadLaterQueues() {
+  const me = auth.personId ?? ''
+  return Promise.all([
+    supabase
+      .from('compensation_records')
+      .select('id, proposed_by, period:employment_periods(person_id, company_id, person:people!employment_periods_person_id_fkey(full_name), company:companies(name))')
+      .eq('status', 'proposed'),
+    supabase
+      .from('document_requests')
+      .select('id, person_id, company_id, category_key, person:people!document_requests_person_id_fkey(full_name), category:document_categories(label)')
+      .eq('status', 'submitted'),
+    me
+      ? supabase
+          .from('document_requests')
+          .select('id, due_date, category:document_categories(label), company:companies(name)')
+          .eq('person_id', me)
+          .in('status', ['pending', 'needs_correction'])
+      : Promise.resolve({ data: [], error: null }),
+    supabase.from('policies').select('id, title, version, company:companies(name)').eq('status', 'published'),
+    me ? supabase.from('policy_acknowledgements').select('policy_id, version').eq('person_id', me) : Promise.resolve({ data: [], error: null }),
+    supabase
+      .from('it_requests')
+      .select('id, title, status, company_id, assignee_id, person:people!it_requests_person_id_fkey(full_name), company:companies(name)')
+      .in('status', ['open', 'in_progress', 'blocked']),
+    supabase
+      .from('payroll_periods')
+      .select('id, company_id, period_start, period_end, currency, prepared_by, company:companies(name)')
+      .eq('status', 'in_review'),
+  ])
+}
+
 async function load(): Promise<void> {
   loading.value = true
   error.value = null
@@ -135,6 +189,7 @@ async function load(): Promise<void> {
     offersRes,
     onboardingGapsRes,
     myTasksRes,
+    laterRes,
   ] = await Promise.all([
     supabase.from('people').select('*', { count: 'exact', head: true }).is('archived_at', null),
     supabase.from('companies').select('*', { count: 'exact', head: true }).eq('kind', 'company').is('archived_at', null),
@@ -170,7 +225,9 @@ async function load(): Promise<void> {
       .eq('kind', 'onboarding')
       .eq('status', 'in_progress'),
     loadMyTasks(),
+    loadLaterQueues(),
   ])
+  const [compRes, docReviewRes, myReqRes, policyRes, ackRes, itRes, payrollRes] = laterRes
 
   let hadError = false
   const logIfError = (label: string, err: { message: string } | null) => {
@@ -187,6 +244,13 @@ async function load(): Promise<void> {
   logIfError('offers queue', offersRes.error)
   logIfError('onboarding gaps queue', onboardingGapsRes.error)
   logIfError('my tasks', myTasksRes.error)
+  logIfError('compensation queue', compRes.error)
+  logIfError('document reviews queue', docReviewRes.error)
+  logIfError('my document requests', myReqRes.error)
+  logIfError('policies queue', policyRes.error)
+  logIfError('acknowledgements', ackRes.error)
+  logIfError('IT requests queue', itRes.error)
+  logIfError('payroll queue', payrollRes.error)
 
   metrics.value = {
     people: peopleCount.count ?? 0,
@@ -199,6 +263,12 @@ async function load(): Promise<void> {
     ...hiringRequestsToRows((hiringRequestsRes.data ?? []) as HiringRequestRow[]),
     ...offersToRows((offersRes.data ?? []) as OfferRow[]),
     ...onboardingGapsToRows((onboardingGapsRes.data ?? []) as OnboardingGapRow[]),
+    ...compensationToRows((compRes.data ?? []) as unknown as CompensationQueueRow[], viewer),
+    ...documentReviewsToRows((docReviewRes.data ?? []) as unknown as DocumentReviewRow[], viewer),
+    ...myRequestsToRows((myReqRes.data ?? []) as unknown as MyRequestRow[]),
+    ...policiesToRows((policyRes.data ?? []) as unknown as PolicyQueueRow[], (ackRes.data ?? []) as AckLite[]),
+    ...itRequestsToRows((itRes.data ?? []) as unknown as ItQueueRow[], viewer),
+    ...payrollToRows((payrollRes.data ?? []) as unknown as PayrollQueueRow[], viewer),
   ]
   myTasks.value = (myTasksRes.data ?? []) as MyTaskRow[]
 
@@ -242,7 +312,7 @@ onMounted(load)
       <div class="card-head">
         <div>
           <h2>Needs a decision</h2>
-          <p>Hiring approvals, offers to confirm, and readiness gaps in one queue.</p>
+          <p>Approvals, decisions, reviews, uploads and handovers that wait on you — one queue.</p>
         </div>
         <span class="badge" :class="queueBadgeClass">{{ queueRows.length }} open</span>
       </div>

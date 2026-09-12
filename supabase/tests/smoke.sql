@@ -2023,6 +2023,124 @@ end $$;
 reset role;
 set app.test_uid = '';
 
+-- ------------------------------------------------- payroll preparation (0023)
+-- Fiona (Finance, A) gets payroll.individual and prepares; Alex gets
+-- payroll.approve + payroll.export. Lines snapshot what is in force per day
+-- of the period, in the period's currency; the preparer never approves.
+insert into public.grant_capabilities (grant_id, capability_key) values
+  ('40000000-0000-0000-0000-000000000002', 'payroll.individual'),
+  ('40000000-0000-0000-0000-000000000001', 'payroll.summary'),
+  ('40000000-0000-0000-0000-000000000001', 'payroll.individual'),
+  ('40000000-0000-0000-0000-000000000001', 'payroll.approve'),
+  ('40000000-0000-0000-0000-000000000001', 'payroll.export')
+on conflict do nothing;
+insert into public.compensation_records (employment_period_id, amount, currency, pay_basis_key, effective_date, status) values
+  ('30000000-0000-0000-0000-000000000022', 3000, 'USD', 'monthly', '2025-01-01', 'approved');   -- Quinn, paid in USD
+set app.test_uid = '00000000-0000-0000-0000-000000000002';  -- Fiona
+set role authenticated;
+do $$
+declare r jsonb; v_id uuid; n int;
+begin
+  r := public.prepare_payroll_period('10000000-0000-0000-0000-00000000000a', current_date - 10, current_date + 70, 'eur', ' September run ');
+  v_id := (r->>'period_id')::uuid;
+  assert (select status from public.payroll_periods where id = v_id) = 'in_review', 'prepared periods await review';
+  assert (select currency from public.payroll_periods where id = v_id) = 'EUR', 'currency upper-cased';
+  assert (select note from public.payroll_periods where id = v_id) = 'September run', 'note trimmed';
+  assert (select prepared_by from public.payroll_periods where id = v_id) = '20000000-0000-0000-0000-000000000002', 'prepared by Fiona';
+  -- Alex: 60000 until yesterday, 66000 from today (0017); Pia: 1000 monthly, 1200 from day +60 (0020).
+  assert (select count(*) from public.payroll_lines where period_id = v_id and person_id = '20000000-0000-0000-0000-000000000001') = 2,
+    'a mid-period change gives two lines';
+  assert (select days_covered from public.payroll_lines where period_id = v_id and person_id = '20000000-0000-0000-0000-000000000001' and amount = 60000) = 10,
+    'the old rate covers the days before the change';
+  assert (select days_covered from public.payroll_lines where period_id = v_id and person_id = '20000000-0000-0000-0000-000000000001' and amount = 66000) = 71,
+    'the new rate covers the rest';
+  assert (select days_covered from public.payroll_lines where period_id = v_id and person_id = '20000000-0000-0000-0000-000000000021' and amount = 1200) = 11,
+    'a scheduled raise inside the period is included from its date';
+  assert not exists (select 1 from public.payroll_lines where period_id = v_id and person_id = '20000000-0000-0000-0000-000000000022'),
+    'a USD record is not in a EUR period';
+  assert (r->>'uncovered')::int >= 1, 'people without a line in this currency are counted';
+  -- Preparing again re-snapshots the same period.
+  r := public.prepare_payroll_period('10000000-0000-0000-0000-00000000000a', current_date - 10, current_date + 70, 'EUR', null);
+  assert (r->>'period_id')::uuid = v_id, 'same range, same period';
+  assert (select count(*) from public.payroll_lines where period_id = v_id and person_id = '20000000-0000-0000-0000-000000000001') = 2, 'lines rebuilt, not duplicated';
+  -- The USD period covers Quinn until her employment ends.
+  r := public.prepare_payroll_period('10000000-0000-0000-0000-00000000000a', current_date - 10, current_date + 70, 'USD', null);
+  assert (select days_covered from public.payroll_lines where period_id = (r->>'period_id')::uuid and person_id = '20000000-0000-0000-0000-000000000022') = 21,
+    'a period ending inside the range is clamped to the employment end';
+  begin
+    perform public.approve_payroll_period(v_id);
+    raise exception 'FAIL: the preparer approved their own period';
+  exception when insufficient_privilege then null;
+  end;
+  update public.payroll_periods set status = 'approved' where id = v_id;
+  get diagnostics n = row_count;
+  assert n = 0 and (select status from public.payroll_periods where id = v_id) = 'in_review', 'a prepared period is not edited directly';
+  delete from public.payroll_periods where id = v_id;
+  get diagnostics n = row_count;
+  assert n = 0, 'a prepared period is not deleted';
+  begin
+    perform public.mark_payroll_exported(v_id);
+    raise exception 'FAIL: exported without payroll.export';
+  exception when insufficient_privilege or raise_exception then
+    if sqlerrm like 'FAIL:%' then raise; end if;
+  end;
+end $$;
+reset role;
+set app.test_uid = '00000000-0000-0000-0000-000000000001';  -- Alex
+set role authenticated;
+do $$
+declare v_id uuid := (select id from public.payroll_periods where company_id = '10000000-0000-0000-0000-00000000000a' and currency = 'EUR' and period_start = current_date - 10);
+begin
+  begin
+    perform public.mark_payroll_exported(v_id);
+    raise exception 'FAIL: exported before approval';
+  exception when raise_exception then
+    if sqlerrm not like '%Only an approved period%' then raise; end if;
+  end;
+  perform public.approve_payroll_period(v_id);
+  assert (select approved_by from public.payroll_periods where id = v_id) = '20000000-0000-0000-0000-000000000001', 'approved by Alex';
+  begin
+    perform public.prepare_payroll_period('10000000-0000-0000-0000-00000000000a', current_date - 10, current_date + 70, 'EUR', null);
+    raise exception 'FAIL: re-prepared an approved period';
+  exception when raise_exception then
+    if sqlerrm not like '%already approved%' then raise; end if;
+  end;
+  perform public.mark_payroll_exported(v_id);
+  assert (select status from public.payroll_periods where id = v_id) = 'exported', 'exported';
+  assert (select exported_at from public.payroll_periods where id = v_id) is not null, 'with a timestamp';
+  begin
+    perform public.reopen_payroll_period(v_id);
+    raise exception 'FAIL: reopened an exported period';
+  exception when raise_exception then
+    if sqlerrm not like '%Only an approved period%' then raise; end if;
+  end;
+  assert not exists (select 1 from public.activity_log where entity_type = 'payroll_lines' and coalesce(after, '{}') ? 'amount'),
+    'line amounts are not in the audit trail';
+end $$;
+reset role;
+-- Omar (no payroll capability) and Bea (Company B) see nothing.
+set app.test_uid = '00000000-0000-0000-0000-000000000003';
+set role authenticated;
+do $$
+begin
+  assert (select count(*) from public.payroll_periods) = 0, 'no payroll.summary, no periods';
+  assert (select count(*) from public.payroll_lines) = 0, 'no payroll.individual, no lines';
+end $$;
+reset role;
+set app.test_uid = '00000000-0000-0000-0000-000000000005';
+set role authenticated;
+do $$
+begin
+  assert (select count(*) from public.payroll_lines) = 0, 'other-company HR sees no lines';
+  begin
+    perform public.prepare_payroll_period('10000000-0000-0000-0000-00000000000a', current_date, current_date + 1, 'EUR', null);
+    raise exception 'FAIL: prepared payroll across companies';
+  exception when insufficient_privilege then null;
+  end;
+end $$;
+reset role;
+set app.test_uid = '';
+
 reset role;
 set app.test_uid = '';
 

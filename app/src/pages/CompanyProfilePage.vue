@@ -12,6 +12,7 @@ import {
 import CompanyTile from '@/components/CompanyTile.vue'
 import CompanyStructurePanel from '@/components/CompanyStructurePanel.vue'
 import CompanyPayrollPanel from '@/components/CompanyPayrollPanel.vue'
+import PayrollPeriodsPanel from '@/components/PayrollPeriodsPanel.vue'
 import WorkflowOwnersPanel from '@/components/WorkflowOwnersPanel.vue'
 import DocumentsCard from '@/components/DocumentsCard.vue'
 import PoliciesPanel from '@/components/PoliciesPanel.vue'
@@ -681,7 +682,10 @@ onMounted(load)
 
         <EquipmentPanel v-else-if="activeTab === 'equipment'" :company-id="companyId" />
 
-        <CompanyPayrollPanel v-else-if="activeTab === 'payroll'" :company-id="companyId" />
+        <div v-else-if="activeTab === 'payroll'" class="stack">
+          <CompanyPayrollPanel :company-id="companyId" />
+          <PayrollPeriodsPanel :company-id="companyId" :company-code="company.short_code" />
+        </div>
 
         <ActivityPanel v-else-if="activeTab === 'activity'" :company-id="companyId" />
 

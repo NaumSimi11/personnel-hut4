@@ -2101,6 +2101,96 @@ export type Database = {
         }
         Relationships: []
       }
+      payroll_lines: {
+        Row: {
+          amount: number
+          company_id: string
+          compensation_record_id: string | null
+          created_at: string
+          currency: string
+          days_covered: number
+          effective_from: string
+          effective_to: string
+          employment_period_id: string
+          full_name: string
+          id: string
+          job_title: string
+          pay_basis_key: string
+          period_id: string
+          person_id: string
+        }
+        Insert: {
+          amount: number
+          company_id: string
+          compensation_record_id?: string | null
+          created_at?: string
+          currency: string
+          days_covered: number
+          effective_from: string
+          effective_to: string
+          employment_period_id: string
+          full_name: string
+          id?: string
+          job_title: string
+          pay_basis_key: string
+          period_id: string
+          person_id: string
+        }
+        Update: {
+          amount?: number
+          company_id?: string
+          compensation_record_id?: string | null
+          created_at?: string
+          currency?: string
+          days_covered?: number
+          effective_from?: string
+          effective_to?: string
+          employment_period_id?: string
+          full_name?: string
+          id?: string
+          job_title?: string
+          pay_basis_key?: string
+          period_id?: string
+          person_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "payroll_lines_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "payroll_lines_compensation_record_id_fkey"
+            columns: ["compensation_record_id"]
+            isOneToOne: false
+            referencedRelation: "compensation_records"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "payroll_lines_employment_period_id_fkey"
+            columns: ["employment_period_id"]
+            isOneToOne: false
+            referencedRelation: "employment_periods"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "payroll_lines_period_id_fkey"
+            columns: ["period_id"]
+            isOneToOne: false
+            referencedRelation: "payroll_periods"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "payroll_lines_person_id_fkey"
+            columns: ["person_id"]
+            isOneToOne: false
+            referencedRelation: "people"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       payroll_periods: {
         Row: {
           approved_by: string | null
@@ -2113,6 +2203,8 @@ export type Database = {
           note: string | null
           period_end: string
           period_start: string
+          prepared_at: string | null
+          prepared_by: string | null
           status: string
           updated_at: string
         }
@@ -2127,6 +2219,8 @@ export type Database = {
           note?: string | null
           period_end: string
           period_start: string
+          prepared_at?: string | null
+          prepared_by?: string | null
           status?: string
           updated_at?: string
         }
@@ -2141,6 +2235,8 @@ export type Database = {
           note?: string | null
           period_end?: string
           period_start?: string
+          prepared_at?: string | null
+          prepared_by?: string | null
           status?: string
           updated_at?: string
         }
@@ -2164,6 +2260,13 @@ export type Database = {
             columns: ["export_document_id"]
             isOneToOne: false
             referencedRelation: "documents"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "payroll_periods_prepared_by_fkey"
+            columns: ["prepared_by"]
+            isOneToOne: false
+            referencedRelation: "people"
             referencedColumns: ["id"]
           },
         ]
@@ -3051,6 +3154,7 @@ export type Database = {
         Returns: Json
       }
       apply_due_employment_changes: { Args: never; Returns: number }
+      approve_payroll_period: { Args: { p_period_id: string }; Returns: Json }
       archive_policy: { Args: { p_policy_id: string }; Returns: Json }
       cancel_employment_change: {
         Args: { p_change_id: string }
@@ -3077,6 +3181,17 @@ export type Database = {
         Returns: Json
       }
       issue_asset: { Args: { p_assignment_id: string }; Returns: Json }
+      mark_payroll_exported: { Args: { p_period_id: string }; Returns: Json }
+      prepare_payroll_period: {
+        Args: {
+          p_company_id: string
+          p_currency: string
+          p_end: string
+          p_note?: string
+          p_start: string
+        }
+        Returns: Json
+      }
       propose_compensation: {
         Args: {
           p_amount: number
@@ -3101,6 +3216,7 @@ export type Database = {
         Args: { p_company_id: string; p_from: string; p_to: string }
         Returns: Json
       }
+      reopen_payroll_period: { Args: { p_period_id: string }; Returns: Json }
       reserve_asset: {
         Args: { p_asset_id: string; p_note?: string; p_person_id: string }
         Returns: Json

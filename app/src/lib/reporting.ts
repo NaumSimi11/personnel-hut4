@@ -63,7 +63,7 @@ export function defaultRange(today = new Date()): { from: string; to: string } {
   return { from: isoDate(from), to: isoDate(today) }
 }
 
-function csvCell(value: string | number): string {
+export function csvCell(value: string | number): string {
   let text = String(value)
   // A leading = + - @ (or tab/CR) would be executed as a formula by Excel
   // and LibreOffice; a leading apostrophe makes it plain text.

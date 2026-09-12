@@ -64,6 +64,7 @@ round; merging it into `main` is the maintainer's decision.
 | 032 | People import: `import_people` validates a whole CSV (per-row verdicts, existing emails refused, managers resolved in the file or in the company) and commits all-or-nothing; directory Import dialog with delimiter detection, header aliases, preview, template (migration 0024) | DONE (reviewed, main; full suite 28/28) |
 | 033 | Rehire (Add employment / Rehire for employment.edit holders, pre-filled and dated after the last end) and equipment on the offboarding checklist (return tasks per held asset, completed by the handover, re-schedule adds new ones) (migration 0025) | DONE (reviewed, main; full suite 29/29) |
 | 034 | Home queue: compensation decisions, document reviews, uploads asked of me, policies to read, IT requests I can work, payroll to approve — converters mirror the functions' rules; deep links — no migration | DONE (reviewed, main; full suite 30/30) |
+| 035a | Company structure: the holding employs people (every picker), `transfer_employment` (end here the day before, start there; immediate or scheduled with nightly completion; due changes applied first; departures block it; explicit link), `archive_company` refuses while anyone is employed (+ trigger), Transfer dialog on profile and People tab (migration 0026) | DONE (reviewed, main; full suite 31/31) |
 
 Round-03 executors branch from `main` as `feature/NNN-<slug>`; the reviewer
 runs the full E2E suite serially and merges after review.

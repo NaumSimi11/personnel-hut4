@@ -42,6 +42,7 @@ prototype in `../prototype` is the UI spec. Updated as milestones land.
 | People import: paste or upload a CSV on the directory, preview the database's verdict per row (missing fields, bad dates, unknown departments, managers, duplicates — existing emails refused, never merged), import all rows or none: people, first employment, manager links | migration 0024 + plan 032 | E2E preview with a refused row → fixed file imported → directory + manager link; smoke for verdicts, no writes on preview, atomic commit, cross-company refusal |
 | Rehire and equipment on offboarding: scheduling a departure adds a critical IT task per asset the leaver holds, taking it back completes the task; a former person is rehired from their record with a new period dated after the old one | migration 0025 + plan 033 | E2E laptop → departure → return task → return → done → former → Rehire; smoke for tasks, completion, re-schedule, none without equipment |
 | Home queue: the overview lists what waits on the viewer across every module — compensation decisions, document reviews, uploads asked of them, policies to read, IT requests, payroll approvals — offered only when they can act, each with a deep link | plan 034 | E2E seeded items → rows → payroll link lands on the tab; unit tests for the rules |
+| Company structure: Hut4 Capital is the holding and an employer; a transfer moves a person between companies as one act (old period ends the day before, new starts on the date, title carried; scheduled ones complete nightly); a company with people still employed cannot be archived — they are listed with a Transfer button; the holding is never archived | migration 0026 + plan 035a | E2E holding headcount → archive refused → transfer from the list → archived, history kept; smoke for capabilities, dates, immediate vs scheduled, departures, archive guard |
 
 ## Next (in order)
 
@@ -49,8 +50,18 @@ prototype in `../prototype` is the UI spec. Updated as milestones land.
    ANTHROPIC_API_KEY in .env.local.
 2. **Turn on Zoho sync** — supply credentials + per-company mapping, then
    run it for real (code is done; see [integrations-zoho.md](integrations-zoho.md)).
-3. **Leave-system linking** — shared auth pool with the leave app (one
-   password for both), then read-only leave indicators via `leave_links`.
+1. **Leave moves into Personnel** (decided 2026-09-12: one system, not two
+   rosters). Field Notebook (`E:\ht-hpt`, Supabase project `wisoabpv…`,
+   credentials in `.env.hr-hut4.local`) keeps running until cutover.
+   035a done → **035** leave schema + rules ported from Field Notebook
+   (working days, per-country calendars + company closures, balance ledger
+   with the 2027 carry-over policy, cancellation rules; balance race and
+   the unscheduled rollover fixed) → **036** Leave UI (nav item: Calendar,
+   Requests, Balances, Holidays; My leave in My workspace; company Leave
+   tab; queue rows) → **037** import with a verifier (42 people incl. 18 at
+   the holding, 105 requests, 78 holidays, 18 adjustments, 0 attachments;
+   HUT4 Capital → Hut4, TBD1 → Liquiditas) → **038** cutover (38 accounts
+   carried over with password hashes, old URL redirected).
 4. **Company profile leftovers (needs credentials)** — notification contacts
    once an email path exists (RESEND_API_KEY); Integrations tab connect /
    configure once provider credentials exist.

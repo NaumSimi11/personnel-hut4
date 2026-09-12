@@ -3027,6 +3027,15 @@ export type Database = {
     }
     Functions: {
       acknowledge_policy: { Args: { p_policy_id: string }; Returns: Json }
+      advance_it_request: {
+        Args: {
+          p_assignee_id?: string
+          p_blocked_reason?: string
+          p_request_id: string
+          p_status: string
+        }
+        Returns: Json
+      }
       advance_offer: {
         Args: { p_offer_id: string; p_reason?: string; p_to_status: string }
         Returns: Json
@@ -3047,6 +3056,7 @@ export type Database = {
         Args: { p_change_id: string }
         Returns: undefined
       }
+      cancel_reservation: { Args: { p_assignment_id: string }; Returns: Json }
       compensation_summary: { Args: { p_company_id: string }; Returns: Json }
       complete_departure: {
         Args: { p_employment_period_id: string }
@@ -3066,6 +3076,7 @@ export type Database = {
         Args: { p_decision: string; p_note?: string; p_record_id: string }
         Returns: Json
       }
+      issue_asset: { Args: { p_assignment_id: string }; Returns: Json }
       propose_compensation: {
         Args: {
           p_amount: number
@@ -3088,6 +3099,18 @@ export type Database = {
       }
       recruitment_report: {
         Args: { p_company_id: string; p_from: string; p_to: string }
+        Returns: Json
+      }
+      reserve_asset: {
+        Args: { p_asset_id: string; p_note?: string; p_person_id: string }
+        Returns: Json
+      }
+      return_asset: {
+        Args: {
+          p_assignment_id: string
+          p_condition?: string
+          p_status?: string
+        }
         Returns: Json
       }
       review_document_request: {

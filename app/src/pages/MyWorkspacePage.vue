@@ -7,6 +7,7 @@ import CompensationCard from '@/components/CompensationCard.vue'
 import DocumentsCard from '@/components/DocumentsCard.vue'
 import MyRequestsCard from '@/components/MyRequestsCard.vue'
 import MyPoliciesCard from '@/components/MyPoliciesCard.vue'
+import PersonEquipmentCard from '@/components/PersonEquipmentCard.vue'
 
 /**
  * My workspace: the signed-in person's own record — their profile, their
@@ -344,6 +345,7 @@ onMounted(load)
 
           <CompensationCard v-if="auth.personId" :person-id="auth.personId" :periods="employments" title="My compensation" />
           <DocumentsCard v-if="auth.personId" :person-id="auth.personId" :companies="myCompanies" title="My documents" />
+          <PersonEquipmentCard v-if="auth.personId" :person-id="auth.personId" :companies="myCompanies" title="My equipment" />
 
           <div class="card">
             <div class="card-head">

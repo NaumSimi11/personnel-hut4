@@ -15,6 +15,7 @@ import CompanyPayrollPanel from '@/components/CompanyPayrollPanel.vue'
 import WorkflowOwnersPanel from '@/components/WorkflowOwnersPanel.vue'
 import DocumentsCard from '@/components/DocumentsCard.vue'
 import PoliciesPanel from '@/components/PoliciesPanel.vue'
+import EquipmentPanel from '@/components/EquipmentPanel.vue'
 import InviteAccessDialog from '@/components/InviteAccessDialog.vue'
 import { upcoming } from '@/lib/companyOps'
 import { todayDb } from '@/lib/compensation'
@@ -38,6 +39,7 @@ type TabId =
   | 'access'
   | 'hiring'
   | 'documents'
+  | 'equipment'
   | 'payroll'
   | 'projects'
   | 'integrations'
@@ -50,6 +52,7 @@ const TABS: { id: TabId; label: string }[] = [
   { id: 'access', label: 'Access' },
   { id: 'hiring', label: 'Hiring' },
   { id: 'documents', label: 'Documents' },
+  { id: 'equipment', label: 'Equipment' },
   { id: 'payroll', label: 'Payroll' },
   { id: 'projects', label: 'Projects' },
   { id: 'integrations', label: 'Integrations' },
@@ -172,6 +175,7 @@ const visibleTabs = computed(() =>
   TABS.filter((t) => {
     if (t.id === 'payroll') return auth.can(companyId, 'payroll.summary')
     if (t.id === 'settings') return auth.isAdmin
+    if (t.id === 'equipment') return auth.can(companyId, 'it.view')
     return true
   }),
 )
@@ -668,6 +672,8 @@ onMounted(load)
           <DocumentsCard :companies="documentScope" title="Company documents" />
           <PoliciesPanel :company-id="company.kind === 'holding' ? null : companyId" />
         </div>
+
+        <EquipmentPanel v-else-if="activeTab === 'equipment'" :company-id="companyId" />
 
         <CompanyPayrollPanel v-else-if="activeTab === 'payroll'" :company-id="companyId" />
 

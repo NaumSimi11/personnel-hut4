@@ -1878,6 +1878,151 @@ end $$;
 reset role;
 set app.test_uid = '';
 
+-- --------------------------------------------------------- equipment (0022)
+-- Alex (A) gets the IT capabilities. Status follows the assignment functions,
+-- one open assignment per asset, people must be employed in the company,
+-- IT requests are pinned and advanced through advance_it_request.
+insert into public.grant_capabilities (grant_id, capability_key) values
+  ('40000000-0000-0000-0000-000000000001', 'it.view'),
+  ('40000000-0000-0000-0000-000000000001', 'it.assign'),
+  ('40000000-0000-0000-0000-000000000001', 'it.complete');
+insert into public.locations (id, company_id, name) values ('f0000000-0000-0000-0000-00000000000b', '10000000-0000-0000-0000-00000000000b', 'B Office');
+set app.test_uid = '00000000-0000-0000-0000-000000000001';  -- Alex
+set role authenticated;
+do $$
+declare v_asset uuid; v_a uuid; r jsonb; v_req uuid; n int;
+begin
+  insert into public.assets (company_id, asset_tag, type_key, model, status)
+    values ('10000000-0000-0000-0000-00000000000a', ' lt-001 ', 'laptop', 'ThinkPad T14', 'lost')
+    returning id into v_asset;
+  assert (select asset_tag from public.assets where id = v_asset) = 'LT-001', 'tag normalised';
+  assert (select status from public.assets where id = v_asset) = 'available', 'a new asset is available';
+  update public.assets set status = 'lost', model = 'ThinkPad T14 Gen 3' where id = v_asset;
+  assert (select status from public.assets where id = v_asset) = 'available', 'status is not edited directly';
+  assert (select model from public.assets where id = v_asset) = 'ThinkPad T14 Gen 3', 'facts are';
+  begin
+    update public.assets set location_id = 'f0000000-0000-0000-0000-00000000000b' where id = v_asset;
+    raise exception 'FAIL: location from another company accepted';
+  exception when raise_exception then
+    if sqlerrm not like '%another company%' then raise; end if;
+  end;
+
+  begin
+    perform public.reserve_asset(v_asset, '20000000-0000-0000-0000-000000000003', null);   -- Omar: former in A
+    raise exception 'FAIL: reserved for someone without current employment';
+  exception when raise_exception then
+    if sqlerrm not like '%no current employment%' then raise; end if;
+  end;
+  r := public.reserve_asset(v_asset, '20000000-0000-0000-0000-000000000021', 'For the new project');
+  v_a := (r->>'assignment_id')::uuid;
+  assert (select status from public.assets where id = v_asset) = 'reserved', 'reserved';
+  begin
+    perform public.reserve_asset(v_asset, '20000000-0000-0000-0000-000000000022', null);
+    raise exception 'FAIL: reserved an asset that is not available';
+  exception when raise_exception then
+    if sqlerrm not like '%only an available asset%' then raise; end if;
+  end;
+  begin
+    perform public.return_asset(v_a, null, 'available');
+    raise exception 'FAIL: returned an asset that was never issued';
+  exception when raise_exception then
+    if sqlerrm not like '%never issued%' then raise; end if;
+  end;
+  perform public.issue_asset(v_a);
+  assert (select status from public.assets where id = v_asset) = 'assigned', 'issued';
+  assert (select issued_by from public.asset_assignments where id = v_a) = '20000000-0000-0000-0000-000000000001', 'issued by Alex';
+  update public.asset_assignments set returned_at = now() where id = v_a;
+  get diagnostics n = row_count;
+  assert n = 0, 'assignments are not edited directly';
+  begin
+    perform public.return_asset(v_a, 'scratched lid', 'sold');
+    raise exception 'FAIL: unknown status after return accepted';
+  exception when raise_exception then
+    if sqlerrm not like '%available, damaged, lost or retired%' then raise; end if;
+  end;
+  perform public.return_asset(v_a, 'scratched lid', 'damaged');
+  assert (select status from public.assets where id = v_asset) = 'damaged', 'status after return';
+  assert (select condition from public.assets where id = v_asset) = 'scratched lid', 'condition recorded';
+  assert (select returned_at from public.asset_assignments where id = v_a) is not null, 'assignment closed';
+  begin
+    perform public.cancel_reservation(v_a);
+    raise exception 'FAIL: cancelled a closed assignment';
+  exception when raise_exception then
+    if sqlerrm not like '%Only an open reservation%' then raise; end if;
+  end;
+
+  -- IT request.
+  insert into public.it_requests (company_id, person_id, kind, title, requested_systems, status, requested_by, assignee_id)
+    values ('10000000-0000-0000-0000-00000000000a', '20000000-0000-0000-0000-000000000021', 'manual', '  Laptop setup ',
+            '["email","vpn"]', 'done', '20000000-0000-0000-0000-000000000002', '20000000-0000-0000-0000-000000000002')
+    returning id into v_req;
+  assert (select status from public.it_requests where id = v_req) = 'open', 'a request starts open';
+  assert (select requested_by from public.it_requests where id = v_req) = '20000000-0000-0000-0000-000000000001', 'requested by the signed-in person';
+  assert (select assignee_id from public.it_requests where id = v_req) is null, 'unassigned';
+  assert (select title from public.it_requests where id = v_req) = 'Laptop setup', 'title trimmed';
+  update public.it_requests set status = 'done' where id = v_req;
+  assert (select status from public.it_requests where id = v_req) = 'open', 'status is not edited directly';
+  begin
+    perform public.advance_it_request(v_req, 'blocked', null, '  ');
+    raise exception 'FAIL: blocked without a reason';
+  exception when raise_exception then
+    if sqlerrm not like '%what blocks it%' then raise; end if;
+  end;
+  perform public.advance_it_request(v_req, 'in_progress');
+  assert (select assignee_id from public.it_requests where id = v_req) = '20000000-0000-0000-0000-000000000001', 'picking it up assigns it';
+  perform public.advance_it_request(v_req, 'blocked', null, 'Waiting for the licence');
+  assert (select blocked_reason from public.it_requests where id = v_req) = 'Waiting for the licence', 'reason kept';
+  perform public.advance_it_request(v_req, 'done');
+  assert (select blocked_reason from public.it_requests where id = v_req) is null, 'reason cleared when done';
+  begin
+    perform public.advance_it_request(v_req, 'open');
+    raise exception 'FAIL: reopened a done request';
+  exception when raise_exception then
+    if sqlerrm not like '%already done%' then raise; end if;
+  end;
+end $$;
+reset role;
+-- The holder sees what they hold (no IT capability needed); once it is
+-- returned the register is HR/IT business again.
+set app.test_uid = '';
+select set_config('app.smoke_asset', id::text, false) from public.assets where asset_tag = 'LT-001';
+update public.assets set status = 'available' where asset_tag = 'LT-001';   -- superuser: reset for the next scenario
+insert into auth.users (id, email) values ('00000000-0000-0000-0000-000000000021', 'pia@a.test');
+update public.people set user_id = '00000000-0000-0000-0000-000000000021' where id = '20000000-0000-0000-0000-000000000021';  -- Pia can sign in
+set app.test_uid = '00000000-0000-0000-0000-000000000001';
+set role authenticated;
+select public.reserve_asset(current_setting('app.smoke_asset')::uuid, '20000000-0000-0000-0000-000000000021', null);  -- Pia
+reset role;
+set app.test_uid = '00000000-0000-0000-0000-000000000021';  -- Pia: no it.* capability
+set role authenticated;
+do $$
+begin
+  assert (select count(*) from public.assets where asset_tag = 'LT-001') = 1, 'the holder sees the asset reserved for them';
+  assert (select count(*) from public.asset_assignments where asset_id = current_setting('app.smoke_asset')::uuid and returned_at is null) = 1,
+    'and the open assignment';
+end $$;
+reset role;
+-- Bea (Company B) sees nothing of A's equipment and cannot work it.
+set app.test_uid = '00000000-0000-0000-0000-000000000005';
+set role authenticated;
+do $$
+begin
+  assert (select count(*) from public.assets where asset_tag = 'LT-001') = 0, 'other-company IT sees no assets';
+  begin
+    perform public.cancel_reservation((select id from public.asset_assignments where asset_id = current_setting('app.smoke_asset')::uuid));
+    raise exception 'FAIL: worked an assignment across companies';
+  exception when insufficient_privilege or raise_exception then
+    if sqlerrm like 'FAIL:%' then raise; end if;
+  end;
+  begin
+    perform public.reserve_asset(current_setting('app.smoke_asset')::uuid, '20000000-0000-0000-0000-000000000005', null);
+    raise exception 'FAIL: reserved across companies';
+  exception when insufficient_privilege then null;
+  end;
+end $$;
+reset role;
+set app.test_uid = '';
+
 reset role;
 set app.test_uid = '';
 

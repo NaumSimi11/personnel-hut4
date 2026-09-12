@@ -11,7 +11,7 @@ import { supabase } from '@/lib/supabase'
 const props = defineProps<{ companyId: string }>()
 
 type Role = { key: string; label: string }
-type Person = { id: string; full_name: string }
+type Person = { id: string; full_name: string; companies: string[] }
 type OwnerRow = { role_key: string; person_id: string | null }
 
 const loading = ref(true)
@@ -29,11 +29,12 @@ async function load(): Promise<void> {
   const [rolesRes, ownersRes, peopleRes] = await Promise.all([
     supabase.from('workflow_roles').select('key, label').order('key'),
     supabase.from('workflow_owners').select('role_key, person_id').eq('company_id', props.companyId),
+    // Everyone employed anywhere in the group: HR at the holding owns
+    // workflows for every company, so the list is not scoped.
     supabase
       .from('employment_periods')
-      .select('person:people!employment_periods_person_id_fkey(id, full_name)')
-      .eq('company_id', props.companyId)
-      .neq('status', 'former'),
+      .select('person:people!employment_periods_person_id_fkey(id, full_name), company:companies(name)')
+      .in('status', ['active', 'pre_start']),
   ])
   loading.value = false
   if (rolesRes.error || ownersRes.error || peopleRes.error) {
@@ -44,8 +45,11 @@ async function load(): Promise<void> {
   roles.value = rolesRes.data ?? []
   const seen = new Map<string, Person>()
   for (const row of peopleRes.data ?? []) {
-    const p = row.person as unknown as Person | null
-    if (p && !seen.has(p.id)) seen.set(p.id, p)
+    const p = row.person as unknown as { id: string; full_name: string } | null
+    const company = (row.company as unknown as { name: string } | null)?.name
+    if (!p) continue
+    const entry = seen.get(p.id) ?? { ...p, companies: [] }
+    seen.set(p.id, { ...entry, companies: company && !entry.companies.includes(company) ? [...entry.companies, company] : entry.companies })
   }
   people.value = [...seen.values()].sort((a, b) => a.full_name.localeCompare(b.full_name))
   const owners = (ownersRes.data ?? []) as OwnerRow[]
@@ -99,7 +103,7 @@ watch(() => props.companyId, load)
         </div>
         <select v-model="selection[role.key]" :aria-label="role.label">
           <option value="">Unassigned</option>
-          <option v-for="p in people" :key="p.id" :value="p.id">{{ p.full_name }}</option>
+          <option v-for="p in people" :key="p.id" :value="p.id">{{ p.full_name }} · {{ p.companies.join(', ') }}</option>
         </select>
         <button
           class="button secondary small-btn"

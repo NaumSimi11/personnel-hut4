@@ -102,7 +102,7 @@ test('upcoming → workflow owner saved → request shows approver → invite fr
   await page.goto(`/companies/${companyId}?tab=settings`)
   await page.getByRole('tab', { name: 'Settings' }).click()
   const ownerRow = page.locator('.owner-row', { hasText: 'Approves hiring requests' })
-  await ownerRow.locator('select').selectOption({ label: LEAVER })
+  await ownerRow.locator('select').selectOption({ label: `${LEAVER} · Praedium` })
   await ownerRow.getByRole('button', { name: 'Save' }).click()
   await expect(ownerRow).toContainText('Saved')
   const { data: owner } = await db

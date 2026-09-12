@@ -16,6 +16,7 @@ import WorkflowOwnersPanel from '@/components/WorkflowOwnersPanel.vue'
 import DocumentsCard from '@/components/DocumentsCard.vue'
 import PoliciesPanel from '@/components/PoliciesPanel.vue'
 import EquipmentPanel from '@/components/EquipmentPanel.vue'
+import ActivityPanel from '@/components/ActivityPanel.vue'
 import InviteAccessDialog from '@/components/InviteAccessDialog.vue'
 import { upcoming } from '@/lib/companyOps'
 import { todayDb } from '@/lib/compensation'
@@ -43,6 +44,7 @@ type TabId =
   | 'payroll'
   | 'projects'
   | 'integrations'
+  | 'activity'
   | 'settings'
 
 const TABS: { id: TabId; label: string }[] = [
@@ -56,6 +58,7 @@ const TABS: { id: TabId; label: string }[] = [
   { id: 'payroll', label: 'Payroll' },
   { id: 'projects', label: 'Projects' },
   { id: 'integrations', label: 'Integrations' },
+  { id: 'activity', label: 'Activity' },
   { id: 'settings', label: 'Settings' },
 ]
 
@@ -176,6 +179,9 @@ const visibleTabs = computed(() =>
     if (t.id === 'payroll') return auth.can(companyId, 'payroll.summary')
     if (t.id === 'settings') return auth.isAdmin
     if (t.id === 'equipment') return auth.can(companyId, 'it.view')
+    if (t.id === 'activity') {
+      return ['access.manage', 'jobs.view', 'candidates.view'].some((cap) => auth.can(companyId, cap))
+    }
     return true
   }),
 )
@@ -676,6 +682,8 @@ onMounted(load)
         <EquipmentPanel v-else-if="activeTab === 'equipment'" :company-id="companyId" />
 
         <CompanyPayrollPanel v-else-if="activeTab === 'payroll'" :company-id="companyId" />
+
+        <ActivityPanel v-else-if="activeTab === 'activity'" :company-id="companyId" />
 
         <WorkflowOwnersPanel v-else-if="activeTab === 'settings'" :company-id="companyId" />
 

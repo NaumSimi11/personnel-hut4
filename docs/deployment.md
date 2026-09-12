@@ -1,12 +1,12 @@
 # Deployment
 
-Personnel runs as **one container**: the Fastify service in `server/`
-(invites, password changes, careers intake, Zoho sync) also serves the built
-Vue app from `app/dist`, so the product is a single origin — no CORS, no
-proxy rewrites. The database, storage and auth are the Supabase project;
-nothing else is needed.
+Personnel is **one origin**: the Fastify service in `server/` (invites,
+password changes, careers intake) and the built Vue app together — no CORS,
+no proxy rewrites. The database, storage and auth are the Supabase project;
+nothing else is needed. The chosen host is Vercel; a Dockerfile exists for
+any other platform.
 
-## Build
+## Docker build
 
 ```sh
 docker build \
@@ -41,19 +41,34 @@ reach Supabase.
 Verified locally: `docker build` + `docker run` → `/` 200 HTML, deep link
 `/leave?tab=requests` served by the SPA fallback, assets 200, `/api/*` JSON.
 
-## Where to host
+## Vercel (chosen host)
 
-Any container platform works; all of them read the `Dockerfile` from the
-repo root and inject the runtime variables from their dashboard:
+Vercel runs Fastify as a first-class backend: `server/server.ts` exports
+the app, `server/vercel.json` builds the Vue app into `server/public/`
+(served by Vercel's CDN), and the function answers `/api/*` plus the SPA
+fallback. Verified locally by importing `server/server.ts` and injecting
+`/api/health` (JSON) and `/leave` (index.html).
 
-| Platform | Notes |
-|---|---|
-| **Fly.io** | `fly launch --no-deploy` (accept the Dockerfile), set secrets with `fly secrets set …`, build args via `[build.args]` in `fly.toml`, `fly deploy`. Cheapest for one small always-on machine. |
-| **Railway / Render** | "Deploy from repo", Dockerfile detected; build args and variables in the service settings. |
-| **Vercel** | Not for this shape: the service holds long-lived state (rate limits) and a Fastify listener. Field Notebook's `vercel.json` redirect points *at* the URL you get from one of the above. |
+Project settings (once, in the dashboard):
 
-Custom domain and TLS come from the platform. `APP_BASE_URL` must be the
-public URL — it is what credential emails link to.
+1. **Import the repository**, set **Root Directory** to `server` and keep
+   "Include files outside the root directory" on (the build needs `../app`
+   and `../shared`). Framework preset: *Other* — `vercel.json` carries the
+   install and build commands.
+2. **Environment variables** (Production + Preview):
+   `SUPABASE_URL`, `SUPABASE_SECRET_KEY`, `SUPABASE_PUBLISHABLE_KEY`,
+   `VITE_SUPABASE_URL`, `VITE_SUPABASE_PUBLISHABLE_KEY` (the two `VITE_`
+   ones are read at build time), `COMPANY_EMAIL_DOMAINS`, `APP_BASE_URL`
+   (the production URL), `TRUST_PROXY=true`, and when ready
+   `RESEND_API_KEY` + `EMAIL_FROM`.
+3. Deploy; add the custom domain; set `APP_BASE_URL` to it and redeploy.
+
+Serverless notes: the careers rate limits are in memory, so on Vercel they
+are per instance and best-effort — the database rules (one open
+application per person and role, honeypot, answer checks) still hold. The
+Zoho sync CLI is run from a laptop, not from Vercel.
+
+## Docker (any other host)
 
 ## Database
 

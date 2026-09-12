@@ -12,3 +12,4 @@ playwright-report/
 .claude/
 .playwright-mcp/
 .fn-payload*.json
+server/public/

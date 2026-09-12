@@ -1,0 +1,8 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "installCommand": "npm ci && cd ../app && npm ci",
+  "buildCommand": "cd ../app && npm run build && rm -rf ../server/public && cp -r dist ../server/public",
+  "functions": {
+    "server.ts": { "includeFiles": "public/index.html" }
+  }
+}

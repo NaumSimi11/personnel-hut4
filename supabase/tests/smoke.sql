@@ -2141,6 +2141,70 @@ end $$;
 reset role;
 set app.test_uid = '';
 
+-- ------------------------------------------------------ people import (0024)
+-- Alex (employment.edit in A) previews and imports; a refused row blocks the
+-- whole file; managers resolve inside the file or to people employed here.
+set app.test_uid = '00000000-0000-0000-0000-000000000001';
+set role authenticated;
+do $$
+declare r jsonb; n_before int; v_ivan uuid; v_jana uuid;
+begin
+  n_before := (select count(*) from public.people);
+  r := public.import_people('10000000-0000-0000-0000-00000000000a', '[
+    {"full_name":"Ivan Import","work_email":"IVAN@a.test","job_title":"Analyst","start_date":"2024-02-01","department":"shared finance","manager_email":"alex@a.test","employment_type_key":"full_time"},
+    {"full_name":"Jana Import","work_email":"jana@a.test","job_title":"Junior Analyst","start_date":"2999-01-01","manager_email":"ivan@a.test"},
+    {"full_name":"Omar Again","work_email":"omar@a.test","job_title":"Engineer","start_date":"2024-01-01"},
+    {"full_name":"X","work_email":"not-an-email","job_title":"","start_date":"soon","department":"Nowhere","manager_email":"ghost@a.test"}
+  ]'::jsonb, false);
+  assert (r->>'committed')::boolean = false and (r->>'ready')::int = 2 and (r->>'refused')::int = 2, 'preview counts';
+  assert (select count(*) from public.people) = n_before, 'a preview writes nothing';
+  assert (r->'rows'->2->'problems')::text like '%already exists%', 'an existing email is refused, never merged';
+  assert jsonb_array_length(r->'rows'->3->'problems') >= 5, 'every problem of a bad row is listed';
+  assert (r->'rows'->3->'problems')::text like '%neither in the file nor employed%', 'unknown manager named';
+  begin
+    perform public.import_people('10000000-0000-0000-0000-00000000000a', '[
+      {"full_name":"Ivan Import","work_email":"ivan@a.test","job_title":"Analyst","start_date":"2024-02-01"},
+      {"full_name":"Omar Again","work_email":"omar@a.test","job_title":"Engineer","start_date":"2024-01-01"}
+    ]'::jsonb, true);
+    raise exception 'FAIL: committed a file with a refused row';
+  exception when raise_exception then
+    if sqlerrm not like '%not ready%' then raise; end if;
+  end;
+  assert (select count(*) from public.people) = n_before, 'a refused commit writes nothing';
+
+  r := public.import_people('10000000-0000-0000-0000-00000000000a', '[
+    {"full_name":"Ivan Import","work_email":"IVAN@a.test","job_title":"Analyst","start_date":"2024-02-01","department":"shared finance","manager_email":"alex@a.test","employment_type_key":"full_time"},
+    {"full_name":"Jana Import","work_email":"jana@a.test","job_title":"Junior Analyst","start_date":"2999-01-01","manager_email":"ivan@a.test"}
+  ]'::jsonb, true);
+  assert (r->>'committed')::boolean = true, 'committed';
+  assert (select count(*) from public.people) = n_before + 2, 'two people written';
+  v_ivan := (select id from public.people where work_email = 'ivan@a.test');
+  v_jana := (select id from public.people where work_email = 'jana@a.test');
+  assert (select status from public.employment_periods where person_id = v_ivan) = 'active', 'started in the past: active';
+  assert (select status from public.employment_periods where person_id = v_jana) = 'pre_start', 'future start: pre-start';
+  assert (select manager_id from public.employment_periods where person_id = v_ivan) = '20000000-0000-0000-0000-000000000001', 'manager already employed here';
+  assert (select manager_id from public.employment_periods where person_id = v_jana) = v_ivan, 'manager from the file';
+  assert (select department_id from public.employment_periods where person_id = v_ivan) = 'e0000000-0000-0000-0000-000000000000', 'shared department by name, case-insensitive';
+  assert (select employment_type_key from public.employment_periods where person_id = v_ivan) = 'full_time', 'employment type kept';
+  r := public.import_people('10000000-0000-0000-0000-00000000000a', '[
+    {"full_name":"Ivan Import","work_email":"Ivan@A.Test","job_title":"Analyst","start_date":"2024-02-01"}
+  ]'::jsonb, false);
+  assert (r->>'refused')::int = 1, 'a second import of the same email is refused whatever the case';
+end $$;
+reset role;
+set app.test_uid = '00000000-0000-0000-0000-000000000005';  -- Bea: no employment.edit in A
+set role authenticated;
+do $$
+begin
+  begin
+    perform public.import_people('10000000-0000-0000-0000-00000000000a', '[{"full_name":"Zed","work_email":"zed@a.test","job_title":"x","start_date":"2024-01-01"}]'::jsonb, true);
+    raise exception 'FAIL: imported across companies';
+  exception when insufficient_privilege then null;
+  end;
+end $$;
+reset role;
+set app.test_uid = '';
+
 reset role;
 set app.test_uid = '';
 

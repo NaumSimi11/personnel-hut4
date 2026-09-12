@@ -3180,6 +3180,10 @@ export type Database = {
         Args: { p_decision: string; p_note?: string; p_record_id: string }
         Returns: Json
       }
+      import_people: {
+        Args: { p_commit?: boolean; p_company_id: string; p_rows: Json }
+        Returns: Json
+      }
       issue_asset: { Args: { p_assignment_id: string }; Returns: Json }
       mark_payroll_exported: { Args: { p_period_id: string }; Returns: Json }
       prepare_payroll_period: {

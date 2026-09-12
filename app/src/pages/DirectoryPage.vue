@@ -6,6 +6,7 @@ import { departureState } from '@/lib/departure'
 import { DIRECTORY_FILTERS, currentPeriod, matchesFilter, type DirectoryFilter } from '@/lib/employmentChanges'
 import InviteAccessDialog from '@/components/InviteAccessDialog.vue'
 import AddPersonDialog from '@/components/AddPersonDialog.vue'
+import ImportPeopleDialog from '@/components/ImportPeopleDialog.vue'
 
 type DirectoryRow = {
   id: string
@@ -33,6 +34,8 @@ const loading = ref(true)
 const error = ref<string | null>(null)
 const inviteDialog = ref<InstanceType<typeof InviteAccessDialog> | null>(null)
 const addPersonDialog = ref<InstanceType<typeof AddPersonDialog> | null>(null)
+const importDialog = ref<InstanceType<typeof ImportPeopleDialog> | null>(null)
+const canImport = computed(() => auth.isAdmin || companies.value.some((c) => auth.can(c.id, 'employment.edit')))
 
 const filtered = computed(() => {
   const q = query.value.trim().toLowerCase()
@@ -92,11 +95,14 @@ onMounted(load)
         <div class="eyebrow">People &amp; access</div>
         <h1>The right access for every person.</h1>
       </div>
-      <div v-if="auth.isAdmin" class="head-actions">
-        <button class="button secondary" type="button" @click="addPersonDialog?.open()">
+      <div v-if="auth.isAdmin || canImport" class="head-actions">
+        <button v-if="canImport" class="button secondary" type="button" @click="importDialog?.open()">
+          Import people
+        </button>
+        <button v-if="auth.isAdmin" class="button secondary" type="button" @click="addPersonDialog?.open()">
           Add person
         </button>
-        <button class="button" type="button" @click="inviteDialog?.openInvite()">
+        <button v-if="auth.isAdmin" class="button" type="button" @click="inviteDialog?.openInvite()">
           Invite person
         </button>
       </div>
@@ -207,6 +213,7 @@ onMounted(load)
     </div>
     <InviteAccessDialog ref="inviteDialog" @invited="load" />
     <AddPersonDialog ref="addPersonDialog" @created="load" />
+    <ImportPeopleDialog ref="importDialog" :companies="companies" @imported="load" />
   </div>
 </template>
 

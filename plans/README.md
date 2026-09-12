@@ -62,6 +62,7 @@ round; merging it into `main` is the maintainer's decision.
 | 030 | Activity history: company Activity tab over the redacted audit trail (entity / text filters, who / what / changed fields), lib/activity summaries — no migration | DONE (reviewed, main; full suite 26/26) |
 | 031 | Payroll preparation: periods per range and currency, snapshot lines (facts: amount, basis, from/to, days covered), prepare / approve (not the preparer) / reopen / mark exported functions, CSV export; Payroll periods panel on the company Payroll tab (migration 0023) | DONE (reviewed, main; full suite 27/27) |
 | 032 | People import: `import_people` validates a whole CSV (per-row verdicts, existing emails refused, managers resolved in the file or in the company) and commits all-or-nothing; directory Import dialog with delimiter detection, header aliases, preview, template (migration 0024) | DONE (reviewed, main; full suite 28/28) |
+| 033 | Rehire (Add employment / Rehire for employment.edit holders, pre-filled and dated after the last end) and equipment on the offboarding checklist (return tasks per held asset, completed by the handover, re-schedule adds new ones) (migration 0025) | DONE (reviewed, main; full suite 29/29) |
 
 Round-03 executors branch from `main` as `feature/NNN-<slug>`; the reviewer
 runs the full E2E suite serially and merges after review.

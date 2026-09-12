@@ -2,7 +2,8 @@
 import { computed, ref, watch } from 'vue'
 import { supabase } from '@/lib/supabase'
 import { todayDb } from '@/lib/compensation'
-import { friendlyLeaveError, leaveInput, workingDaysBetween } from '@/lib/leave'
+import { notifyLeave } from '@/lib/leaveApi'
+import { balanceAfter, clashesWith, friendlyLeaveError, leaveInput, workingDaysBetween, type ClashRow } from '@/lib/leave'
 
 /**
  * Request leave for oneself, or record it for someone else (plan 036). The
@@ -30,10 +31,21 @@ const offDays = ref<{ holidays: string[]; closures: string[] }>({ holidays: [], 
 const form = ref({ leaveTypeKey: 'annual', start: '', end: '', note: '', documentsToFollow: false, recordAsApproved: false })
 const error = ref<string | null>(null)
 const busy = ref(false)
+// Ported from Field Notebook: the balance after this request, and who from
+// the same department is away on the same days (pending counted) — a
+// heads-up, never a block; request_leave decides.
+const available = ref<number | null>(null)
+const colleagueIds = ref<Set<string>>(new Set())
+const teamRows = ref<ClashRow[]>([])
+let loadSeq = 0
 
 const selectedType = computed(() => types.value.find((t) => t.key === form.value.leaveTypeKey))
 const previewDays = computed(() =>
   workingDaysBetween(form.value.start, form.value.end, offDays.value.holidays, offDays.value.closures),
+)
+const after = computed(() => (available.value !== null ? balanceAfter({ available: available.value }, previewDays.value, selectedType.value?.deducts_balance ?? false) : null))
+const clashes = computed(() =>
+  subject.value ? clashesWith(teamRows.value, { start: form.value.start, end: form.value.end, personId: subject.value.personId, colleagueIds: colleagueIds.value }) : [],
 )
 
 async function open(s: LeaveSubject): Promise<void> {
@@ -53,6 +65,33 @@ async function open(s: LeaveSubject): Promise<void> {
     holidays: (holidaysRes.data ?? []).map((h) => h.date),
     closures: (closuresRes.data ?? []).map((c) => c.date),
   }
+  void loadContext(s)
+}
+
+/** The department colleagues (for the clash warning), then the date-bound numbers. */
+async function loadContext(s: LeaveSubject): Promise<void> {
+  const periodRes = await supabase.from('employment_periods').select('department_id').eq('person_id', s.personId).eq('company_id', s.companyId).in('status', ['active', 'pre_start']).limit(1).maybeSingle()
+  const dept = periodRes.data?.department_id
+  if (dept) {
+    const { data } = await supabase.from('employment_periods').select('person_id').eq('company_id', s.companyId).eq('department_id', dept).in('status', ['active', 'pre_start'])
+    colleagueIds.value = new Set((data ?? []).map((r) => r.person_id))
+  } else {
+    colleagueIds.value = new Set()
+  }
+  await loadTeam(s)
+}
+
+/** Everything that depends on the dates: what these dates could draw, and who is away then. Only the latest answer lands. */
+async function loadTeam(s: LeaveSubject): Promise<void> {
+  if (!form.value.start || !form.value.end || form.value.end < form.value.start) return
+  const seq = ++loadSeq
+  const [availRes, teamRes] = await Promise.all([
+    supabase.rpc('requestable_leave', { p_person_id: s.personId, p_company_id: s.companyId, p_start: form.value.start, p_end: form.value.end }),
+    supabase.rpc('team_leave', { p_company_id: s.companyId, p_from: form.value.start, p_to: form.value.end }),
+  ])
+  if (seq !== loadSeq) return
+  available.value = availRes.error ? null : Number(availRes.data ?? 0)
+  teamRows.value = (teamRes.data ?? []) as unknown as ClashRow[]
 }
 defineExpose({ open })
 
@@ -63,6 +102,9 @@ watch(
     if (form.value.end < start) form.value = { ...form.value, end: start }
   },
 )
+watch([() => form.value.start, () => form.value.end], () => {
+  if (subject.value) void loadTeam(subject.value)
+})
 
 async function submit(): Promise<void> {
   if (!subject.value) return
@@ -88,7 +130,9 @@ async function submit(): Promise<void> {
     console.error('Leave request failed:', err.message)
     return
   }
-  const result = data as { status?: string; working_days?: number } | null
+  const result = data as { request_id?: string; status?: string; working_days?: number } | null
+  // Approvers hear about a pending request; nobody needs mail about leave recorded as approved.
+  if (result?.request_id && result.status !== 'approved') void notifyLeave(result.request_id, 'submitted')
   dialog.value?.close()
   emit('submitted', { status: result?.status ?? 'pending', workingDays: Number(result?.working_days ?? 0) })
 }
@@ -124,6 +168,17 @@ async function submit(): Promise<void> {
           <input id="lv-end" v-model="form.end" type="date" :min="form.start" required />
         </div>
       </div>
+      <div v-if="after" class="preview-balance" :class="{ short: after.short }" data-testid="balance-preview">
+        <span v-if="after.short">Not enough leave left: {{ after.before }} available, this request needs {{ previewDays }}.</span>
+        <span v-else><b>{{ after.after }}</b> of {{ after.before }} days left after this request (pending requests already held aside).</span>
+      </div>
+      <div v-if="clashes.length" class="clash" data-testid="clash-warning">
+        <b>Also away in the same department</b>
+        <ul>
+          <li v-for="c in clashes.slice(0, 4)" :key="c.id">{{ c.full_name }} · {{ c.start_date }} → {{ c.end_date }}{{ c.status === 'pending' ? ' (pending)' : '' }}</li>
+        </ul>
+        <small>Recorded anyway — this is a heads-up, not a block.</small>
+      </div>
       <div class="field">
         <label for="lv-note">Note</label>
         <input id="lv-note" v-model="form.note" maxlength="1000" placeholder="Optional — for the approver" />
@@ -157,6 +212,11 @@ h2 { font-size: 19px; margin: 10px 0 10px; }
 .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0 16px; }
 @media (max-width: 560px) { .grid { grid-template-columns: 1fr; } }
 .preview { font-size: 22px; font-weight: 600; padding: 4px 0 12px; }
+.preview-balance { font-size: 12px; padding: 10px 12px; border-radius: 8px; background: #edf5ed; color: #3e744e; margin-bottom: 14px; }
+.preview-balance.short { background: #fbf2df; color: #946d24; }
+.clash { font-size: 11px; padding: 10px 12px; border-radius: 8px; background: #fbf2df; color: #7a5a1a; margin-bottom: 14px; }
+.clash ul { margin: 6px 0; padding-left: 16px; }
+.clash small { color: #946d24; }
 .check { display: flex; gap: 8px; align-items: center; font-size: 12px; margin: 6px 0 10px; }
 .check input { width: auto; }
 .actions { display: flex; gap: 9px; justify-content: flex-end; margin-top: 14px; }

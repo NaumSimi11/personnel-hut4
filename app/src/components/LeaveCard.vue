@@ -98,7 +98,7 @@ async function load(): Promise<void> {
     supabase
       .from('leave_requests')
       .select(
-        `id, person_id, company_id, leave_type_key, start_date, end_date, working_days, status, note, documents_to_follow,
+        `id, person_id, company_id, leave_type_key, requires_document, start_date, end_date, working_days, status, note, documents_to_follow,
          decision_note, cancellation_reason, cancellation_requested_at, cancellation_request_reason,
          cancellation_declined_at, cancellation_decline_note, company:companies(name), leave_type:leave_types(label)`,
       )

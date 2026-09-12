@@ -3679,6 +3679,15 @@ export type Database = {
         Args: { p_reason: string; p_request_id: string }
         Returns: Json
       }
+      requestable_leave: {
+        Args: {
+          p_company_id: string
+          p_end: string
+          p_person_id: string
+          p_start: string
+        }
+        Returns: number
+      }
       reserve_asset: {
         Args: { p_asset_id: string; p_note?: string; p_person_id: string }
         Returns: Json

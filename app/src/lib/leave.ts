@@ -131,3 +131,59 @@ export function friendlyLeaveError(message: string): string {
   if (/row-level security/i.test(message)) return 'You are not allowed to change leave here.'
   return message
 }
+
+// ------------------------------------------------------------ day rail
+export type DayKind = 'working' | 'weekend' | 'holiday' | 'closure'
+
+/** What a calendar day is, for the rail beside the grid. */
+export function dayKind(iso: string, holidays: Record<string, string>, closures: Record<string, string>): DayKind {
+  if (holidays[iso]) return 'holiday'
+  if (closures[iso]) return 'closure'
+  const weekday = new Date(`${iso}T00:00:00Z`).getUTCDay()
+  return weekday === 0 || weekday === 6 ? 'weekend' : 'working'
+}
+
+/** "Day 3 of 5" — calendar days, the way people read a span. */
+export function leaveProgress(leave: { start_date: string; end_date: string }, iso: string): { day: number; of: number } {
+  const span = (from: string, to: string) => Math.round((Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) / DAY_MS) + 1
+  return { day: span(leave.start_date, iso), of: span(leave.start_date, leave.end_date) }
+}
+
+// ------------------------------------------------------- request preview
+/**
+ * The balance before and after a request. `available` is what
+ * requestable_leave says these dates could still draw — entitlement left
+ * after pending requests plus the carry-over that fits the window — so the
+ * form and request_leave never disagree. Null for types that do not
+ * deduct — there is nothing to preview.
+ */
+export function balanceAfter(
+  balance: { available: number },
+  workingDays: number,
+  deducts: boolean,
+): { before: number; after: number; short: boolean } | null {
+  if (!deducts) return null
+  const before = balance.available
+  const after = before - workingDays
+  return { before, after, short: after < 0 }
+}
+
+export interface ClashRow {
+  id: string
+  person_id: string
+  full_name: string
+  start_date: string
+  end_date: string
+  status: string
+  leave_type_key: string
+}
+
+/** Colleagues (given ids) away on any of the requested days — a heads-up, never a block. */
+export function clashesWith(
+  rows: ClashRow[],
+  q: { start: string; end: string; personId: string; colleagueIds: Set<string> },
+): ClashRow[] {
+  return rows.filter(
+    (r) => r.person_id !== q.personId && q.colleagueIds.has(r.person_id) && r.start_date <= q.end && r.end_date >= q.start,
+  )
+}

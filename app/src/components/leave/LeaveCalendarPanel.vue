@@ -3,7 +3,7 @@ import { computed, onMounted, ref, watch } from 'vue'
 import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/stores/auth'
 import { todayDb } from '@/lib/compensation'
-import { monthGrid, type GridDay } from '@/lib/leave'
+import { dayKind, leaveProgress, monthGrid, type GridDay } from '@/lib/leave'
 
 /**
  * Who is away, month by month (plan 036). team_leave redacts colleagues'
@@ -37,6 +37,36 @@ const holidays = ref<Record<string, string>>({})
 const closures = ref<Record<string, string>>({})
 const loading = ref(true)
 const error = ref<string | null>(null)
+const selected = ref<string | null>(null)
+
+// The day rail: what the clicked day is and who is away on it. A person's
+// name links to their record only when the viewer may open it (their own,
+// or leave.view / leave.approve in that company — the same rule the
+// database applied when it decided whether to redact the row).
+const selectedKind = computed(() => (selected.value ? dayKind(selected.value, holidays.value, closures.value) : 'working'))
+const selectedLeaves = computed(() => (selected.value ? entriesOn({ iso: selected.value, day: 0, inMonth: true, weekend: selectedKind.value === 'weekend' }) : []))
+const kindText: Record<string, { title: string; sub: string }> = {
+  working: { title: 'Working day', sub: 'A normal day' },
+  weekend: { title: 'Weekend', sub: 'Not a working day' },
+  holiday: { title: 'Public holiday', sub: 'Does not count as leave' },
+  closure: { title: 'Company closure', sub: 'Does not count as leave' },
+}
+function dayTitle(iso: string): string {
+  return new Date(`${iso}T00:00:00Z`).toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'UTC' })
+}
+function typeLabel(r: TeamRow): string {
+  return r.leave_type_key === 'away' ? 'Away' : r.leave_type_key.replace('_', ' ')
+}
+function canOpen(r: TeamRow): boolean {
+  return r.person_id === auth.personId || r.leave_type_key !== 'away'
+}
+function progressText(r: TeamRow): string {
+  const p = leaveProgress(r, selected.value ?? r.start_date)
+  return p.of === 1 ? 'one day' : `day ${p.day} of ${p.of}`
+}
+function select(day: GridDay): void {
+  selected.value = selected.value === day.iso ? null : day.iso
+}
 
 const grid = computed(() => monthGrid(year.value, month.value))
 const monthLabel = computed(() =>
@@ -116,14 +146,21 @@ onMounted(load)
     </div>
     <p v-if="error" class="error-note in-card" role="alert">{{ error }}</p>
     <div v-else-if="loading" class="empty">Loading calendar…</div>
-    <div v-else class="grid" data-testid="leave-calendar">
+    <div v-else class="layout" :class="{ open: selected }">
+    <div class="grid" data-testid="leave-calendar">
       <div v-for="d in ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']" :key="d" class="dow">{{ d }}</div>
       <div
         v-for="day in grid"
         :key="day.iso"
         class="day"
-        :class="{ out: !day.inMonth, weekend: day.weekend, today: day.iso === today, holiday: holidays[day.iso] || closures[day.iso] }"
+        :class="{ out: !day.inMonth, weekend: day.weekend, today: day.iso === today, holiday: holidays[day.iso] || closures[day.iso], selected: day.iso === selected }"
         :data-date="day.iso"
+        role="button"
+        tabindex="0"
+        :aria-pressed="day.iso === selected"
+        @click="select(day)"
+        @keydown.enter.prevent="select(day)"
+        @keydown.space.prevent="select(day)"
       >
         <div class="num">{{ day.day }}</div>
         <small v-if="holidays[day.iso]" class="hol">{{ holidays[day.iso] }}</small>
@@ -133,6 +170,35 @@ onMounted(load)
         </div>
       </div>
     </div>
+    <aside v-if="selected" class="rail" data-testid="day-rail" :aria-label="dayTitle(selected)">
+      <div class="rail-head">
+        <div>
+          <div class="eyebrow">{{ dayTitle(selected) }}</div>
+          <strong>{{ kindText[selectedKind].title }}</strong>
+          <small>{{ holidays[selected] || closures[selected] || kindText[selectedKind].sub }}</small>
+        </div>
+        <button class="button secondary small-btn" type="button" aria-label="Close day" @click="selected = null">×</button>
+      </div>
+      <div class="rail-count">
+        <template v-if="selectedLeaves.length">
+          <b>{{ selectedLeaves.length }}</b> {{ selectedLeaves.length === 1 ? 'person is' : 'people are' }} away
+        </template>
+        <template v-else-if="selectedKind !== 'working'">Nobody is away — not a working day.</template>
+        <template v-else>Nobody is away — a full team.</template>
+      </div>
+      <ul class="rail-people">
+        <li v-for="r in selectedLeaves" :key="r.id">
+          <router-link v-if="canOpen(r)" :to="{ name: 'person', params: { personId: r.person_id } }"><b>{{ r.full_name }}</b></router-link>
+          <b v-else>{{ r.full_name }}</b>
+          <small>
+            {{ typeLabel(r) }}{{ r.status === 'pending' ? ' · pending' : '' }}{{ r.cancellation_asked ? ' · asks to cancel' : '' }}{{ many ? ` · ${nameOf(r.company_id)}` : '' }}
+          </small>
+          <small>{{ r.start_date }} → {{ r.end_date }} · {{ progressText(r) }}</small>
+          <small v-if="r.note" class="note">“{{ r.note }}”</small>
+        </li>
+      </ul>
+    </aside>
+    </div>
   </div>
 </template>
 
@@ -140,7 +206,22 @@ onMounted(load)
 .nav { display: flex; gap: 6px; }
 .small-btn { padding: 7px 11px; font-size: 11px; }
 .in-card { margin: 14px 24px; }
+.layout { display: grid; grid-template-columns: 1fr; }
+.layout.open { grid-template-columns: minmax(0, 1fr) 280px; }
 .grid { display: grid; grid-template-columns: repeat(7, 1fr); border-top: 1px solid #edf0eb; }
+.day { cursor: pointer; }
+.day:hover { box-shadow: inset 0 0 0 1px #c9d3c4; }
+.day.selected { box-shadow: inset 0 0 0 2px var(--green); }
+.rail { border-top: 1px solid #edf0eb; border-left: 1px solid #edf0eb; padding: 16px 18px; font-size: 12px; }
+.rail-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; }
+.rail-head strong { display: block; font-size: 15px; margin-top: 4px; }
+.rail-head small { display: block; color: var(--muted); font-size: 11px; }
+.rail-count { margin: 14px 0 10px; font-size: 12px; }
+.rail-people { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+.rail-people li { border: 1px solid var(--line); border-radius: 8px; padding: 9px 11px; display: grid; gap: 2px; }
+.rail-people small { color: var(--muted); font-size: 10px; }
+.rail-people .note { color: var(--ink); }
+@media (max-width: 720px) { .layout.open { grid-template-columns: 1fr; } .rail { border-left: 0; } }
 .dow { font-size: 9px; text-transform: uppercase; letter-spacing: 0.08em; color: #85907f; padding: 10px 8px; background: #fafbf8; }
 .day { min-height: 84px; padding: 6px 8px; border-top: 1px solid #edf0eb; border-left: 1px solid #edf0eb; font-size: 11px; }
 .day:nth-child(7n + 1) { border-left: 0; }

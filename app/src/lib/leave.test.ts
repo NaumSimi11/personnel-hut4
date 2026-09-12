@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import {
+  balanceAfter,
+  clashesWith,
+  dayKind,
+  leaveProgress,
   cancellationState,
   leaveActions,
   leaveInput,
@@ -54,5 +58,33 @@ describe('monthGrid', () => {
     expect(grid.filter((d) => d.inMonth).length).toBe(31)
     const feb = monthGrid(2027, 2) // starts on a Monday too; 28 days → exactly 4 rows
     expect(feb.length).toBe(28)
+  })
+})
+
+describe('dayKind and progress (day rail)', () => {
+  it('names the day and counts where a leave stands on it', () => {
+    expect(dayKind('2027-03-06', {}, {})).toBe('weekend')
+    expect(dayKind('2027-03-03', { '2027-03-03': 'X' }, {})).toBe('holiday')
+    expect(dayKind('2027-03-04', {}, { '2027-03-04': 'Closed' })).toBe('closure')
+    expect(dayKind('2027-03-05', {}, {})).toBe('working')
+    expect(leaveProgress({ start_date: '2027-03-01', end_date: '2027-03-05' }, '2027-03-03')).toEqual({ day: 3, of: 5 })
+  })
+})
+
+describe('request preview', () => {
+  it('shows what is left after the request only for types that deduct', () => {
+    expect(balanceAfter({ available: 8 }, 3, true)).toEqual({ before: 8, after: 5, short: false })
+    expect(balanceAfter({ available: 3 }, 4, true)).toEqual({ before: 3, after: -1, short: true })
+    expect(balanceAfter({ available: 3 }, 4, false)).toBeNull()
+  })
+  it('lists colleagues from the same department who overlap the dates, excluding the requester', () => {
+    const rows = [
+      { id: 'a', person_id: 'p1', full_name: 'Ana', start_date: '2027-03-03', end_date: '2027-03-04', status: 'approved', leave_type_key: 'away' },
+      { id: 'b', person_id: 'p2', full_name: 'Ben', start_date: '2027-03-10', end_date: '2027-03-12', status: 'approved', leave_type_key: 'away' },
+      { id: 'c', person_id: 'me', full_name: 'Me', start_date: '2027-03-01', end_date: '2027-03-05', status: 'pending', leave_type_key: 'annual' },
+      { id: 'd', person_id: 'p3', full_name: 'Cy', start_date: '2027-03-05', end_date: '2027-03-05', status: 'pending', leave_type_key: 'away' },
+    ]
+    const clashes = clashesWith(rows, { start: '2027-03-01', end: '2027-03-05', personId: 'me', colleagueIds: new Set(['p1', 'p3']) })
+    expect(clashes.map((c) => c.full_name)).toEqual(['Ana', 'Cy'])
   })
 })

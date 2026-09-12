@@ -55,7 +55,13 @@ async function cleanup(): Promise<void> {
   await db.from('public_holidays').delete().eq('name', HOLIDAY)
   const { data: people } = await db.from('people').select('id, user_id').eq('full_name', PERSON)
   for (const p of people ?? []) {
+    await db.from('leave_request_documents').delete().in('request_id', (await db.from('leave_requests').select('id').eq('person_id', p.id)).data?.map((r) => r.id) ?? [])
     await db.from('leave_requests').delete().eq('person_id', p.id)
+    const { data: docs } = await db.from('documents').select('id, storage_path').eq('person_id', p.id)
+    if (docs?.length) {
+      await db.storage.from('employee-documents').remove(docs.map((d) => d.storage_path))
+      await db.from('documents').delete().in('id', docs.map((d) => d.id))
+    }
     const { data: balances } = await db.from('leave_balances').select('id').eq('person_id', p.id)
     if (balances?.length) await db.from('leave_adjustments').delete().in('balance_id', balances.map((b) => b.id))
     await db.from('leave_balances').delete().eq('person_id', p.id)
@@ -155,6 +161,8 @@ test('holiday import → entitlement → request (holiday excluded) → queue �
   await dialog.locator('#lv-start').fill(MONDAY)
   await dialog.locator('#lv-end').fill(FRIDAY)
   await expect(dialog.getByTestId('working-days-preview')).toHaveText(String(DAYS))
+  // The balance after this request, the way Field Notebook showed it.
+  await expect(dialog.getByTestId('balance-preview')).toContainText(`${20 - DAYS} of 20 days left`)
   await dialog.locator('#lv-note').fill('Winter break')
   await dialog.getByRole('button', { name: 'Send request' }).click()
   await expect(employee.getByText(`Sent for approval: ${DAYS} working days.`)).toBeVisible()
@@ -187,6 +195,15 @@ test('holiday import → entitlement → request (holiday excluded) → queue �
   await expect(page.locator(`.day[data-date="${workDay}"] .entry`)).toContainText(`${PERSON} · annual`)
   await expect(page.locator(`.day[data-date="${WEDNESDAY}"]`)).toContainText(HOLIDAY)
   await expect(page.locator(`.day[data-date="${WEDNESDAY}"] .entry`)).toHaveCount(0)
+  // Clicking a day opens the rail: who is away, which leave, how far along.
+  await page.locator(`.day[data-date="${workDay}"]`).click()
+  const dayRail = page.getByTestId('day-rail')
+  await expect(dayRail).toContainText('1 person is away')
+  await expect(dayRail).toContainText(PERSON)
+  await expect(dayRail).toContainText('Winter break')
+  await page.locator(`.day[data-date="${WEDNESDAY}"]`).click()
+  await expect(dayRail).toContainText(HOLIDAY)
+  await expect(dayRail).toContainText('Nobody is away')
 
   // The employee's balance moved, and they cancel before the start.
   await employee.reload()
@@ -196,5 +213,20 @@ test('holiday import → entitlement → request (holiday excluded) → queue �
   await employee.locator('.req-row', { hasText: 'Winter break' }).getByRole('button', { name: 'Cancel' }).click()
   await expect(employee.locator('.req-row', { hasText: 'Cancelled: Plans changed' })).toBeVisible()
   await expect(rail.locator('.stat', { hasText: 'days left' })).toContainText('20')
+
+  // Sick leave: filed with a promise, then the certificate is attached from the row.
+  await employee.getByTestId(`request-leave-${companyId}`).click()
+  await dialog.locator('#lv-type').selectOption('sick')
+  await dialog.locator('#lv-start').fill(workDay)
+  await dialog.locator('#lv-end').fill(workDay)
+  await dialog.getByLabel(/A medical certificate will follow/).check()
+  await dialog.getByRole('button', { name: 'Send request' }).click()
+  const sickRow = employee.locator('.req-row', { hasText: 'Sick leave' })
+  await expect(sickRow).toContainText('certificate to follow')
+  await sickRow.locator('input[type=file]').setInputFiles({ name: 'cert.pdf', mimeType: 'application/pdf', buffer: Buffer.from('%PDF-1.4 e2e') })
+  await expect(sickRow.getByRole('link', { name: 'cert.pdf' })).toBeVisible()
+  await expect(sickRow).not.toContainText('certificate to follow')
+  const { data: sick } = await db.from('leave_requests').select('id, leave_request_documents(document_id)').eq('person_id', personId).eq('leave_type_key', 'sick').single()
+  expect(sick?.leave_request_documents).toHaveLength(1)
   await employee.close()
 })

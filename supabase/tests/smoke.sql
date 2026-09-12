@@ -2611,6 +2611,49 @@ end $$;
 reset role;
 set app.test_uid = '';
 
+-- ================================================================ 0029
+-- Sick-leave certificates: the pending sick request Pia filed with a promise
+-- opens her self-upload window for medical_certificate (and nothing else);
+-- attaching the document closes it.
+set app.test_uid = '00000000-0000-0000-0000-000000000021';
+set role authenticated;
+do $$
+declare v_req uuid; v_doc uuid;
+begin
+  select id into v_req from public.leave_requests
+    where person_id = '20000000-0000-0000-0000-000000000021' and leave_type_key = 'sick' and status = 'pending' limit 1;
+  assert v_req is not null, 'the sick request from the 0027 block is still pending';
+  assert app.has_open_document_request('20000000-0000-0000-0000-000000000021', '10000000-0000-0000-0000-00000000000a', 'medical_certificate'), 'window open for a certificate';
+  assert not app.has_open_document_request('20000000-0000-0000-0000-000000000021', '10000000-0000-0000-0000-00000000000a', 'identification'), 'only for certificates';
+  begin
+    insert into public.documents (company_id, person_id, category_key, title, storage_path)
+    values ('10000000-0000-0000-0000-00000000000a', '20000000-0000-0000-0000-000000000021', 'identification', 'Sneaky', '10000000-0000-0000-0000-00000000000a/20000000-0000-0000-0000-000000000021/sneaky.pdf');
+    raise exception 'FAIL: self upload outside the window';
+  exception when insufficient_privilege then null;
+  end;
+  insert into public.documents (company_id, person_id, category_key, title, storage_path)
+  values ('10000000-0000-0000-0000-00000000000a', '20000000-0000-0000-0000-000000000021', 'medical_certificate', 'Certificate April', '10000000-0000-0000-0000-00000000000a/20000000-0000-0000-0000-000000000021/cert-april.pdf')
+  returning id into v_doc;
+  assert app.self_certificate_window('10000000-0000-0000-0000-00000000000a/20000000-0000-0000-0000-000000000021/cert-april.pdf'), 'storage insert window open';
+  assert not app.self_document_window('10000000-0000-0000-0000-00000000000a/20000000-0000-0000-0000-000000000021/cert-april.pdf'), 'the HR-request (delete) window stays closed';
+  perform public.attach_leave_document(v_req, v_doc);
+  assert (select count(*) from public.leave_request_documents where request_id = v_req) = 1, 'attached';
+  assert not app.has_open_document_request('20000000-0000-0000-0000-000000000021', '10000000-0000-0000-0000-00000000000a', 'medical_certificate'), 'window closes once attached';
+  assert not app.self_certificate_window('10000000-0000-0000-0000-00000000000a/20000000-0000-0000-0000-000000000021/cert-may.pdf'), 'storage window closes too';
+  -- Preview arithmetic is the server's (the earlier blocks left Pia with 20 and nothing pending that deducts).
+  assert public.requestable_leave('20000000-0000-0000-0000-000000000021', '10000000-0000-0000-0000-00000000000a', '2027-09-06', '2027-09-10')
+    = (public.leave_balance('20000000-0000-0000-0000-000000000021', '10000000-0000-0000-0000-00000000000a', 2027)->>'remaining')::numeric
+    - (public.leave_balance('20000000-0000-0000-0000-000000000021', '10000000-0000-0000-0000-00000000000a', 2027)->>'pending')::numeric,
+    'requestable = remaining minus pending: ' || public.requestable_leave('20000000-0000-0000-0000-000000000021', '10000000-0000-0000-0000-00000000000a', '2027-09-06', '2027-09-10');
+  begin
+    perform public.requestable_leave('20000000-0000-0000-0000-000000000001', '10000000-0000-0000-0000-00000000000a', '2027-09-06', '2027-09-10');
+    raise exception 'FAIL: previewed a colleague''s balance without leave.view';
+  exception when insufficient_privilege then null;
+  end;
+end $$;
+reset role;
+set app.test_uid = '';
+
 -- ================================================================ 0028
 -- Field Notebook import: dry run writes nothing, commit links an existing
 -- person by email, creates the rest, keeps legacy ids, reconciles and

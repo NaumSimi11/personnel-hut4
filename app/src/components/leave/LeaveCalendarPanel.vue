@@ -11,7 +11,9 @@ import { monthGrid, type GridDay } from '@/lib/leave'
  * leave.approve — the client never sees more than it should show.
  */
 
+type Company = { id: string; name: string; country_code: string | null }
 type TeamRow = {
+  company_id: string
   id: string
   person_id: string
   full_name: string
@@ -24,7 +26,7 @@ type TeamRow = {
   cancellation_asked: boolean
 }
 
-const props = defineProps<{ companyId: string; countryCode: string | null }>()
+const props = defineProps<{ companies: Company[] }>()
 
 const auth = useAuthStore()
 const today = todayDb()
@@ -40,7 +42,10 @@ const grid = computed(() => monthGrid(year.value, month.value))
 const monthLabel = computed(() =>
   new Date(Date.UTC(year.value, month.value - 1, 1)).toLocaleDateString('en-GB', { month: 'long', year: 'numeric', timeZone: 'UTC' }),
 )
-const fullView = computed(() => auth.can(props.companyId, 'leave.view') || auth.can(props.companyId, 'leave.approve'))
+const fullView = computed(() => props.companies.every((c) => auth.can(c.id, 'leave.view') || auth.can(c.id, 'leave.approve')))
+const countries = computed(() => Array.from(new Set(props.companies.map((c) => c.country_code).filter((c): c is string => !!c))))
+const many = computed(() => props.companies.length > 1)
+const nameOf = (id: string) => props.companies.find((c) => c.id === id)?.name ?? ''
 
 function shift(delta: number): void {
   const d = new Date(Date.UTC(year.value, month.value - 1 + delta, 1))
@@ -57,7 +62,8 @@ function entriesOn(day: GridDay): TeamRow[] {
 function label(r: TeamRow): string {
   const type = r.leave_type_key === 'away' ? 'Away' : r.leave_type_key.replace('_', ' ')
   const state = r.status === 'pending' ? ' (pending)' : r.cancellation_asked ? ' (cancel asked)' : ''
-  return `${r.full_name} · ${type}${state}`
+  const where = many.value ? ` · ${nameOf(r.company_id)}` : ''
+  return `${r.full_name} · ${type}${state}${where}`
 }
 
 async function load(): Promise<void> {
@@ -65,25 +71,31 @@ async function load(): Promise<void> {
   error.value = null
   const first = grid.value[0]?.iso ?? today
   const last = grid.value[grid.value.length - 1]?.iso ?? today
+  // One team_leave call per company (the redaction is per company), merged.
   const [teamRes, holRes, cloRes] = await Promise.all([
-    supabase.rpc('team_leave', { p_company_id: props.companyId, p_from: first, p_to: last }),
-    props.countryCode
-      ? supabase.from('public_holidays').select('date, name').eq('country_code', props.countryCode).gte('date', first).lte('date', last)
-      : Promise.resolve({ data: [] as { date: string; name: string }[], error: null }),
-    supabase.from('company_closures').select('date, name').eq('company_id', props.companyId).gte('date', first).lte('date', last),
+    Promise.all(props.companies.map((c) => supabase.rpc('team_leave', { p_company_id: c.id, p_from: first, p_to: last }).then((r) => ({ ...r, company: c })))),
+    countries.value.length
+      ? supabase.from('public_holidays').select('date, name, country_code').in('country_code', countries.value).gte('date', first).lte('date', last)
+      : Promise.resolve({ data: [] as { date: string; name: string; country_code: string }[], error: null }),
+    supabase.from('company_closures').select('date, name, company_id').in('company_id', props.companies.map((c) => c.id)).gte('date', first).lte('date', last),
   ])
-  if (teamRes.error) {
-    error.value = teamRes.error.message
-    console.error('team_leave failed:', teamRes.error.message)
+  const failed = teamRes.find((r) => r.error)
+  if (failed?.error) {
+    error.value = failed.error.message
+    console.error('team_leave failed:', failed.error.message)
   } else {
-    rows.value = (teamRes.data ?? []) as TeamRow[]
+    rows.value = teamRes.flatMap((r) => ((r.data ?? []) as Omit<TeamRow, 'company_id'>[]).map((row) => ({ ...row, company_id: r.company.id })))
   }
-  holidays.value = Object.fromEntries((holRes.data ?? []).map((h) => [h.date, h.name]))
-  closures.value = Object.fromEntries((cloRes.data ?? []).map((c) => [c.date, c.name]))
+  // With several countries or companies, the label says which one the day off belongs to.
+  const label = (name: string, tag: string, tagged: boolean) => (tagged ? `${name} (${tag})` : name)
+  holidays.value = Object.fromEntries(
+    (holRes.data ?? []).map((h) => [h.date, label(h.name, h.country_code, countries.value.length > 1)]),
+  )
+  closures.value = Object.fromEntries((cloRes.data ?? []).map((c) => [c.date, label(c.name, nameOf(c.company_id), many.value)]))
   loading.value = false
 }
 
-watch([() => props.companyId, year, month], load)
+watch([() => props.companies, year, month], load)
 onMounted(load)
 </script>
 
@@ -94,7 +106,7 @@ onMounted(load)
         <h2>{{ monthLabel }}</h2>
         <p>
           {{ fullView ? 'Leave types and pending requests are shown.' : 'Colleagues show as "Away" — only HR sees the type.' }}
-          <span v-if="!countryCode"> No country on this company: statutory holidays are not marked.</span>
+          <span v-if="!countries.length"> No country on this company: statutory holidays are not marked.</span>
         </p>
       </div>
       <div class="nav">

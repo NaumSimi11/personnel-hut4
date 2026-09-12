@@ -7,6 +7,7 @@ import { DIRECTORY_FILTERS, currentPeriod, matchesFilter, type DirectoryFilter }
 import InviteAccessDialog from '@/components/InviteAccessDialog.vue'
 import AddPersonDialog from '@/components/AddPersonDialog.vue'
 import ImportPeopleDialog from '@/components/ImportPeopleDialog.vue'
+import CompanyFilter from '@/components/CompanyFilter.vue'
 
 type DirectoryRow = {
   id: string
@@ -135,10 +136,7 @@ onMounted(load)
             {{ f.label }}
           </button>
         </div>
-        <select v-model="companyFilter" class="company-filter" aria-label="Company">
-          <option value="">All companies</option>
-          <option v-for="c in companies" :key="c.id" :value="c.id">{{ c.name }}</option>
-        </select>
+        <CompanyFilter v-model="companyFilter" :companies="companies" all-label="All companies" />
       </div>
       <p v-if="error" class="error-note" style="margin: 16px 24px">{{ error }}</p>
       <div v-else-if="loading" class="empty">Loading directory…</div>
@@ -223,7 +221,6 @@ onMounted(load)
 .chips { display: flex; gap: 6px; flex-wrap: wrap; }
 .chip { border: 1px solid var(--line); background: #fff; color: var(--muted); font-size: 11px; padding: 6px 11px; border-radius: 999px; }
 .chip.active { background: var(--green); border-color: var(--green); color: #fff; }
-.company-filter { border: 1px solid var(--line); background: #fff; padding: 7px 10px; font-size: 11px; }
 .search {
   border: 1px solid var(--line);
   background: #fafbf9;

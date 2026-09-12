@@ -143,7 +143,10 @@ test('holiday import → entitlement → request (holiday excluded) → queue �
   await expect(row.locator('td').nth(1)).toHaveText('20')
   page.removeAllListeners('dialog')
 
-  // The employee requests Monday–Friday: 5 weekdays minus the holiday = 4.
+  // The employee requests Monday–Friday: 5 weekdays minus every MK holiday in the window
+  // (ours plus whatever the real calendar holds there).
+  const { data: offDays } = await db.from('public_holidays').select('date').eq('country_code', 'MK').gte('date', MONDAY).lte('date', FRIDAY)
+  const DAYS = 5 - new Set((offDays ?? []).map((h) => h.date)).size
   const employee = await browser.newPage()
   await signIn(employee, PERSON_EMAIL, PERSON_PASSWORD)
   await employee.goto('/me')
@@ -151,13 +154,13 @@ test('holiday import → entitlement → request (holiday excluded) → queue �
   const dialog = employee.getByRole('dialog')
   await dialog.locator('#lv-start').fill(MONDAY)
   await dialog.locator('#lv-end').fill(FRIDAY)
-  await expect(dialog.getByTestId('working-days-preview')).toHaveText('4')
+  await expect(dialog.getByTestId('working-days-preview')).toHaveText(String(DAYS))
   await dialog.locator('#lv-note').fill('Winter break')
   await dialog.getByRole('button', { name: 'Send request' }).click()
-  await expect(employee.getByText('Sent for approval: 4 working days.')).toBeVisible()
+  await expect(employee.getByText(`Sent for approval: ${DAYS} working days.`)).toBeVisible()
   const rail = employee.getByTestId(`balance-${companyId}`)
   await expect(rail).toContainText('20')
-  await expect(rail.locator('.stat', { hasText: 'pending' })).toContainText('4')
+  await expect(rail.locator('.stat', { hasText: 'pending' })).toContainText(String(DAYS))
 
   // HR sees it on the Home queue; the link lands on the Requests tab.
   await page.goto('/overview')
@@ -166,26 +169,29 @@ test('holiday import → entitlement → request (holiday excluded) → queue �
   await queueRow.getByRole('link', { name: 'Decide' }).click()
   await expect(page).toHaveURL(/\/leave\?.*tab=requests/)
   const pending = page.locator('.req-row', { hasText: PERSON })
-  await expect(pending).toContainText('4 working days')
+  await expect(pending).toContainText(`${DAYS} working days`)
   await pending.getByRole('button', { name: 'Approve' }).click()
   await expect(page.locator('details .req-row', { hasText: PERSON }).locator('.badge')).toHaveText('Approved')
 
   const { data: approved } = await db.from('leave_requests').select('status, working_days, carry_over_days_used').eq('person_id', personId).single()
-  expect(approved).toMatchObject({ status: 'approved', working_days: 4 })
+  expect(approved).toMatchObject({ status: 'approved', working_days: DAYS })
 
   // The company calendar shows the entry on the Wednesday-free week.
   await page.goto(`/leave?tab=calendar&company=${companyId}`)
   for (let i = 0; i < 12 && (await page.locator('.card-head h2').first().textContent())?.trim() !== MONTH_LABEL; i += 1) {
     await page.getByRole('button', { name: 'Next ›' }).click()
   }
-  await expect(page.locator(`.day[data-date="${MONDAY}"] .entry`)).toContainText(`${PERSON} · annual`)
+  // The entry shows on a working day of the week — the first one that is not a holiday.
+  const off = new Set((offDays ?? []).map((h) => h.date))
+  const workDay = [0, 1, 3, 4].map((d) => iso(monday, d)).find((d) => !off.has(d)) ?? MONDAY
+  await expect(page.locator(`.day[data-date="${workDay}"] .entry`)).toContainText(`${PERSON} · annual`)
   await expect(page.locator(`.day[data-date="${WEDNESDAY}"]`)).toContainText(HOLIDAY)
   await expect(page.locator(`.day[data-date="${WEDNESDAY}"] .entry`)).toHaveCount(0)
 
   // The employee's balance moved, and they cancel before the start.
   await employee.reload()
-  await expect(rail.locator('.stat', { hasText: 'taken' })).toContainText('4')
-  await expect(rail.locator('.stat', { hasText: 'days left' })).toContainText('16')
+  await expect(rail.locator('.stat', { hasText: 'taken' })).toContainText(String(DAYS))
+  await expect(rail.locator('.stat', { hasText: 'days left' })).toContainText(String(20 - DAYS))
   answerDialogs(employee, ['Plans changed'])
   await employee.locator('.req-row', { hasText: 'Winter break' }).getByRole('button', { name: 'Cancel' }).click()
   await expect(employee.locator('.req-row', { hasText: 'Cancelled: Plans changed' })).toBeVisible()

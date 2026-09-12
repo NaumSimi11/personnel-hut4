@@ -3,6 +3,7 @@ import { computed, onMounted, ref, watch } from 'vue'
 import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/stores/auth'
 import { todayDb } from '@/lib/compensation'
+import CompanyFilter from '@/components/CompanyFilter.vue'
 import { expandForImport, parseHolidayProgramme, restrictToYear, rollForwardYear, type ParseResult } from '@/lib/holidayImport'
 
 /**
@@ -204,9 +205,7 @@ onMounted(load)
           <h2>Company closures</h2>
           <p>Days one company is closed — a collective day off that applies to that company only.</p>
         </div>
-        <select v-model="closureCompany" aria-label="Company" class="pick">
-          <option v-for="c in companies" :key="c.id" :value="c.id">{{ c.name }}</option>
-        </select>
+        <CompanyFilter v-model="closureCompany" :companies="companies" />
       </div>
       <div v-if="!yearClosures.length" class="empty">No closures in {{ year }}.</div>
       <div class="table-wrap" v-else>

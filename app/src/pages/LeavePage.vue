@@ -8,6 +8,7 @@ import LeaveCalendarPanel from '@/components/leave/LeaveCalendarPanel.vue'
 import LeaveRequestsPanel from '@/components/leave/LeaveRequestsPanel.vue'
 import LeaveBalancesPanel from '@/components/leave/LeaveBalancesPanel.vue'
 import HolidaysPanel from '@/components/leave/HolidaysPanel.vue'
+import CompanyFilter from '@/components/CompanyFilter.vue'
 
 /**
  * Leave (plan 036): Calendar · Requests · Balances · Holidays, driven by
@@ -30,7 +31,8 @@ const route = useRoute()
 const router = useRouter()
 const auth = useAuthStore()
 const companies = ref<Company[]>([])
-const companyId = ref('')
+const ALL = ''
+const companyId = ref(ALL)
 const loading = ref(true)
 const error = ref<string | null>(null)
 
@@ -38,13 +40,14 @@ const activeTab = computed<TabId>(() => {
   const raw = route.query.tab
   return TABS.some((t) => t.id === raw) ? (raw as TabId) : 'calendar'
 })
-const company = computed(() => companies.value.find((c) => c.id === companyId.value) ?? null)
+/** The companies the panels show: one, or every company the viewer may see. */
+const selected = computed(() => (companyId.value === ALL ? companies.value : companies.value.filter((c) => c.id === companyId.value)))
 const approverCompanies = computed(() => companies.value.filter((c) => auth.can(c.id, 'leave.view') || auth.can(c.id, 'leave.approve')))
 const canSeeBalances = computed(() => companies.value.some((c) => auth.can(c.id, 'leave.view')))
 const visibleTabs = computed(() =>
   TABS.filter((t) => (t.id === 'requests' ? approverCompanies.value.length > 0 : t.id === 'balances' ? canSeeBalances.value : true)),
 )
-const balanceCompanies = computed(() => companies.value.filter((c) => auth.can(c.id, 'leave.view')))
+const balanceCompanies = computed(() => selected.value.filter((c) => auth.can(c.id, 'leave.view')))
 
 function selectTab(id: TabId): void {
   router.replace({ query: { ...route.query, tab: id } })
@@ -70,12 +73,12 @@ async function load(): Promise<void> {
     (c) => auth.isAdmin || mine.has(c.id) || auth.can(c.id, 'leave.view') || auth.can(c.id, 'leave.approve'),
   )
   const wanted = typeof route.query.company === 'string' ? route.query.company : ''
-  companyId.value = companies.value.some((c) => c.id === wanted) ? wanted : (companies.value[0]?.id ?? '')
+  companyId.value = companies.value.some((c) => c.id === wanted) ? wanted : companies.value.length > 1 ? ALL : (companies.value[0]?.id ?? ALL)
   loading.value = false
 }
 
 watch(companyId, (id) => {
-  if (id && route.query.company !== id) router.replace({ query: { ...route.query, company: id } })
+  if ((route.query.company ?? '') !== id) router.replace({ query: { ...route.query, company: id || undefined } })
 })
 onMounted(load)
 </script>
@@ -90,12 +93,14 @@ onMounted(load)
           Requests are approved by HR or the director of the company; balances follow the person's employment.
         </p>
       </div>
-      <div v-if="companies.length > 1 && activeTab !== 'holidays' && activeTab !== 'requests'" class="field company-pick">
-        <label for="leave-company">Company</label>
-        <select id="leave-company" v-model="companyId">
-          <option v-for="c in companies" :key="c.id" :value="c.id">{{ c.name }}</option>
-        </select>
-      </div>
+      <CompanyFilter
+        v-if="companies.length > 1 && activeTab !== 'holidays' && activeTab !== 'requests'"
+        id="leave-company"
+        v-model="companyId"
+        :companies="companies"
+        all-label="All companies"
+        label="Company"
+      />
     </div>
 
     <p v-if="error" class="error-note" role="alert">{{ error }}</p>
@@ -116,14 +121,10 @@ onMounted(load)
           {{ tab.label }}
         </button>
       </div>
-      <LeaveCalendarPanel v-if="activeTab === 'calendar' && company" :company-id="company.id" :country-code="company.country_code" />
+      <LeaveCalendarPanel v-if="activeTab === 'calendar'" :companies="selected" />
       <LeaveRequestsPanel v-else-if="activeTab === 'requests'" :company-ids="approverCompanies.map((c) => c.id)" />
       <template v-else-if="activeTab === 'balances'">
-        <LeaveBalancesPanel
-          v-if="company && balanceCompanies.includes(company)"
-          :company-id="company.id"
-          :entitlement-default="company.leave_entitlement_days"
-        />
+        <LeaveBalancesPanel v-if="balanceCompanies.length" :companies="balanceCompanies" />
         <div v-else class="empty">Balances need leave.view in the selected company.</div>
       </template>
       <HolidaysPanel v-else-if="activeTab === 'holidays'" :companies="companies" />
@@ -134,7 +135,6 @@ onMounted(load)
 <style scoped>
 .page-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-bottom: 24px; }
 .page-sub { margin: 0; font-size: 12px; color: var(--muted); max-width: 560px; }
-.company-pick { min-width: 220px; margin: 0; }
 .tabs { display: flex; gap: 22px; border-bottom: 1px solid var(--line); margin-bottom: 22px; overflow: auto; }
 .tab { background: none; border: 0; border-bottom: 2px solid transparent; padding: 10px 0; font-size: 12px; color: var(--muted); cursor: pointer; white-space: nowrap; }
 .tab.active { color: var(--green); font-weight: 600; border-bottom-color: var(--green); }

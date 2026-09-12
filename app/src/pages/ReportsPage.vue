@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
 import { supabase } from '@/lib/supabase'
+import CompanyFilter from '@/components/CompanyFilter.vue'
 import { useAuthStore } from '@/stores/auth'
 import {
   STAGE_ORDER,
@@ -140,12 +141,7 @@ watch([companyId, () => range.value.from, () => range.value.to], load)
     </div>
 
     <div class="card controls">
-      <div class="field">
-        <label for="report-company">Company</label>
-        <select id="report-company" v-model="companyId">
-          <option v-for="c in companies" :key="c.id" :value="c.id">{{ c.name }}</option>
-        </select>
-      </div>
+      <CompanyFilter id="report-company" v-model="companyId" :companies="companies" label="Company" />
       <div class="field">
         <label for="report-from">From</label>
         <input id="report-from" v-model="range.from" type="date" />

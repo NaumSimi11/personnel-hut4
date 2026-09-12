@@ -746,7 +746,7 @@ onMounted(load)
         </div>
 
         <div v-else-if="activeTab === 'leave'" class="stack">
-          <LeaveCalendarPanel :company-id="companyId" :country-code="company.country_code" />
+          <LeaveCalendarPanel :companies="[{ id: companyId, name: company.name, country_code: company.country_code }]" />
           <p class="tab-foot">
             Requests, balances and holiday calendars live under
             <router-link :to="{ name: 'leave', query: { company: companyId } }">Leave</router-link>.

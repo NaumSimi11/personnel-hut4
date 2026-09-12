@@ -14,9 +14,10 @@ import { EMPLOYED_STATUSES } from '@/lib/leave'
  * each with a reason kept in leave_adjustments.
  */
 
-type PersonRow = { person_id: string; full_name: string; balance: Balance | null }
+type Company = { id: string; name: string; leave_entitlement_days: number }
+type PersonRow = { person_id: string; full_name: string; company: Company; balance: Balance | null }
 
-const props = defineProps<{ companyId: string; entitlementDefault: number }>()
+const props = defineProps<{ companies: Company[] }>()
 
 const auth = useAuthStore()
 const thisYear = Number(todayDb().slice(0, 4))
@@ -26,7 +27,9 @@ const loading = ref(true)
 const error = ref<string | null>(null)
 const notice = ref<string | null>(null)
 
-const canAdjust = computed(() => auth.can(props.companyId, 'leave.adjust'))
+const canAdjust = computed(() => props.companies.some((c) => auth.can(c.id, 'leave.adjust')))
+const many = computed(() => props.companies.length > 1)
+const canAdjustIn = (c: Company) => auth.can(c.id, 'leave.adjust')
 const years = computed(() => [thisYear - 1, thisYear, thisYear + 1])
 const missing = computed(() => rows.value.filter((r) => !r.balance?.exists))
 
@@ -35,8 +38,8 @@ async function load(): Promise<void> {
   error.value = null
   const { data, error: err } = await supabase
     .from('employment_periods')
-    .select('person_id, person:people!employment_periods_person_id_fkey(full_name)')
-    .eq('company_id', props.companyId)
+    .select('person_id, company_id, person:people!employment_periods_person_id_fkey(full_name)')
+    .in('company_id', props.companies.map((c) => c.id))
     .in('status', EMPLOYED_STATUSES)
   if (err) {
     error.value = 'Could not load the people in this company.'
@@ -44,28 +47,32 @@ async function load(): Promise<void> {
     loading.value = false
     return
   }
-  const people = Array.from(
-    new Map((data ?? []).map((p) => [p.person_id, (p.person as { full_name: string } | null)?.full_name ?? '—'])).entries(),
-  ).sort((a, b) => a[1].localeCompare(b[1]))
+  // One row per person and company (a transfer mid-year shows in both).
+  const seen = new Map<string, { person_id: string; full_name: string; company: Company }>()
+  for (const p of data ?? []) {
+    const company = props.companies.find((c) => c.id === p.company_id)
+    if (company) seen.set(`${p.person_id}/${p.company_id}`, { person_id: p.person_id, full_name: (p.person as { full_name: string } | null)?.full_name ?? '—', company })
+  }
+  const people = Array.from(seen.values()).sort((a, b) => a.company.name.localeCompare(b.company.name) || a.full_name.localeCompare(b.full_name))
   rows.value = await Promise.all(
-    people.map(async ([person_id, full_name]) => {
-      const res = await supabase.rpc('leave_balance', { p_person_id: person_id, p_company_id: props.companyId, p_year: year.value })
+    people.map(async (p) => {
+      const res = await supabase.rpc('leave_balance', { p_person_id: p.person_id, p_company_id: p.company.id, p_year: year.value })
       if (res.error) console.error('leave_balance failed:', res.error.message)
-      return { person_id, full_name, balance: (res.data as Balance | null) ?? null }
+      return { ...p, balance: (res.data as Balance | null) ?? null }
     }),
   )
   loading.value = false
 }
 
 async function setEntitlement(row: PersonRow): Promise<void> {
-  const current = row.balance?.exists ? row.balance.entitlement : props.entitlementDefault
+  const current = row.balance?.exists ? row.balance.entitlement : row.company.leave_entitlement_days
   const raw = window.prompt(`Yearly entitlement for ${row.full_name} in ${year.value} (days)`, String(current))
   if (raw === null) return
   const reason = window.prompt('Why?')
   if (reason === null) return
   await call(supabase.rpc('set_leave_entitlement', {
     p_person_id: row.person_id,
-    p_company_id: props.companyId,
+    p_company_id: row.company.id,
     p_year: year.value,
     p_entitlement: Number(raw),
     p_reason: reason,
@@ -79,7 +86,7 @@ async function adjust(row: PersonRow): Promise<void> {
   if (reason === null) return
   await call(supabase.rpc('adjust_leave_balance', {
     p_person_id: row.person_id,
-    p_company_id: props.companyId,
+    p_company_id: row.company.id,
     p_year: year.value,
     p_days: Number(raw),
     p_reason: reason,
@@ -87,15 +94,15 @@ async function adjust(row: PersonRow): Promise<void> {
 }
 
 async function setAllMissing(): Promise<void> {
-  const reason = window.prompt(`Give everyone without a ${year.value} balance the company default (${props.entitlementDefault} days). Why?`, 'Yearly entitlement')
+  const reason = window.prompt(`Give everyone without a ${year.value} balance their company's default entitlement. Why?`, 'Yearly entitlement')
   if (reason === null) return
   let failed = false
-  for (const row of missing.value) {
+  for (const row of missing.value.filter((r) => canAdjustIn(r.company))) {
     const res = await supabase.rpc('set_leave_entitlement', {
       p_person_id: row.person_id,
-      p_company_id: props.companyId,
+      p_company_id: row.company.id,
       p_year: year.value,
-      p_entitlement: props.entitlementDefault,
+      p_entitlement: row.company.leave_entitlement_days,
       p_reason: reason,
     })
     if (res.error) {
@@ -121,7 +128,7 @@ async function call(p: PromiseLike<{ error: { message: string } | null }>, done:
   await load()
 }
 
-watch([() => props.companyId, year], load)
+watch([() => props.companies, year], load)
 onMounted(load)
 </script>
 
@@ -149,12 +156,13 @@ onMounted(load)
       <table>
         <thead>
           <tr>
-            <th>Person</th><th>Entitlement</th><th>Carried over</th><th>Adjusted</th><th>Taken</th><th>Pending</th><th>Left</th><th v-if="canAdjust"></th>
+            <th>Person</th><th v-if="many">Company</th><th>Entitlement</th><th>Carried over</th><th>Adjusted</th><th>Taken</th><th>Pending</th><th>Left</th><th v-if="canAdjust"></th>
           </tr>
         </thead>
         <tbody>
-          <tr v-for="r in rows" :key="r.person_id" :data-testid="`balance-row-${r.person_id}`">
+          <tr v-for="r in rows" :key="r.person_id + r.company.id" :data-testid="`balance-row-${r.person_id}`">
             <td><router-link :to="{ name: 'person', params: { personId: r.person_id } }">{{ r.full_name }}</router-link></td>
+            <td v-if="many">{{ r.company.name }}</td>
             <template v-if="r.balance?.exists">
               <td>{{ r.balance.entitlement }}</td>
               <td>
@@ -168,8 +176,10 @@ onMounted(load)
             </template>
             <td v-else colspan="6" class="muted">No {{ year }} balance yet.</td>
             <td v-if="canAdjust" class="actions">
-              <button class="button secondary small-btn" type="button" @click="setEntitlement(r)">Entitlement</button>
-              <button v-if="r.balance?.exists" class="button secondary small-btn" type="button" @click="adjust(r)">Adjust</button>
+              <template v-if="canAdjustIn(r.company)">
+                <button class="button secondary small-btn" type="button" @click="setEntitlement(r)">Entitlement</button>
+                <button v-if="r.balance?.exists" class="button secondary small-btn" type="button" @click="adjust(r)">Adjust</button>
+              </template>
             </td>
           </tr>
         </tbody>

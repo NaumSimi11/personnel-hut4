@@ -4,6 +4,7 @@ import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/stores/auth'
 import { departureState } from '@/lib/departure'
 import CompensationCard from '@/components/CompensationCard.vue'
+import LeaveCard from '@/components/LeaveCard.vue'
 import DocumentsCard from '@/components/DocumentsCard.vue'
 import MyRequestsCard from '@/components/MyRequestsCard.vue'
 import MyPoliciesCard from '@/components/MyPoliciesCard.vue'
@@ -343,6 +344,7 @@ onMounted(load)
             </div>
           </div>
 
+          <LeaveCard v-if="auth.personId" :person-id="auth.personId" title="My leave" />
           <CompensationCard v-if="auth.personId" :person-id="auth.personId" :periods="employments" title="My compensation" />
           <DocumentsCard v-if="auth.personId" :person-id="auth.personId" :companies="myCompanies" title="My documents" />
           <PersonEquipmentCard v-if="auth.personId" :person-id="auth.personId" :companies="myCompanies" title="My equipment" />

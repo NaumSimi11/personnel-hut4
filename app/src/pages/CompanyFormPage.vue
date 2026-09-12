@@ -357,6 +357,31 @@ watch(companyId, load)
       <section class="card">
         <div class="card-head">
           <div>
+            <h2>Leave</h2>
+            <p>The country decides which statutory holidays apply; the defaults seed every new leave year.</p>
+          </div>
+        </div>
+        <div class="card-body">
+          <div class="grid three">
+            <div class="field">
+              <label for="company-country-code">Country code</label>
+              <input id="company-country-code" v-model="form.countryCode" maxlength="2" placeholder="MK" />
+            </div>
+            <div class="field">
+              <label for="company-leave-days">Yearly leave entitlement (days)</label>
+              <input id="company-leave-days" v-model="form.leaveEntitlementDays" inputmode="decimal" />
+            </div>
+            <div class="field">
+              <label for="company-carry-over">Carry-over usable until (MM-DD)</label>
+              <input id="company-carry-over" v-model="form.leaveCarryOverUntil" maxlength="5" placeholder="06-30" />
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="card">
+        <div class="card-head">
+          <div>
             <h2>Contacts</h2>
             <p>The director and HR contact are people in the workspace; access is granted separately.</p>
           </div>

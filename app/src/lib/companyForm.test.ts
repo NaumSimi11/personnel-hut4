@@ -104,6 +104,9 @@ const row: CompanyProfileRow = {
   hr_contact_person_id: null,
   brand: { accent_color: '#3e744e', tagline: 'We build things', logo_path: 'c1/logo.png' },
   archived_at: null,
+  country_code: 'MK',
+  leave_entitlement_days: 22,
+  leave_carry_over_until: '06-30',
 }
 
 describe('formFromCompany', () => {
@@ -122,6 +125,33 @@ describe('formFromCompany', () => {
     const form = formFromCompany({ ...row, brand: {} })
     expect(form.accentColor).toBe('')
     expect(form.tagline).toBe('')
+  })
+})
+
+describe('leave settings', () => {
+  it('maps the country code and leave defaults both ways', () => {
+    const form = formFromCompany(row)
+    expect(form.countryCode).toBe('MK')
+    expect(form.leaveEntitlementDays).toBe('22')
+    expect(form.leaveCarryOverUntil).toBe('06-30')
+    const out = rowFromForm(companyInput.parse({ ...minimal, countryCode: 'rs', leaveEntitlementDays: '25', leaveCarryOverUntil: '03-31' }), {})
+    expect(out.country_code).toBe('RS')
+    expect(out.leave_entitlement_days).toBe(25)
+    expect(out.leave_carry_over_until).toBe('03-31')
+    expect(rowFromForm(companyInput.parse(minimal), {}).country_code).toBeNull()
+  })
+
+  it('refuses a bad country code, a negative entitlement or a malformed carry-over date', () => {
+    expect(companyInput.safeParse({ ...minimal, countryCode: 'Mac' }).success).toBe(false)
+    expect(companyInput.safeParse({ ...minimal, leaveEntitlementDays: '-1' }).success).toBe(false)
+    expect(companyInput.safeParse({ ...minimal, leaveCarryOverUntil: '31-03' }).success).toBe(false)
+    expect(companyInput.safeParse({ ...minimal, leaveCarryOverUntil: '' }).success).toBe(false)
+    // The columns are int 0–100 and a date that exists every year.
+    expect(companyInput.safeParse({ ...minimal, leaveEntitlementDays: '22.5' }).success).toBe(false)
+    expect(companyInput.safeParse({ ...minimal, leaveEntitlementDays: '150' }).success).toBe(false)
+    expect(companyInput.safeParse({ ...minimal, leaveCarryOverUntil: '02-29' }).success).toBe(false)
+    expect(companyInput.safeParse({ ...minimal, leaveCarryOverUntil: '04-31' }).success).toBe(false)
+    expect(companyInput.safeParse({ ...minimal, leaveCarryOverUntil: '12-31' }).success).toBe(true)
   })
 })
 

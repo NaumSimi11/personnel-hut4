@@ -60,6 +60,26 @@ export const companyInput = z.object({
   contactPhone: optionalText(40),
   directorPersonId: optionalUuid,
   hrContactPersonId: optionalUuid,
+  // Leave (plan 036): the country picks the holiday calendar; the defaults
+  // seed each year's balance. Same checks as the columns in migration 0027.
+  countryCode: z.union([
+    z.literal(''),
+    z.string().trim().toUpperCase().regex(/^[A-Z]{2}$/, 'Country code: two letters, e.g. MK.'),
+  ]),
+  leaveEntitlementDays: z
+    .string()
+    .trim()
+    .regex(/^\d{1,3}$/, 'Yearly leave entitlement: whole days, 0–100.')
+    .transform(Number)
+    .refine((n) => n <= 100, 'Yearly leave entitlement: whole days, 0–100.'),
+  leaveCarryOverUntil: z
+    .string()
+    .trim()
+    // Same rule as the column check: a date that exists every year (no 29 February).
+    .regex(
+      /^((0[13-9]|1[0-2])-(0[1-9]|[12]\d|30)|(0[13578]|1[02])-31|02-(0[1-9]|1\d|2[0-8]))$/,
+      'Carry-over deadline: MM-DD, e.g. 06-30.',
+    ),
 })
 
 export type CompanyInput = z.infer<typeof companyInput>
@@ -93,11 +113,15 @@ export type CompanyProfileRow = {
   hr_contact_person_id: string | null
   brand: unknown
   archived_at: string | null
+  country_code: string | null
+  leave_entitlement_days: number
+  leave_carry_over_until: string
 }
 
 export const COMPANY_PROFILE_SELECT = `id, parent_company_id, kind, name, short_code,
   legal_name, registration_number, tax_id, address_line1, address_line2, city, postcode, country,
-  website, contact_email, contact_phone, director_person_id, hr_contact_person_id, brand, archived_at`
+  website, contact_email, contact_phone, director_person_id, hr_contact_person_id, brand, archived_at,
+  country_code, leave_entitlement_days, leave_carry_over_until`
 
 export function emptyCompanyForm(): CompanyForm {
   return {
@@ -118,6 +142,9 @@ export function emptyCompanyForm(): CompanyForm {
     contactPhone: '',
     directorPersonId: '',
     hrContactPersonId: '',
+    countryCode: '',
+    leaveEntitlementDays: '22',
+    leaveCarryOverUntil: '06-30',
   }
 }
 
@@ -157,6 +184,9 @@ export function formFromCompany(row: CompanyProfileRow): CompanyForm {
     contactPhone: row.contact_phone ?? '',
     directorPersonId: row.director_person_id ?? '',
     hrContactPersonId: row.hr_contact_person_id ?? '',
+    countryCode: row.country_code ?? '',
+    leaveEntitlementDays: String(row.leave_entitlement_days ?? 22),
+    leaveCarryOverUntil: row.leave_carry_over_until ?? '06-30',
   }
 }
 
@@ -189,6 +219,9 @@ export function rowFromForm(input: CompanyInput, existingBrand: CompanyBrand) {
     contact_phone: orNull(input.contactPhone),
     director_person_id: orNull(input.directorPersonId),
     hr_contact_person_id: orNull(input.hrContactPersonId),
+    country_code: orNull(input.countryCode),
+    leave_entitlement_days: input.leaveEntitlementDays,
+    leave_carry_over_until: input.leaveCarryOverUntil,
     brand,
   }
 }

@@ -8,6 +8,7 @@ import ScheduleDepartureDialog from '@/components/ScheduleDepartureDialog.vue'
 import ScheduleChangeDialog, { type ChangeTarget } from '@/components/ScheduleChangeDialog.vue'
 import TransferDialog from '@/components/TransferDialog.vue'
 import CompensationCard from '@/components/CompensationCard.vue'
+import LeaveCard from '@/components/LeaveCard.vue'
 import DocumentsCard from '@/components/DocumentsCard.vue'
 import DocumentRequestsCard from '@/components/DocumentRequestsCard.vue'
 import PersonEquipmentCard from '@/components/PersonEquipmentCard.vue'
@@ -467,6 +468,7 @@ onMounted(async () => {
             </div>
           </div>
 
+          <LeaveCard :person-id="personId" :person-name="person.full_name" />
           <CompensationCard :person-id="personId" :periods="employments" />
           <DocumentsCard :person-id="personId" :companies="personCompanies" />
           <DocumentRequestsCard :person-id="personId" :companies="personCompanies" />

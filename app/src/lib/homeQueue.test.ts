@@ -3,6 +3,7 @@ import {
   compensationToRows,
   documentReviewsToRows,
   itRequestsToRows,
+  leaveToRows,
   myRequestsToRows,
   payrollToRows,
   policiesToRows,
@@ -65,5 +66,25 @@ describe('home queue converters', () => {
     )
     expect(pay.map((r) => r.title)).toEqual(['Payroll: 2026-09-01 → 2026-09-30 EUR'])
     expect(pay[0]?.to).toEqual({ name: 'company', params: { companyId: 'A' }, query: { tab: 'payroll' } })
+  })
+
+  it('offers leave requests and cancellation asks where the viewer may approve, never their own', () => {
+    const base = { start_date: '2027-03-01', end_date: '2027-03-03', working_days: 3, leave_type_key: 'annual', status: 'pending', cancellation_requested_at: null, cancellation_declined_at: null, person: { full_name: 'Ana' }, company: { name: 'Praedium' } }
+    const rows = leaveToRows(
+      [
+        { ...base, id: 'l1', person_id: 'p1', company_id: 'A' },
+        { ...base, id: 'l2', person_id: 'me', company_id: 'A' },
+        { ...base, id: 'l3', person_id: 'p3', company_id: 'B' },
+        { ...base, id: 'l4', person_id: 'p4', company_id: 'A', status: 'approved', cancellation_requested_at: '2027-02-01T00:00:00Z' },
+        { ...base, id: 'l5', person_id: 'p5', company_id: 'A', status: 'approved', cancellation_requested_at: '2027-02-01T00:00:00Z', cancellation_declined_at: '2027-02-02T00:00:00Z' },
+        { ...base, id: 'l6', person_id: 'p6', company_id: 'A', status: 'approved' },
+      ],
+      viewer,
+    )
+    expect(rows.map((r) => r.id)).toEqual(['leave-l1', 'leave-l4'])
+    expect(rows[0]?.title).toBe('Leave: Ana')
+    expect(rows[0]?.sub).toBe('Praedium · annual 2027-03-01 → 2027-03-03 (3 days) awaiting your decision')
+    expect(rows[1]?.sub).toBe('Praedium · asks to cancel approved leave 2027-03-01 → 2027-03-03')
+    expect(rows[0]?.to).toEqual({ name: 'leave', query: { tab: 'requests' } })
   })
 })

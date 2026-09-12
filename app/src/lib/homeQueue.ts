@@ -139,3 +139,39 @@ export function payrollToRows(rows: PayrollQueueRow[], viewer: Viewer): QueueRow
       to: { name: 'company', params: { companyId: r.company_id }, query: { tab: 'payroll' } },
     }))
 }
+
+export type LeaveQueueRow = {
+  id: string
+  person_id: string
+  company_id: string
+  leave_type_key: string
+  start_date: string
+  end_date: string
+  working_days: number
+  status: string
+  cancellation_requested_at: string | null
+  cancellation_declined_at: string | null
+  person: Named
+  company: Company
+}
+
+/** Pending requests and open cancellation asks for leave.approve holders — never one's own (decide_leave refuses). */
+export function leaveToRows(rows: LeaveQueueRow[], viewer: Viewer): QueueRow[] {
+  const askOpen = (r: LeaveQueueRow) =>
+    r.status === 'approved' &&
+    r.cancellation_requested_at !== null &&
+    (r.cancellation_declined_at === null || r.cancellation_declined_at < r.cancellation_requested_at)
+  return rows
+    .filter((r) => viewer.can(r.company_id, 'leave.approve') && r.person_id !== viewer.personId)
+    .filter((r) => r.status === 'pending' || askOpen(r))
+    .map((r) => ({
+      id: `leave-${r.id}`,
+      title: `Leave: ${r.person?.full_name ?? '—'}`,
+      sub:
+        r.status === 'pending'
+          ? `${r.company?.name ?? '—'} · ${r.leave_type_key} ${r.start_date} → ${r.end_date} (${r.working_days} days) awaiting your decision`
+          : `${r.company?.name ?? '—'} · asks to cancel approved leave ${r.start_date} → ${r.end_date}`,
+      actionLabel: 'Decide',
+      to: { name: 'leave', query: { tab: 'requests' } },
+    }))
+}

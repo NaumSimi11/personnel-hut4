@@ -43,6 +43,8 @@ prototype in `../prototype` is the UI spec. Updated as milestones land.
 | Rehire and equipment on offboarding: scheduling a departure adds a critical IT task per asset the leaver holds, taking it back completes the task; a former person is rehired from their record with a new period dated after the old one | migration 0025 + plan 033 | E2E laptop → departure → return task → return → done → former → Rehire; smoke for tasks, completion, re-schedule, none without equipment |
 | Home queue: the overview lists what waits on the viewer across every module — compensation decisions, document reviews, uploads asked of them, policies to read, IT requests, payroll approvals — offered only when they can act, each with a deep link | plan 034 | E2E seeded items → rows → payroll link lands on the tab; unit tests for the rules |
 | Company structure: Hut4 Capital is the holding and an employer; a transfer moves a person between companies as one act (old period ends the day before, new starts on the date, title carried; scheduled ones complete nightly); a company with people still employed cannot be archived — they are listed with a Transfer button; the holding is never archived | migration 0026 + plan 035a | E2E holding headcount → archive refused → transfer from the list → archived, history kept; smoke for capabilities, dates, immediate vs scheduled, departures, archive guard |
+| Leave: schema and rules ported from Field Notebook — statutory holidays per country and closures per company, working days, a balance per person / company / year with carry-over drawn by the requested dates inside its window, requests decided by someone else under a row lock (pending counted), cancellation before the start or an ask after it, medical certificates as documents, yearly rollover scheduled, colleagues redacted to "Away" server-side | migration 0027 + plan 035 | smoke for working days, balance math incl. carry-over expiry, pending counted, approval lock, self-cancel rules, redaction, gates, rollover idempotence |
+| Leave UI: Leave nav (Calendar · Requests · Balances · Holidays with the official-programme parser), My leave with a working-day preview from the person's own calendar, Leave card on the profile for recording on behalf, company Leave tab, country + leave defaults on the company form, Home queue rows for approvers | plan 036 | E2E paste import → entitlement → request with the holiday excluded → queue → approve → calendar → cancel before start; 27 unit tests |
 
 ## Next (in order)
 
@@ -53,12 +55,7 @@ prototype in `../prototype` is the UI spec. Updated as milestones land.
 1. **Leave moves into Personnel** (decided 2026-09-12: one system, not two
    rosters). Field Notebook (`E:\ht-hpt`, Supabase project `wisoabpv…`,
    credentials in `.env.hr-hut4.local`) keeps running until cutover.
-   035a done → **035** leave schema + rules ported from Field Notebook
-   (working days, per-country calendars + company closures, balance ledger
-   with the 2027 carry-over policy, cancellation rules; balance race and
-   the unscheduled rollover fixed) → **036** Leave UI (nav item: Calendar,
-   Requests, Balances, Holidays; My leave in My workspace; company Leave
-   tab; queue rows) → **037** import with a verifier (42 people incl. 18 at
+   035a, 035, 036 done → **037** import with a verifier (42 people incl. 18 at
    the holding, 105 requests, 78 holidays, 18 adjustments, 0 attachments;
    HUT4 Capital → Hut4, TBD1 → Liquiditas) → **038** cutover (38 accounts
    carried over with password hashes, old URL redirected).

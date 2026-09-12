@@ -17,6 +17,7 @@ import WorkflowOwnersPanel from '@/components/WorkflowOwnersPanel.vue'
 import DocumentsCard from '@/components/DocumentsCard.vue'
 import PoliciesPanel from '@/components/PoliciesPanel.vue'
 import EquipmentPanel from '@/components/EquipmentPanel.vue'
+import LeaveCalendarPanel from '@/components/leave/LeaveCalendarPanel.vue'
 import ActivityPanel from '@/components/ActivityPanel.vue'
 import InviteAccessDialog from '@/components/InviteAccessDialog.vue'
 import TransferDialog, { type TransferTarget } from '@/components/TransferDialog.vue'
@@ -44,6 +45,7 @@ type TabId =
   | 'documents'
   | 'equipment'
   | 'payroll'
+  | 'leave'
   | 'projects'
   | 'integrations'
   | 'activity'
@@ -58,6 +60,7 @@ const TABS: { id: TabId; label: string }[] = [
   { id: 'documents', label: 'Documents' },
   { id: 'equipment', label: 'Equipment' },
   { id: 'payroll', label: 'Payroll' },
+  { id: 'leave', label: 'Leave' },
   { id: 'projects', label: 'Projects' },
   { id: 'integrations', label: 'Integrations' },
   { id: 'activity', label: 'Activity' },
@@ -742,6 +745,15 @@ onMounted(load)
           <PayrollPeriodsPanel :company-id="companyId" :company-code="company.short_code" />
         </div>
 
+        <div v-else-if="activeTab === 'leave'" class="stack">
+          <LeaveCalendarPanel :company-id="companyId" :country-code="company.country_code" />
+          <p class="tab-foot">
+            Requests, balances and holiday calendars live under
+            <router-link :to="{ name: 'leave', query: { company: companyId } }">Leave</router-link>.
+            <span v-if="!company.country_code">This company has no country code yet — set it in Edit so holidays apply and leave can be requested.</span>
+          </p>
+        </div>
+
         <ActivityPanel v-else-if="activeTab === 'activity'" :company-id="companyId" />
 
         <WorkflowOwnersPanel v-else-if="activeTab === 'settings'" :company-id="companyId" />
@@ -830,6 +842,7 @@ onMounted(load)
 .detail-grid dd a { color: var(--green); text-decoration: none; }
 .detail-grid dd a:hover { text-decoration: underline; }
 .stack { display: grid; gap: 22px; }
+.tab-foot { font-size: 12px; color: var(--muted); margin: 0; }
 .notice { padding: 12px 15px; border-radius: 9px; background: #edf5ed; color: #3e744e; font-size: 12px; margin-bottom: 16px; }
 .still-employed { border-top: 1px solid #edf0eb; margin-top: 12px; }
 .tabs { display: flex; gap: 22px; border-bottom: 1px solid var(--line); margin-bottom: 22px; overflow: auto; }

@@ -108,6 +108,11 @@ export const router = createRouter({
           component: () => import('@/pages/OnboardingPlanPage.vue'),
         },
         {
+          path: 'leave',
+          name: 'leave',
+          component: () => import('@/pages/LeavePage.vue'),
+        },
+        {
           path: 'people/:personId',
           name: 'person',
           component: () => import('@/pages/PersonProfilePage.vue'),

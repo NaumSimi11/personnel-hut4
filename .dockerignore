@@ -1,0 +1,11 @@
+**/node_modules
+**/dist
+**/test-results
+**/playwright-report
+.env*
+!.env.example
+prototype
+legacy-manus
+*.md
+!app/README.md
+.git

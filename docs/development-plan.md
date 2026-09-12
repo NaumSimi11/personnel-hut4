@@ -45,6 +45,7 @@ prototype in `../prototype` is the UI spec. Updated as milestones land.
 | Company structure: Hut4 Capital is the holding and an employer; a transfer moves a person between companies as one act (old period ends the day before, new starts on the date, title carried; scheduled ones complete nightly); a company with people still employed cannot be archived — they are listed with a Transfer button; the holding is never archived | migration 0026 + plan 035a | E2E holding headcount → archive refused → transfer from the list → archived, history kept; smoke for capabilities, dates, immediate vs scheduled, departures, archive guard |
 | Leave: schema and rules ported from Field Notebook — statutory holidays per country and closures per company, working days, a balance per person / company / year with carry-over drawn by the requested dates inside its window, requests decided by someone else under a row lock (pending counted), cancellation before the start or an ask after it, medical certificates as documents, yearly rollover scheduled, colleagues redacted to "Away" server-side | migration 0027 + plan 035 | smoke for working days, balance math incl. carry-over expiry, pending counted, approval lock, self-cancel rules, redaction, gates, rollover idempotence |
 | Field Notebook import (code): one function imports people, requests, balances (reconciled + verified), holidays and approver grants from the old leave app in one transaction with a dry run; account carry-over script with password hashes; cutover runbook | migration 0028 + plans 037/038 | smoke for verdicts, linking, idempotent re-run, reconciliation, per-faith skip, grants, overlap refusal; live dry runs |
+| Deployable product: one container (Fastify service serves the built app with an SPA fallback, `/api` kept separate), Dockerfile with build args for the browser-safe values, `docs/deployment.md` (Fly / Railway / Render, checklist) | `server/src/serveApp.ts`, `Dockerfile` | 2 server tests; image built and smoked locally (app, deep link, assets, JSON 404 from the service) |
 | Leave UI: Leave nav (Calendar · Requests · Balances · Holidays with the official-programme parser), My leave with a working-day preview from the person's own calendar, Leave card on the profile for recording on behalf, company Leave tab, country + leave defaults on the company form, Home queue rows for approvers | plan 036 | E2E paste import → entitlement → request with the holiday excluded → queue → approve → calendar → cancel before start; 27 unit tests |
 
 ## Next (in order)
@@ -60,6 +61,8 @@ prototype in `../prototype` is the UI spec. Updated as milestones land.
    and 038 (account carry-over script + runbook) are coded — **waiting on
    the maintainer's "commit"** for the data, then a Personnel URL for the
    redirect (see plans/038-cutover.md).
+3. **Go live** — pick a host (Fly.io recommended), mirror `.env.local`,
+   deploy the image per [deployment.md](deployment.md), then run 037/038.
 4. **Company profile leftovers (needs credentials)** — notification contacts
    once an email path exists (RESEND_API_KEY); Integrations tab connect /
    configure once provider credentials exist.

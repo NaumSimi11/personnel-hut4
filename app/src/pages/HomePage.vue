@@ -11,6 +11,8 @@ import {
   payrollToRows,
   leaveToRows,
   type LeaveQueueRow,
+  hiringManagerToRows,
+  type HiringManagerRow,
   policiesToRows,
   type AckLite,
   type CompensationQueueRow,
@@ -183,6 +185,13 @@ function loadLaterQueues() {
       )
       .in('status', ['pending', 'approved'])
       .gte('end_date', todayDb()),
+    me
+      ? supabase
+          .from('hiring_requests')
+          .select('id, company_id, title, status, target_start_date, requester:people!hiring_requests_requested_by_fkey(full_name), company:companies(name), jobs:jobs!jobs_hiring_request_id_fkey(id, status)')
+          .eq('hiring_manager_id', me)
+          .in('status', ['submitted', 'changes_requested', 'approved'])
+      : Promise.resolve({ data: [], error: null }),
   ])
 }
 
@@ -240,7 +249,7 @@ async function load(): Promise<void> {
     auth.personId ? supabase.from('applications').select('id, company_id, stage_key, next_action, next_action_due, candidate:candidates(full_name), job:jobs(title)')
       .eq('owner_id', auth.personId).in('stage_key', ['new', 'screening', 'interview', 'offer']).order('next_action_due', { ascending: true }) : Promise.resolve({ data: [], error: null }),
   ])
-  const [compRes, docReviewRes, myReqRes, policyRes, ackRes, itRes, payrollRes, leaveRes] = laterRes
+  const [compRes, docReviewRes, myReqRes, policyRes, ackRes, itRes, payrollRes, leaveRes, managerRes] = laterRes
 
   let hadError = false
   const logIfError = (label: string, err: { message: string } | null) => {
@@ -266,6 +275,7 @@ async function load(): Promise<void> {
   logIfError('IT requests queue', itRes.error)
   logIfError('payroll queue', payrollRes.error)
   logIfError('leave queue', leaveRes.error)
+  logIfError('hiring manager queue', managerRes.error)
 
   metrics.value = {
     people: peopleCount.count ?? 0,
@@ -290,6 +300,7 @@ async function load(): Promise<void> {
     ...itRequestsToRows((itRes.data ?? []) as unknown as ItQueueRow[], viewer),
     ...payrollToRows((payrollRes.data ?? []) as unknown as PayrollQueueRow[], viewer),
     ...leaveToRows((leaveRes.data ?? []) as unknown as LeaveQueueRow[], viewer),
+    ...hiringManagerToRows((managerRes.data ?? []) as unknown as HiringManagerRow[], viewer),
   ]
   myTasks.value = (myTasksRes.data ?? []) as MyTaskRow[]
 

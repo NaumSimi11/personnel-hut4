@@ -4,6 +4,7 @@ import {
   documentReviewsToRows,
   itRequestsToRows,
   leaveToRows,
+  hiringManagerToRows,
   myRequestsToRows,
   payrollToRows,
   policiesToRows,
@@ -86,5 +87,25 @@ describe('home queue converters', () => {
     expect(rows[0]?.sub).toBe('Praedium · annual 2027-03-01 → 2027-03-03 (3 days) awaiting your decision')
     expect(rows[1]?.sub).toBe('Praedium · asks to cancel approved leave 2027-03-01 → 2027-03-03')
     expect(rows[0]?.to).toEqual({ name: 'leave', query: { tab: 'requests' } })
+  })
+
+  it('tells the hiring manager where their request stands, only where they may open it', () => {
+    const base = { title: 'Dispatcher', target_start_date: '2027-01-11', requester: { full_name: 'Fiona' }, company: { name: 'Praedium' }, jobs: [] as { id: string; status: string }[] }
+    const rows = hiringManagerToRows(
+      [
+        { ...base, id: 'h1', company_id: 'A', status: 'submitted' },
+        { ...base, id: 'h2', company_id: 'A', status: 'approved' },
+        { ...base, id: 'h3', company_id: 'A', status: 'approved', jobs: [{ id: 'j3', status: 'open' }] },
+        { ...base, id: 'h4', company_id: 'A', status: 'rejected' },
+        { ...base, id: 'h5', company_id: 'B', status: 'submitted' },
+      ],
+      viewer,
+    )
+    expect(rows.map((r) => r.id)).toEqual(['manager-h1', 'manager-h2'])
+    expect(rows[0]?.title).toBe('Hiring manager: Dispatcher')
+    expect(rows[0]?.sub).toBe('Praedium · requested by Fiona · awaiting approval — recruitment has not started · target start 2027-01-11')
+    expect(rows[0]?.actionLabel).toBe('View request')
+    expect(rows[1]?.sub).toBe('Praedium · approved — recruitment can proceed · target start 2027-01-11')
+    expect(rows[1]?.actionLabel).toBe('Prepare the role')
   })
 })

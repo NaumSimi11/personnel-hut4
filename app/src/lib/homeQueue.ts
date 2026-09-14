@@ -175,3 +175,37 @@ export function leaveToRows(rows: LeaveQueueRow[], viewer: Viewer): QueueRow[] {
       to: { name: 'leave', query: { tab: 'requests' } },
     }))
 }
+
+export type HiringManagerRow = {
+  id: string
+  company_id: string
+  title: string
+  status: string
+  target_start_date: string | null
+  requester: Named
+  company: Company
+  jobs: { id: string; status: string }[]
+}
+
+/**
+ * What the assigned hiring manager sees (plan 043): a submitted request is
+ * awaiting approval — assignment is not a go-ahead; an approved one means
+ * recruitment can proceed, until the job is open. Only where the viewer may
+ * open it: assigning a manager grants no access by itself.
+ */
+export function hiringManagerToRows(rows: HiringManagerRow[], viewer: Viewer): QueueRow[] {
+  const start = (r: HiringManagerRow) => ` · target start ${r.target_start_date ?? 'not set'}`
+  return rows
+    .filter((r) => viewer.can(r.company_id, 'jobs.view'))
+    .filter((r) => r.status === 'submitted' || r.status === 'changes_requested' || (r.status === 'approved' && !r.jobs.some((j) => j.status === 'open')))
+    .map((r) => ({
+      id: `manager-${r.id}`,
+      title: `Hiring manager: ${r.title}`,
+      sub:
+        r.status === 'approved'
+          ? `${r.company?.name ?? '—'} · approved — recruitment can proceed${start(r)}`
+          : `${r.company?.name ?? '—'} · requested by ${r.requester?.full_name ?? '—'} · ${r.status === 'changes_requested' ? 'changes requested' : 'awaiting approval'} — recruitment has not started${start(r)}`,
+      actionLabel: r.status === 'approved' ? 'Prepare the role' : 'View request',
+      to: { name: 'hiring' },
+    }))
+}

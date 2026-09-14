@@ -3,6 +3,7 @@ import { onMounted, ref } from 'vue'
 import { z } from 'zod'
 import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/stores/auth'
+import { notifyHiringManager } from '@/lib/hiringApi'
 
 /**
  * Request a new hire — or revise one that was sent back (plan 042). A new
@@ -22,7 +23,7 @@ export type RevisionTarget = {
   change_reason: string | null
 }
 
-const emit = defineEmits<{ created: []; revised: [] }>()
+const emit = defineEmits<{ created: [notice: string | null]; revised: [notice: string | null] }>()
 
 const auth = useAuthStore()
 const dialog = ref<HTMLDialogElement | null>(null)
@@ -107,10 +108,10 @@ async function submit(): Promise<void> {
         .maybeSingle()
       if (updErr || !data) throw new Error(friendly(updErr?.message ?? 'row-level security'))
       dialog.value?.close()
-      emit('revised')
+      emit('revised', parsed.data.hiringManagerId ? await notifyHiringManager(data.id, 'assigned') : null)
       return
     }
-    const { error: insertErr } = await supabase.from('hiring_requests').insert({
+    const { data: created, error: insertErr } = await supabase.from('hiring_requests').insert({
       company_id: parsed.data.companyId,
       title: parsed.data.title,
       reason: parsed.data.reason || null,
@@ -119,10 +120,10 @@ async function submit(): Promise<void> {
       hiring_manager_id: parsed.data.hiringManagerId || null,
       requested_by: auth.personId,
       status: 'submitted',
-    })
+    }).select('id').maybeSingle()
     if (insertErr) throw new Error(friendly(insertErr.message))
     dialog.value?.close()
-    emit('created')
+    emit('created', parsed.data.hiringManagerId && created ? await notifyHiringManager(created.id, 'assigned') : null)
   } catch (e) {
     error.value = e instanceof Error ? e.message : 'Could not create the hiring request.'
   } finally {

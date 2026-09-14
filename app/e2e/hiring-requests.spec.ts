@@ -52,12 +52,25 @@ test('request a hire → changes requested (dialog) → edit and resubmit → hi
   await page.locator('#rh-company').selectOption({ label: 'Snowball' })
   await page.locator('#rh-title').fill(TITLE_ALPHA)
   await page.locator('#rh-headcount').fill('1')
+  // The signed-in admin is the hiring manager too, so the notifications land on their own Home page.
+  await page.locator('#rh-manager').selectOption({ label: 'Naum Simidjioski' })
+  await page.locator('#rh-start').fill('2030-03-02')
   await page.getByRole('button', { name: 'Request hire' }).click()
 
   const alphaRow = page.locator('.request-row', { hasText: TITLE_ALPHA })
   await expect(alphaRow).toBeVisible()
   await expect(alphaRow.locator('.badge')).toHaveText('submitted')
   await expect(alphaRow).toContainText('Snowball')
+  // The notice says what happened to the manager's email (delivery is not configured here) — visibly, never silently.
+  await expect(page.locator('.notice')).toContainText(/Request submitted\. .*(emailed|not configured|no work email)/)
+
+  // Home: assigned, awaiting approval — not a go-ahead.
+  await page.goto('/overview')
+  const managerRow = page.locator('.queue-row', { hasText: `Hiring manager: ${TITLE_ALPHA}` })
+  await expect(managerRow).toContainText('awaiting approval — recruitment has not started')
+  await expect(managerRow).toContainText('target start 2030-03-02')
+  await managerRow.getByRole('link', { name: 'View request' }).click()
+  await expect(page).toHaveURL(/\/hiring$/)
 
   // Request changes through the app's dialog (no browser prompt): an empty
   // reason is refused, cancelling changes nothing, the reason lands on the row.
@@ -99,6 +112,13 @@ test('request a hire → changes requested (dialog) → edit and resubmit → hi
   await alphaRow.getByRole('button', { name: 'Approve' }).click()
   await expect(alphaRow.locator('.badge')).toHaveText('approved')
   await expect(alphaRow).not.toContainText('a different approver')
+  await expect(page.locator('.notice')).toContainText(/Approved\. /)
+
+  // Home now: recruitment can proceed.
+  await page.goto('/overview')
+  await expect(managerRow).toContainText('approved — recruitment can proceed')
+  await managerRow.getByRole('link', { name: 'Prepare the role' }).click()
+  await expect(page).toHaveURL(/\/hiring$/)
 
   // A request with no requester (service-created) can be approved.
   const db = serviceClient()

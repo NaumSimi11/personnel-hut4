@@ -6,6 +6,7 @@ import RequestHireDialog from '@/components/RequestHireDialog.vue'
 import DecideHiringRequestDialog from '@/components/DecideHiringRequestDialog.vue'
 import { useAuthStore } from '@/stores/auth'
 import { awaitingLabel } from '@/lib/companyOps'
+import { notifyHiringManager } from '@/lib/hiringApi'
 
 type HiringRequestRow = {
   id: string
@@ -123,8 +124,9 @@ async function performUpdate(row: HiringRequestRow, patch: Decision): Promise<vo
   await load()
 }
 
-function approve(row: HiringRequestRow): void {
-  void performUpdate(row, { status: 'approved' })
+async function approve(row: HiringRequestRow): Promise<void> {
+  await performUpdate(row, { status: 'approved' })
+  if (!actionError.value && row.hiring_manager_id) notice.value = `Approved. ${await notifyHiringManager(row.id, 'approved')}`
 }
 
 function requestChanges(row: HiringRequestRow): void {
@@ -144,8 +146,12 @@ function revise(row: HiringRequestRow): void {
   actionError.value = null
   requestDialog.value?.openRevision(row)
 }
-function onRevised(): void {
-  notice.value = 'Resubmitted — back in the approval queue.'
+function onRevised(managerNotice: string | null): void {
+  notice.value = `Resubmitted — back in the approval queue.${managerNotice ? ` ${managerNotice}` : ''}`
+  void load()
+}
+function onCreated(managerNotice: string | null): void {
+  notice.value = managerNotice ? `Request submitted. ${managerNotice}` : null
   void load()
 }
 
@@ -308,7 +314,7 @@ onMounted(load)
       </template>
     </div>
 
-    <RequestHireDialog ref="requestDialog" @created="load" @revised="onRevised" />
+    <RequestHireDialog ref="requestDialog" @created="onCreated" @revised="onRevised" />
     <DecideHiringRequestDialog ref="decideDialog" @decided="onDecided" />
   </div>
 </template>

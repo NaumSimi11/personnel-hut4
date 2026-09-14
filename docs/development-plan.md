@@ -46,6 +46,8 @@ prototype in `../prototype` is the UI spec. Updated as milestones land.
 | Leave: schema and rules ported from Field Notebook — statutory holidays per country and closures per company, working days, a balance per person / company / year with carry-over drawn by the requested dates inside its window, requests decided by someone else under a row lock (pending counted), cancellation before the start or an ask after it, medical certificates as documents, yearly rollover scheduled, colleagues redacted to "Away" server-side | migration 0027 + plan 035 | smoke for working days, balance math incl. carry-over expiry, pending counted, approval lock, self-cancel rules, redaction, gates, rollover idempotence |
 | Field Notebook import (code): one function imports people, requests, balances (reconciled + verified), holidays and approver grants from the old leave app in one transaction with a dry run; account carry-over script with password hashes; cutover runbook | migration 0028 + plans 037/038 | smoke for verdicts, linking, idempotent re-run, reconciliation, per-faith skip, grants, overlap refusal; live dry runs |
 | Deployable product: one container (Fastify service serves the built app with an SPA fallback, `/api` kept separate), Dockerfile with build args for the browser-safe values, `docs/deployment.md` (Fly / Railway / Render, checklist) | `server/src/serveApp.ts`, `Dockerfile` | 2 server tests; image built and smoked locally (app, deep link, assets, JSON 404 from the service) |
+| Hiring-request revisions: Request changes / Reject as dialogs with a required reason, the requester edits and resubmits the same request, a history of every step; the hiring manager is told on assignment (awaiting approval) and on approval (recruitment can proceed) — Home rows plus one email each, never duplicated | migration 0033 + plan 042 | smoke for the gates and history; E2E full journey |
+| Candidate journey: next-step guidance, handoff dialog (start screening / outcome / assignment), owner assignment email, candidate rows on Home, Confirm hire opens onboarding | `ApplicationPage`, `CandidateHandoffDialog` | E2E candidate-review, hiring-pipeline, home-queue |
 | Leave manager desk and corrections: the settled record as a searchable table; HR corrects approved leave — other dates, a day of another kind — and the balance follows (extra days taken and checked, dropped days returned); a mix of kinds splits the record; every correction kept with who and why | migration 0032 + plan 041 | smoke for gates, refusals, both directions, split, per-year check; E2E correct → balance moves |
 | Profile photos: a person adds their own from My workspace, HR from the record; squared and shrunk in the browser, stored in a public bucket under the person's folder, shown wherever a face appears; Leave calendar with stats, legend, coloured chips and a day rail with progress; Companies as identity cards | migration 0031 + plan 040 | smoke for the photo gate; E2E add → sidebar/directory/record → remove; 7 restyled specs green |
 | Person profile: hero header with a facts strip (started + tenure, department, location, manager, type, leave left this year), employment periods as a timeline with the current one marked, cards balanced across two columns (Employment · Leave · Compensation · Equipment / Access · Documents · Requests · Private details) | `PersonProfilePage.vue`, `lib/tenure.ts` | unit tests for tenure wording; 13 profile-touching E2E specs green |
@@ -58,25 +60,19 @@ prototype in `../prototype` is the UI spec. Updated as milestones land.
 
 ## Next (in order)
 
-0. **020 AI assist** — summaries with references, never a score; blocked on
-   ANTHROPIC_API_KEY in .env.local.
-2. **Turn on Zoho sync** — supply credentials + per-company mapping, then
-   run it for real (code is done; see [integrations-zoho.md](integrations-zoho.md)).
-1. **Leave moves into Personnel** (decided 2026-09-12: one system, not two
-   rosters). Field Notebook (`E:\ht-hpt`, Supabase project `wisoabpv…`,
-   credentials in `.env.hr-hut4.local`) keeps running until cutover.
-   035a, 035, 036 done; 037 (import function + scripts, dry run clean)
-   and 038 (account carry-over script + runbook) are coded — **waiting on
-   the maintainer's "commit"** for the data, then a Personnel URL for the
-   redirect (see plans/038-cutover.md).
-3. **Go live** — pick a host (Fly.io recommended), mirror `.env.local`,
-   deploy the image per [deployment.md](deployment.md), then run 037/038.
-4. **Company profile leftovers (needs credentials)** — notification contacts
-   once an email path exists (RESEND_API_KEY); Integrations tab connect /
-   configure once provider credentials exist.
-5. **Later, per blueprint** — recruitment marketing + channel integrations
-   (need channel credentials), equipment on onboarding checklists, payroll
-   allowances and one-off items.
+1. **Keys from the maintainer** — `RESEND_API_KEY` + `EMAIL_FROM` (invites,
+   leave and hiring notifications start sending), `ANTHROPIC_API_KEY`
+   (plan 020 AI assist), Zoho credentials + per-company mapping
+   ([integrations-zoho.md](integrations-zoho.md)).
+2. **Setup by the maintainer** — Ivana as Holding HR in every company;
+   director and HR contact per company; invite the ten people without a
+   carried-over password once email sends.
+3. **Go live on Vercel** ([deployment.md](deployment.md)) when the
+   maintainer says so, then the Field Notebook redirect and read-only
+   (plan 038 runbook).
+4. **Later, per blueprint** — recruitment channel integrations (need
+   credentials), equipment on onboarding checklists, payroll allowances
+   and one-off items.
 
 ## Standing rules
 

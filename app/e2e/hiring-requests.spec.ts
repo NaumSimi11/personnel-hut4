@@ -23,6 +23,7 @@ function serviceClient() {
 
 async function removeTestRequests(): Promise<void> {
   const db = serviceClient()
+  await db.from('notifications').delete().like('title', '%E2E Role%')
   await db.from('hiring_requests').delete().in('title', [TITLE_ALPHA, TITLE_BETA])
 }
 
@@ -62,7 +63,7 @@ test('request a hire → changes requested (dialog) → edit and resubmit → hi
   await expect(alphaRow.locator('.badge')).toHaveText('submitted')
   await expect(alphaRow).toContainText('Snowball')
   // The notice says what happened to the manager's email (delivery is not configured here) — visibly, never silently.
-  await expect(page.locator('.notice')).toContainText(/Request submitted\. .*(emailed|not configured|no work email)/)
+  await expect(page.locator('.notice')).toContainText(/Request submitted\. Notified/)
 
   // Home: assigned, awaiting approval — not a go-ahead.
   await page.goto('/overview')

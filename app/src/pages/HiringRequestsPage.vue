@@ -6,7 +6,7 @@ import RequestHireDialog from '@/components/RequestHireDialog.vue'
 import DecideHiringRequestDialog from '@/components/DecideHiringRequestDialog.vue'
 import { useAuthStore } from '@/stores/auth'
 import { awaitingLabel } from '@/lib/companyOps'
-import { notifyHiringManager } from '@/lib/hiringApi'
+import { deliverNotifications, deliverySentence } from '@/lib/notificationsApi'
 
 type HiringRequestRow = {
   id: string
@@ -126,7 +126,7 @@ async function performUpdate(row: HiringRequestRow, patch: Decision): Promise<vo
 
 async function approve(row: HiringRequestRow): Promise<void> {
   await performUpdate(row, { status: 'approved' })
-  if (!actionError.value && row.hiring_manager_id) notice.value = `Approved. ${await notifyHiringManager(row.id, 'approved')}`
+  if (!actionError.value) notice.value = `Approved. ${deliverySentence(await deliverNotifications())}`
 }
 
 function requestChanges(row: HiringRequestRow): void {
@@ -138,9 +138,9 @@ function reject(row: HiringRequestRow): void {
   actionError.value = null
   decideDialog.value?.open('reject', row)
 }
-function onDecided(status: 'changes_requested' | 'rejected'): void {
-  notice.value = status === 'changes_requested' ? 'Sent back with your note; the requester can revise and resubmit it.' : 'Request rejected.'
+async function onDecided(status: 'changes_requested' | 'rejected'): Promise<void> {
   void load()
+  notice.value = `${status === 'changes_requested' ? 'Sent back with your note; the requester can revise and resubmit it.' : 'Request rejected.'} ${deliverySentence(await deliverNotifications())}`
 }
 function revise(row: HiringRequestRow): void {
   actionError.value = null

@@ -2,7 +2,7 @@
 import { computed, ref, watch } from 'vue'
 import { supabase } from '@/lib/supabase'
 import { todayDb } from '@/lib/compensation'
-import { notifyLeave } from '@/lib/leaveApi'
+import { deliverNotifications } from '@/lib/notificationsApi'
 import { balanceAfter, clashesWith, friendlyLeaveError, leaveInput, workingDaysBetween, type ClashRow } from '@/lib/leave'
 
 /**
@@ -131,8 +131,8 @@ async function submit(): Promise<void> {
     return
   }
   const result = data as { request_id?: string; status?: string; working_days?: number } | null
-  // Approvers hear about a pending request; nobody needs mail about leave recorded as approved.
-  if (result?.request_id && result.status !== 'approved') void notifyLeave(result.request_id, 'submitted')
+  // The database queued the approvers' notifications; send the mail now.
+  if (result?.status !== 'approved') void deliverNotifications()
   dialog.value?.close()
   emit('submitted', { status: result?.status ?? 'pending', workingDays: Number(result?.working_days ?? 0) })
 }

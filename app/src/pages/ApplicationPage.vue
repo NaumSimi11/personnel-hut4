@@ -12,7 +12,7 @@ import RejectApplicationDialog from '@/components/RejectApplicationDialog.vue'
 import { friendlyRecruitmentError, salvageQuestions } from '@/lib/jobWorkspace'
 import { answersFromRows, mergeAnswers, type AnswerRow } from '@/lib/screeningAnswers'
 import CandidateHandoffDialog, { type HandoffPayload } from '@/components/CandidateHandoffDialog.vue'
-import { notifyCandidateAssignment } from '@/lib/candidateNotifications'
+import { deliverNotifications, deliverySentence } from '@/lib/notificationsApi'
 import { candidateNextStep } from '@/lib/hiringJourney'
 import { criteriaFor } from '@/lib/interviews'
 import type { OfferTerms } from '@/lib/offers'
@@ -135,7 +135,7 @@ async function saveHandoff(payload: HandoffPayload): Promise<void> {
   handoffNotice.value = terminal ? 'Screening outcome saved. Application closed.' : 'Assignment saved.'
   // The owner hears about it when they are newly assigned or the ask changed — not on every save.
   const ownerChanged = payload.ownerId !== (current.owner_id ?? '') || payload.nextAction !== (current.next_action ?? '') || payload.stage !== current.stage_key
-  if (!terminal && ownerChanged) handoffNotice.value += ' ' + await notifyCandidateAssignment(current.id, data.updated_at)
+  if (!terminal && ownerChanged) handoffNotice.value += ' ' + deliverySentence(await deliverNotifications())
   if (eventErr) handoffNotice.value += ' The timeline note could not be saved; the assignment and outcome were saved.'
   await load()
 }
@@ -310,7 +310,7 @@ async function saveDecision(): Promise<void> {
   decisionSaved.value = true
   const live = !['hired', 'rejected', 'withdrawn'].includes(before.stage_key)
   const ownerChanged = data.owner_id !== before.owner_id || data.next_action !== before.next_action
-  if (live && data.owner_id && ownerChanged) handoffNotice.value = 'Assignment saved. ' + await notifyCandidateAssignment(application.value.id, data.updated_at)
+  if (live && data.owner_id && ownerChanged) handoffNotice.value = 'Assignment saved. ' + deliverySentence(await deliverNotifications())
 }
 
 async function addNote(): Promise<void> {

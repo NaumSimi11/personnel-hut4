@@ -4,7 +4,7 @@ import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/stores/auth'
 import { todayDb } from '@/lib/compensation'
 import { cancellationState, friendlyLeaveError, leaveActions, leaveStatusLabel, type LeaveAction } from '@/lib/leave'
-import { notifyLeave } from '@/lib/leaveApi'
+import { deliverNotifications } from '@/lib/notificationsApi'
 import { signedDocumentUrl, uploadDocument, validateDocumentFile } from '@/lib/documents'
 
 /**
@@ -204,9 +204,7 @@ async function run(r: LeaveRequestRow, key: LeaveAction['key'] | 'decline-ask'):
     emit('error', friendlyLeaveError(res.error.message))
     return
   }
-  if (key === 'approve') void notifyLeave(r.id, 'approved')
-  if (key === 'reject') void notifyLeave(r.id, 'rejected')
-  if (key === 'ask') void notifyLeave(r.id, 'cancellation_asked')
+  void deliverNotifications()
   emit('changed')
 }
 </script>

@@ -3,7 +3,7 @@ import { onMounted, ref } from 'vue'
 import { z } from 'zod'
 import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/stores/auth'
-import { notifyHiringManager } from '@/lib/hiringApi'
+import { deliverNotifications, deliverySentence } from '@/lib/notificationsApi'
 
 /**
  * Request a new hire — or revise one that was sent back (plan 042). A new
@@ -108,7 +108,7 @@ async function submit(): Promise<void> {
         .maybeSingle()
       if (updErr || !data) throw new Error(friendly(updErr?.message ?? 'row-level security'))
       dialog.value?.close()
-      emit('revised', parsed.data.hiringManagerId ? await notifyHiringManager(data.id, 'assigned') : null)
+      emit('revised', deliverySentence(await deliverNotifications()))
       return
     }
     const { data: created, error: insertErr } = await supabase.from('hiring_requests').insert({
@@ -123,7 +123,7 @@ async function submit(): Promise<void> {
     }).select('id').maybeSingle()
     if (insertErr) throw new Error(friendly(insertErr.message))
     dialog.value?.close()
-    emit('created', parsed.data.hiringManagerId && created ? await notifyHiringManager(created.id, 'assigned') : null)
+    emit('created', created ? deliverySentence(await deliverNotifications()) : null)
   } catch (e) {
     error.value = e instanceof Error ? e.message : 'Could not create the hiring request.'
   } finally {

@@ -49,12 +49,34 @@ function serviceClient() {
 let companyId = ''
 let personId = ''
 let previousCountry: string | null | undefined
+let adminGrantId: string | null = null
+let addedCapabilityTo: string | null = null
+
+/** The signed-in admin approves as a real approver would: with leave.approve in the company (admins are not notified by default). */
+async function grantAdminApproval(db: ReturnType<typeof serviceClient>): Promise<void> {
+  const { data: admin } = await db.from('people').select('id').ilike('work_email', ADMIN_EMAIL).single()
+  if (!admin) throw new Error('admin person not found')
+  const { data: existing } = await db.from('access_grants').select('id').eq('person_id', admin.id).eq('company_id', companyId).maybeSingle()
+  if (existing) {
+    const { data: had } = await db.from('grant_capabilities').select('grant_id').eq('grant_id', existing.id).eq('capability_key', 'leave.approve').maybeSingle()
+    if (!had) {
+      await db.from('grant_capabilities').insert({ grant_id: existing.id, capability_key: 'leave.approve' })
+      addedCapabilityTo = existing.id
+    }
+    return
+  }
+  const { data: grant } = await db.from('access_grants').insert({ person_id: admin.id, company_id: companyId, note: 'E2E leave approver' }).select('id').single()
+  adminGrantId = grant?.id ?? null
+  if (adminGrantId) await db.from('grant_capabilities').insert({ grant_id: adminGrantId, capability_key: 'leave.approve' })
+}
 
 async function cleanup(): Promise<void> {
   const db = serviceClient()
   await db.from('public_holidays').delete().eq('name', HOLIDAY)
   const { data: people } = await db.from('people').select('id, user_id').eq('full_name', PERSON)
   for (const p of people ?? []) {
+    await db.from('notifications').delete().eq('person_id', p.id)
+    await db.from('notifications').delete().like('title', `%${PERSON}%`)
     await db.from('leave_corrections').delete().eq('person_id', p.id)
     await db.from('leave_requests').update({ corrected_from_id: null }).eq('person_id', p.id)
     await db.from('leave_request_documents').delete().in('request_id', (await db.from('leave_requests').select('id').eq('person_id', p.id)).data?.map((r) => r.id) ?? [])
@@ -71,6 +93,15 @@ async function cleanup(): Promise<void> {
     await db.from('people').delete().eq('id', p.id)
     if (p.user_id) await db.auth.admin.deleteUser(p.user_id)
   }
+  if (adminGrantId) {
+    await db.from('grant_capabilities').delete().eq('grant_id', adminGrantId)
+    await db.from('access_grants').delete().eq('id', adminGrantId)
+    adminGrantId = null
+  }
+  if (addedCapabilityTo) {
+    await db.from('grant_capabilities').delete().eq('grant_id', addedCapabilityTo).eq('capability_key', 'leave.approve')
+    addedCapabilityTo = null
+  }
   if (companyId && previousCountry !== undefined) {
     await db.from('companies').update({ country_code: previousCountry }).eq('id', companyId)
   }
@@ -83,6 +114,7 @@ async function seed(): Promise<void> {
   companyId = company.id
   previousCountry = company.country_code
   await db.from('companies').update({ country_code: 'MK' }).eq('id', companyId)
+  await grantAdminApproval(db)
   const { data: user, error: userErr } = await db.auth.admin.createUser({
     email: PERSON_EMAIL,
     password: PERSON_PASSWORD,
@@ -172,6 +204,16 @@ test('holiday import → entitlement → request (holiday excluded) → queue �
   await expect(rail).toContainText('20')
   await expect(rail.locator('.stat', { hasText: 'pending' })).toContainText(String(DAYS))
 
+  // Both sides are told: HR's bell counts the request; opening it marks it read.
+  await page.goto('/overview')
+  await expect(page.getByTestId('unread-count')).toHaveText(/[1-9]/)
+  await page.getByTestId('nav-notifications').click()
+  const hrNote = page.locator('.row.unread', { hasText: `Leave request from ${PERSON}` })
+  await expect(hrNote).toContainText('Winter break')
+  await expect(hrNote).toContainText(/email queued|in-app only|emailed/)
+  await hrNote.locator('.open').click()
+  await expect(page).toHaveURL(/\/leave\?tab=requests/)
+
   // HR sees it on the Home queue; the link lands on the Requests tab.
   await page.goto('/overview')
   const queueRow = page.locator('.queue-row', { hasText: `Leave: ${PERSON}` })
@@ -235,8 +277,15 @@ test('holiday import → entitlement → request (holiday excluded) → queue �
   await expect(dayRail).toContainText(HOLIDAY)
   await expect(dayRail).toContainText('Nobody is away')
 
+  // The employee is told of the decision and of the correction.
+  await employee.goto('/notifications')
+  await expect(employee.locator('.row.unread', { hasText: 'Your leave was approved' })).toBeVisible()
+  await expect(employee.locator('.row.unread', { hasText: 'Your leave was corrected' })).toContainText('Came back a day later')
+  await employee.getByRole('button', { name: 'Mark all read' }).click()
+  await expect(employee.locator('.row.unread')).toHaveCount(0)
+
   // The employee's balance moved, and they cancel before the start.
-  await employee.reload()
+  await employee.goto('/me')
   await expect(rail.locator('.stat', { hasText: 'taken' })).toContainText(String(TAKEN))
   await expect(rail.locator('.stat', { hasText: 'days left' })).toContainText(String(20 - TAKEN))
   answerDialogs(employee, ['Plans changed'])

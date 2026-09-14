@@ -76,6 +76,7 @@ round; merging it into `main` is the maintainer's decision.
 | 041 | Leave manager desk (To decide · Asks · Approved · Cancelled, filters, table) and corrections of approved leave: dates and per-day kinds, split into rows when kinds differ, balance re-checked per year with carry-over re-drawn, every correction recorded (migration 0032) | DONE (main; smoke; unit; E2E leave) |
 | — | Candidate journey: next-step guidance and handoff dialog on the application page, owner assignment emails (idempotent), candidate rows on Home, Confirm hire opens onboarding — picked up from the tree and finished | DONE (main; unit; E2E candidate-review, hiring-pipeline, home-queue) |
 | 042 | Hiring requests: review dialogs (no prompts), Edit and resubmit, history per request, transition gates tightened; hiring-manager notifications on submit and approval (Home rows + idempotent email) (migration 0033) | DONE (main; smoke; unit; E2E hiring-requests) |
+| 043 | Notifications on both sides: `notifications` table filled by triggers (leave, hiring, candidates, documents), HR inbox per company, one delivery route with per-row outcome replacing three mailers, bell + Notifications page, Settings field (migration 0034) | DONE (main; smoke; E2E leave + 4 specs) |
 | — | Deployable product: the service serves the built app (SPA fallback, `/api` untouched), Dockerfile + `docs/deployment.md` | DONE (main; server tests 45/45; image built and smoked locally) |
 
 Round-03 executors branch from `main` as `feature/NNN-<slug>`; the reviewer

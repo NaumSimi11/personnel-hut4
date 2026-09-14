@@ -63,6 +63,7 @@ begin
     end if;
     new.decided_by := null;
     new.decided_at := null;
+    new.change_reason := null;   -- the history keeps what was asked; the request starts clean
   end if;
 
   -- The content is locked once submitted; a request sent back (or a draft) may change.

@@ -123,6 +123,11 @@ export const router = createRouter({
           component: () => import('@/pages/AccessEditorPage.vue'),
         },
         {
+          path: 'notifications',
+          name: 'notifications',
+          component: () => import('@/pages/NotificationsPage.vue'),
+        },
+        {
           path: 'me',
           name: 'my-workspace',
           component: () => import('@/pages/MyWorkspacePage.vue'),

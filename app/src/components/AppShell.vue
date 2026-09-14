@@ -1,12 +1,20 @@
 <script setup lang="ts">
 import AvatarImage from '@/components/AvatarImage.vue'
+import { useNotificationsStore } from '@/stores/notifications'
+import { onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 
 const auth = useAuthStore()
 const router = useRouter()
+const notifications = useNotificationsStore()
+
+// The bell: my unread notifications, refreshed every minute while signed in.
+onMounted(() => notifications.start())
+onUnmounted(() => notifications.stop())
 
 async function signOut() {
+  notifications.stop()
   await auth.signOut()
   router.push({ name: 'login' })
 }
@@ -29,6 +37,11 @@ async function signOut() {
         <router-link :to="{ name: 'offboarding' }">Offboarding</router-link>
         <router-link :to="{ name: 'leave' }">Leave</router-link>
         <router-link :to="{ name: 'my-workspace' }">My workspace</router-link>
+        <router-link :to="{ name: 'notifications' }" class="bell" data-testid="nav-notifications">
+          <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 11V7a4 4 0 0 1 8 0v4l1.5 1.5H2.5z" /><path d="M6.5 14a1.5 1.5 0 0 0 3 0" /></svg>
+          Notifications
+          <span v-if="notifications.unread" class="unread" data-testid="unread-count">{{ notifications.unread }}</span>
+        </router-link>
       </nav>
       <div class="sidebar-bottom">
         <AvatarImage :name="auth.personName ?? 'U'" :path="auth.avatarPath" size="small" />
@@ -111,6 +124,8 @@ nav a.router-link-active {
   box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08);
 }
 nav a.router-link-active::before { height: 18px; }
+nav a.bell { gap: 9px; margin-top: 6px; }
+.unread { margin-left: auto; display: inline-grid; place-items: center; min-width: 22px; height: 20px; padding: 0 7px; border-radius: 999px; background: var(--gold); color: #1b2a22; font-size: 11px; font-weight: 700; }
 .sidebar-bottom { margin-top: auto; display: flex; align-items: center; gap: 10px; padding: 12px 10px; border-radius: 12px; background: rgba(255, 255, 255, 0.05); }
 .sidebar-bottom strong { font-weight: 600; font-size: 12.5px; display: block; color: #fff; }
 .avatar-dark { background: linear-gradient(145deg, #4d7a62, #2f5646); color: #e7f2e8; box-shadow: none; }

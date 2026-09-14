@@ -34,6 +34,8 @@ let userId = ''
 
 async function cleanup(): Promise<void> {
   const db = serviceClient()
+  await db.from('notifications').delete().like('title', `%${PERSON}%`)
+  await db.from('notifications').delete().like('title', '%Identification%')
   const { data: policies } = await db.from('policies').select('id, storage_path').eq('title', POLICY_TITLE)
   if (policies?.length) {
     await db.from('policy_acknowledgements').delete().in('policy_id', policies.map((p) => p.id))

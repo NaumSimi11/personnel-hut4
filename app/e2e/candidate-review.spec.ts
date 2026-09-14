@@ -32,6 +32,7 @@ let applicationId = ''
 
 async function cleanup(): Promise<void> {
   const db = serviceClient()
+  await db.from('notifications').delete().like('title', `%${CANDIDATE_NAME}%`)
   const { data: jobs } = await db.from('jobs').select('id').eq('title', JOB_TITLE)
   const jobIds = (jobs ?? []).map((j) => j.id)
   if (jobIds.length) {
@@ -103,7 +104,6 @@ test('candidate page: files behind signed links, screening answers, decision, no
   request,
 }, testInfo) => {
   const db = serviceClient()
-  await page.route('**/api/hiring/notify-assignment', route => route.fulfill({ json: { emailSent: false, message: 'Email not sent in this test.' } }))
 
   await page.goto('/login')
   await page.locator('#email').fill(ADMIN_EMAIL)
@@ -169,7 +169,8 @@ test('candidate page: files behind signed links, screening answers, decision, no
   await handoff.locator('#handoff-due').fill('2026-10-01')
   await handoff.getByRole('button', { name: 'Start screening', exact: true }).click()
   await expect(page.locator('.stage-badge')).toHaveText('screening')
-  await expect(page.getByRole('status')).toContainText('Email not sent in this test.')
+  // The owner was notified in the app by the database; email delivery reports its state honestly.
+  await expect(page.getByRole('status')).toContainText(/Assignment saved\. Notified/)
   await page.goto('/overview')
   const assignedTask = page.locator('.queue-row', { hasText: CANDIDATE_NAME })
   await expect(assignedTask).toContainText('Phone screen')

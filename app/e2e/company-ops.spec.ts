@@ -26,6 +26,7 @@ let leaverId = ''
 
 async function cleanup(): Promise<void> {
   const db = serviceClient()
+  await db.from('notifications').delete().like('title', '%E2E%')
   const { data: company } = await db.from('companies').select('id').eq('short_code', 'PRAE').single()
   if (company) {
     await db.from('workflow_owners').delete().eq('company_id', company.id).eq('role_key', 'hiring_approver')

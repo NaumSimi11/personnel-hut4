@@ -658,6 +658,7 @@ export type Database = {
           created_at: string
           director_person_id: string | null
           hr_contact_person_id: string | null
+          hr_notification_email: string | null
           id: string
           kind: string
           leave_carry_over_until: string
@@ -686,6 +687,7 @@ export type Database = {
           created_at?: string
           director_person_id?: string | null
           hr_contact_person_id?: string | null
+          hr_notification_email?: string | null
           id?: string
           kind?: string
           leave_carry_over_until?: string
@@ -714,6 +716,7 @@ export type Database = {
           created_at?: string
           director_person_id?: string | null
           hr_contact_person_id?: string | null
+          hr_notification_email?: string | null
           id?: string
           kind?: string
           leave_carry_over_until?: string
@@ -2527,6 +2530,81 @@ export type Database = {
           },
         ]
       }
+      notifications: {
+        Row: {
+          body: string | null
+          company_id: string | null
+          created_at: string
+          dedupe_key: string
+          email_attempts: number
+          email_error: string | null
+          email_sent_at: string | null
+          email_status: string
+          email_to: string | null
+          entity_id: string | null
+          entity_type: string | null
+          id: string
+          kind: string
+          link: string | null
+          person_id: string
+          read_at: string | null
+          title: string
+        }
+        Insert: {
+          body?: string | null
+          company_id?: string | null
+          created_at?: string
+          dedupe_key: string
+          email_attempts?: number
+          email_error?: string | null
+          email_sent_at?: string | null
+          email_status?: string
+          email_to?: string | null
+          entity_id?: string | null
+          entity_type?: string | null
+          id?: string
+          kind: string
+          link?: string | null
+          person_id: string
+          read_at?: string | null
+          title: string
+        }
+        Update: {
+          body?: string | null
+          company_id?: string | null
+          created_at?: string
+          dedupe_key?: string
+          email_attempts?: number
+          email_error?: string | null
+          email_sent_at?: string | null
+          email_status?: string
+          email_to?: string | null
+          entity_id?: string | null
+          entity_type?: string | null
+          id?: string
+          kind?: string
+          link?: string | null
+          person_id?: string
+          read_at?: string | null
+          title?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "notifications_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "notifications_person_id_fkey"
+            columns: ["person_id"]
+            isOneToOne: false
+            referencedRelation: "people"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       offers: {
         Row: {
           accepted_at: string | null
@@ -3782,6 +3860,7 @@ export type Database = {
         Args: { p_company_id: string; p_person_id: string; p_year: number }
         Returns: Json
       }
+      mark_notifications_read: { Args: { p_ids?: string[] }; Returns: number }
       mark_payroll_exported: { Args: { p_period_id: string }; Returns: Json }
       prepare_payroll_period: {
         Args: {

@@ -2874,6 +2874,7 @@ begin
   update public.hiring_requests set title = 'Senior Dispatcher', headcount = 2, status = 'submitted' where id = '60000000-0000-0000-0000-000000000033';
   assert (select status || '/' || title || '/' || headcount::text || '/' || coalesce(decided_by::text, 'none') from public.hiring_requests where id = '60000000-0000-0000-0000-000000000033')
     = 'submitted/Senior Dispatcher/2/none', 'revised, back in the queue, decision cleared';
+  assert (select change_reason from public.hiring_requests where id = '60000000-0000-0000-0000-000000000033') is null, 'the old reason is cleared on resubmit (history keeps it)';
 end $$;
 reset role;
 set app.test_uid = '00000000-0000-0000-0000-000000000001';  -- Alex approves the revision
@@ -2890,6 +2891,119 @@ begin
   assert (select snapshot->>'title' from public.hiring_request_history where request_id = '60000000-0000-0000-0000-000000000033' and kind = 'resubmitted') = 'Senior Dispatcher', 'the revision is snapshotted';
   assert (select actor_id from public.hiring_request_history where request_id = '60000000-0000-0000-0000-000000000033' and kind = 'resubmitted') = '20000000-0000-0000-0000-000000000002', 'who resubmitted';
 end $$;
+
+-- ================================================================ 0034
+-- Notifications: a request tells the approvers (HR inbox when set), a
+-- decision tells the person, nothing is doubled, people read only their
+-- own and mark them read; hiring and document events likewise.
+set app.test_uid = '';
+update public.companies set hr_notification_email = 'hr@a.test' where id = '10000000-0000-0000-0000-00000000000a';
+update public.people set work_email = 'pia@a.test' where id = '20000000-0000-0000-0000-000000000021';
+delete from public.notifications;  -- earlier blocks fired the triggers; start counting here
+-- Pia files a request → Alex (leave.approve in A) is told, to the HR inbox.
+set app.test_uid = '00000000-0000-0000-0000-000000000021';
+set role authenticated;
+do $$
+declare r jsonb;
+begin
+  r := public.request_leave('20000000-0000-0000-0000-000000000021', 'annual', '2027-11-08', '2027-11-09', 'Long weekend');
+  perform set_config('app.smoke_req', r->>'request_id', false);
+  assert (select count(*) from public.notifications) = 0, 'Pia sees none of the approvers'' notifications';
+end $$;
+reset role;
+set app.test_uid = '';
+do $$
+declare n record;
+begin
+  select * into n from public.notifications where kind = 'leave.requested' and person_id = '20000000-0000-0000-0000-000000000001';
+  assert n.title = 'Leave request from Pia Planner', 'approver notified: ' || coalesce(n.title, 'none');
+  assert n.email_to = 'hr@a.test' and n.email_status = 'pending', 'HR inbox, queued: ' || coalesce(n.email_to, 'none');
+  assert n.link = '/leave?tab=requests' and n.body like 'Annual leave · 08 Nov → 09 Nov 2027 · 2 working days — "Long weekend"', 'body: ' || n.body;
+  assert (select count(*) from public.notifications where dedupe_key like 'leave.requested:' || current_setting('app.smoke_req') || ':%') = 1, 'one row per event and recipient';
+  -- A second approver gets their own row for the same event.
+  insert into public.grant_capabilities (grant_id, capability_key) values ('40000000-0000-0000-0000-000000000002', 'leave.approve') on conflict do nothing;  -- Fiona too
+  perform app.notify('20000000-0000-0000-0000-000000000002', '10000000-0000-0000-0000-00000000000a', 'leave.requested', 'Leave request from Pia Planner', 'x', '/leave?tab=requests',
+    'leave_request', current_setting('app.smoke_req')::uuid, 'leave.requested:' || current_setting('app.smoke_req'), true);
+  perform app.notify('20000000-0000-0000-0000-000000000002', '10000000-0000-0000-0000-00000000000a', 'leave.requested', 'Leave request from Pia Planner', 'x', '/leave?tab=requests',
+    'leave_request', current_setting('app.smoke_req')::uuid, 'leave.requested:' || current_setting('app.smoke_req'), true);
+  assert (select count(*) from public.notifications where dedupe_key like 'leave.requested:' || current_setting('app.smoke_req') || ':%') = 2, 'two recipients, one row each, repeats ignored';
+end $$;
+-- Alex approves → Pia is told at her own address; Alex reads his own row; RLS keeps Pia's rows from him.
+set app.test_uid = '00000000-0000-0000-0000-000000000001';
+set role authenticated;
+do $$
+declare n record;
+begin
+  perform public.decide_leave(current_setting('app.smoke_req')::uuid, 'approved', 'Enjoy');
+  assert (select count(*) from public.notifications where person_id <> '20000000-0000-0000-0000-000000000001') = 0, 'Alex reads only his own';
+  assert (select count(*) from public.notifications where read_at is null) = 1, 'one unread';
+  assert public.mark_notifications_read() = 1, 'marked read';
+  assert (select count(*) from public.notifications where read_at is null) = 0, 'none unread';
+end $$;
+reset role;
+set app.test_uid = '';
+do $$
+declare n record;
+begin
+  select * into n from public.notifications where kind = 'leave.decided' and person_id = '20000000-0000-0000-0000-000000000021';
+  assert n.title = 'Your leave was approved: 08 Nov → 09 Nov 2027', 'person told: ' || coalesce(n.title, 'none');
+  assert n.email_to = 'pia@a.test' and n.body like '%Enjoy · by Alex Director', 'own address, note and decider: ' || n.body;
+end $$;
+-- A cancellation ask and its decline.
+set app.test_uid = '';
+update public.leave_requests set start_date = current_date - 1, end_date = current_date, working_days = 2 where id = current_setting('app.smoke_req')::uuid;
+set app.test_uid = '00000000-0000-0000-0000-000000000021';
+set role authenticated;
+select public.request_leave_cancellation(current_setting('app.smoke_req')::uuid, 'Came back early');
+reset role;
+set app.test_uid = '00000000-0000-0000-0000-000000000001';
+set role authenticated;
+select public.decline_leave_cancellation(current_setting('app.smoke_req')::uuid, 'Already counted');
+reset role;
+set app.test_uid = '';
+do $$
+begin
+  assert (select count(*) from public.notifications where kind = 'leave.cancel_asked' and person_id = '20000000-0000-0000-0000-000000000001') = 1, 'approver told of the ask';
+  assert (select title from public.notifications where kind = 'leave.cancel_declined' and person_id = '20000000-0000-0000-0000-000000000021') like 'Your leave stands:%', 'person told of the decline';
+end $$;
+-- Hiring: Fiona submits with Alex as hiring manager → Alex is assigned (awaiting approval) and, being the approver, also gets the request.
+set app.test_uid = '00000000-0000-0000-0000-000000000002';
+set role authenticated;
+insert into public.hiring_requests (id, company_id, title, status, requested_by, hiring_manager_id, target_start_date) values
+  ('60000000-0000-0000-0000-000000000034', '10000000-0000-0000-0000-00000000000a', 'Fleet Lead', 'submitted', '20000000-0000-0000-0000-000000000002', '20000000-0000-0000-0000-000000000001', '2027-03-01');
+reset role;
+set app.test_uid = '';
+do $$
+declare n record;
+begin
+  select * into n from public.notifications where kind = 'hiring.assigned' and person_id = '20000000-0000-0000-0000-000000000001';
+  assert n.title = 'You are the hiring manager for Fleet Lead' and n.body like '%target employee start 01 Mar 2027 · awaiting approval%', 'assigned, awaiting: ' || coalesce(n.body, 'none');
+  assert n.email_to = 'alex@a.test', 'the manager''s own address (not the HR inbox)';
+  assert (select count(*) from public.notifications where kind = 'hiring.submitted' and entity_id = '60000000-0000-0000-0000-000000000034') >= 1, 'approvers told of the request';
+end $$;
+set app.test_uid = '00000000-0000-0000-0000-000000000001';
+set role authenticated;
+update public.hiring_requests set status = 'approved' where id = '60000000-0000-0000-0000-000000000034';
+reset role;
+set app.test_uid = '';
+do $$
+begin
+  assert (select title from public.notifications where kind = 'hiring.go' and person_id = '20000000-0000-0000-0000-000000000001') = 'Recruitment can proceed: Fleet Lead', 'go-ahead to the manager';
+  assert (select title from public.notifications where kind = 'hiring.decided' and person_id = '20000000-0000-0000-0000-000000000002') = 'Hiring request approved: Fleet Lead', 'requester told';
+end $$;
+-- Approver with no work email: the in-app row stays, the mail is skipped.
+update public.people set work_email = null where id = '20000000-0000-0000-0000-000000000001';
+update public.companies set hr_notification_email = null where id = '10000000-0000-0000-0000-00000000000a';
+set app.test_uid = '00000000-0000-0000-0000-000000000021';
+set role authenticated;
+select public.request_leave('20000000-0000-0000-0000-000000000021', 'annual', '2027-11-15', '2027-11-15');
+reset role;
+set app.test_uid = '';
+do $$
+begin
+  assert (select email_status from public.notifications where kind = 'leave.requested' and person_id = '20000000-0000-0000-0000-000000000001' order by created_at desc limit 1) = 'skipped', 'no address → skipped, row kept';
+end $$;
+update public.people set work_email = 'alex@a.test' where id = '20000000-0000-0000-0000-000000000001';
 
 -- ================================================================ 0028
 -- Field Notebook import: dry run writes nothing, commit links an existing

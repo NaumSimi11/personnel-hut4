@@ -190,6 +190,9 @@ test('candidate page: files behind signed links, screening answers, decision, no
   await page.getByRole('button', { name: 'Record screening outcome' }).click()
   await page.getByRole('dialog').locator('#handoff-outcome').selectOption('screening')
   await page.getByRole('dialog').locator('#handoff-note').fill('Need to check availability before arranging interview.')
+  // A new step gets its own due date; the previous one is not inherited.
+  await expect(page.getByRole('dialog').locator('#handoff-due')).toHaveValue('')
+  await page.getByRole('dialog').locator('#handoff-due').fill('2030-01-15')
   await page.getByRole('dialog').getByRole('button', { name: 'Save outcome and next step' }).click()
   await expect(page.getByRole('dialog')).not.toBeVisible()
   await expect(page.locator('.stage-badge')).toHaveText('screening')
@@ -202,6 +205,7 @@ test('candidate page: files behind signed links, screening answers, decision, no
   // Stage move from the panel, then a rejection with a required reason.
   await page.getByRole('button', { name: 'Record screening outcome' }).click()
   await page.getByRole('dialog').locator('#handoff-note').fill('Screening passed; arrange technical interview.')
+  await page.getByRole('dialog').locator('#handoff-due').fill('2030-01-22')
   await page.getByRole('dialog').getByRole('button', { name: 'Save outcome and next step' }).click()
   await expect(page.locator('.stage-badge')).toHaveText('interview')
   await page.locator('.decision-panel').getByRole('button', { name: 'Reject', exact: true }).click()

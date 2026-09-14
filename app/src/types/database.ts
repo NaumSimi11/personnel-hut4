@@ -3723,6 +3723,10 @@ export type Database = {
         }
         Returns: Json
       }
+      set_avatar: {
+        Args: { p_path?: string; p_person_id: string }
+        Returns: Json
+      }
       set_leave_entitlement: {
         Args: {
           p_company_id: string

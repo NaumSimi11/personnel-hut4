@@ -89,37 +89,36 @@ onMounted(load)
       <div>
         <div class="eyebrow">Leave</div>
         <h1>Who is away, and what is left.</h1>
-        <p class="page-sub">
-          Requests are approved by HR or the director of the company; balances follow the person's employment.
-        </p>
+        <p class="page-sub">Requests go to whoever approves leave in the company; balances follow the employment.</p>
       </div>
-      <CompanyFilter
-        v-if="companies.length > 1 && activeTab !== 'holidays' && activeTab !== 'requests'"
-        id="leave-company"
-        v-model="companyId"
-        :companies="companies"
-        all-label="All companies"
-        label="Company"
-      />
     </div>
 
     <p v-if="error" class="error-note" role="alert">{{ error }}</p>
     <div v-else-if="loading" class="empty">Loading…</div>
     <div v-else-if="!companies.length" class="empty">You are not employed in any company yet, so there is no leave to show.</div>
     <template v-else>
-      <div class="tabs" role="tablist" aria-label="Leave">
-        <button
-          v-for="tab in visibleTabs"
-          :key="tab.id"
-          class="tab"
-          :class="{ active: activeTab === tab.id }"
-          type="button"
-          role="tab"
-          :aria-selected="activeTab === tab.id"
-          @click="selectTab(tab.id)"
-        >
-          {{ tab.label }}
-        </button>
+      <div class="tabs-row">
+        <div class="tabs" role="tablist" aria-label="Leave">
+          <button
+            v-for="tab in visibleTabs"
+            :key="tab.id"
+            class="tab"
+            :class="{ active: activeTab === tab.id }"
+            type="button"
+            role="tab"
+            :aria-selected="activeTab === tab.id"
+            @click="selectTab(tab.id)"
+          >
+            {{ tab.label }}
+          </button>
+        </div>
+        <CompanyFilter
+          v-if="companies.length > 1 && activeTab !== 'holidays' && activeTab !== 'requests'"
+          id="leave-company"
+          v-model="companyId"
+          :companies="companies"
+          all-label="All companies"
+        />
       </div>
       <LeaveCalendarPanel v-if="activeTab === 'calendar'" :companies="selected" />
       <LeaveRequestsPanel v-else-if="activeTab === 'requests'" :company-ids="approverCompanies.map((c) => c.id)" />
@@ -135,7 +134,9 @@ onMounted(load)
 <style scoped>
 .page-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-bottom: 24px; }
 .page-sub { margin: 0; font-size: 12px; color: var(--muted); max-width: 560px; }
-.tabs { display: flex; gap: 22px; border-bottom: 1px solid var(--line); margin-bottom: 22px; overflow: auto; }
+.tabs-row { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; border-bottom: 1px solid var(--line); margin-bottom: 22px; flex-wrap: wrap; }
+.tabs-row > :last-child:not(.tabs) { margin-bottom: 8px; }
+.tabs { display: flex; gap: 22px; overflow: auto; }
 .tab { background: none; border: 0; border-bottom: 2px solid transparent; padding: 10px 0; font-size: 12px; color: var(--muted); cursor: pointer; white-space: nowrap; }
 .tab.active { color: var(--green); font-weight: 600; border-bottom-color: var(--green); }
 </style>

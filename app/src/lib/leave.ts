@@ -187,3 +187,20 @@ export function clashesWith(
     (r) => r.person_id !== q.personId && q.colleagueIds.has(r.person_id) && r.start_date <= q.end && r.end_date >= q.start,
   )
 }
+
+/** "Filip Babamov" → "Filip B." — what fits in a calendar chip. */
+export function shortName(fullName: string): string {
+  const parts = fullName.trim().split(/\s+/).filter(Boolean)
+  if (parts.length < 2) return parts[0] ?? ''
+  return `${parts[0]} ${parts[parts.length - 1]![0]!.toUpperCase()}.`
+}
+
+/** Chip colour per leave type; "away" is the redacted view. */
+export const LEAVE_TYPE_TONE: Record<string, 'green' | 'amber' | 'blue' | 'grey'> = {
+  annual: 'green',
+  sick: 'amber',
+  unpaid: 'blue',
+  justified_day: 'blue',
+  other: 'blue',
+  away: 'grey',
+}

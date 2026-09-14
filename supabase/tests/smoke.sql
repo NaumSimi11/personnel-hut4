@@ -2667,6 +2667,47 @@ end $$;
 reset role;
 set app.test_uid = '';
 
+-- ================================================================ 0031
+-- Profile photos: a person sets their own, someone who may edit their record
+-- may too, anyone else is refused, and the path must sit in the person's
+-- own folder. The storage policy helper answers the same way.
+set app.test_uid = '00000000-0000-0000-0000-000000000003';  -- Omar, no grants
+set role authenticated;
+do $$
+declare r jsonb;
+begin
+  r := public.set_avatar('20000000-0000-0000-0000-000000000003', '20000000-0000-0000-0000-000000000003/a1b2.webp');
+  assert r->>'avatar_url' = '20000000-0000-0000-0000-000000000003/a1b2.webp', 'own photo set';
+  assert (select avatar_url from public.people where id = '20000000-0000-0000-0000-000000000003') = '20000000-0000-0000-0000-000000000003/a1b2.webp', 'stored on the record';
+  assert app.can_write_avatar('20000000-0000-0000-0000-000000000003/a1b2.webp'), 'may write own folder';
+  assert not app.can_write_avatar('20000000-0000-0000-0000-000000000002/x.webp'), 'not a colleague''s folder';
+  assert not app.can_write_avatar('junk/x.webp'), 'not a junk folder';
+  begin
+    perform public.set_avatar('20000000-0000-0000-0000-000000000003', '20000000-0000-0000-0000-000000000002/x.webp');
+    raise exception 'FAIL: photo stored under another person''s folder';
+  exception when raise_exception then
+    if sqlerrm not like '%own folder%' then raise; end if;
+  end;
+  begin
+    perform public.set_avatar('20000000-0000-0000-0000-000000000002', '20000000-0000-0000-0000-000000000002/x.webp');
+    raise exception 'FAIL: changed a colleague''s photo without edit rights';
+  exception when insufficient_privilege then null;
+  end;
+  r := public.set_avatar('20000000-0000-0000-0000-000000000003', null);
+  assert r->>'previous' = '20000000-0000-0000-0000-000000000003/a1b2.webp' and (r->>'avatar_url') is null, 'cleared, previous path returned for cleanup';
+end $$;
+reset role;
+set app.test_uid = '00000000-0000-0000-0000-000000000004';  -- Ada, platform admin
+set role authenticated;
+do $$
+begin
+  perform public.set_avatar('20000000-0000-0000-0000-000000000003', '20000000-0000-0000-0000-000000000003/by-hr.webp');
+  assert (select avatar_url from public.people where id = '20000000-0000-0000-0000-000000000003') = '20000000-0000-0000-0000-000000000003/by-hr.webp', 'HR may set it';
+  assert app.can_write_avatar('20000000-0000-0000-0000-000000000003/by-hr.webp'), 'and write the folder';
+end $$;
+reset role;
+set app.test_uid = '';
+
 -- ================================================================ 0028
 -- Field Notebook import: dry run writes nothing, commit links an existing
 -- person by email, creates the rest, keeps legacy ids, reconciles and

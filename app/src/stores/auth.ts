@@ -12,6 +12,7 @@ export const useAuthStore = defineStore('auth', () => {
   // actions: RLS and the RPCs re-check every capability server-side.
   const capabilities = ref<Record<string, ReadonlySet<string>>>({})
   const ready = ref(false)
+  const avatarPath = ref<string | null>(null)
 
   const isAuthenticated = computed(() => session.value !== null)
   // Set at invite/reset time via the admin API; cleared only by the
@@ -36,7 +37,7 @@ export const useAuthStore = defineStore('auth', () => {
     if (!session.value) return
     const { data, error } = await supabase
       .from('people')
-      .select('id, full_name')
+      .select('id, full_name, avatar_url')
       .eq('user_id', session.value.user.id)
       .maybeSingle()
     if (error) {
@@ -45,6 +46,7 @@ export const useAuthStore = defineStore('auth', () => {
     }
     personName.value = data?.full_name ?? null
     personId.value = data?.id ?? null
+    avatarPath.value = data?.avatar_url ?? null
     if (!personId.value) {
       isAdmin.value = false
       capabilities.value = {}
@@ -103,6 +105,7 @@ export const useAuthStore = defineStore('auth', () => {
   return {
     session,
     personName,
+    avatarPath,
     personId,
     isAdmin,
     capabilities,

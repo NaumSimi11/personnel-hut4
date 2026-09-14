@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AvatarImage from '@/components/AvatarImage.vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 
@@ -30,7 +31,7 @@ async function signOut() {
         <router-link :to="{ name: 'my-workspace' }">My workspace</router-link>
       </nav>
       <div class="sidebar-bottom">
-        <span class="avatar avatar-dark">{{ (auth.personName ?? 'U')[0] }}</span>
+        <AvatarImage :name="auth.personName ?? 'U'" :path="auth.avatarPath" size="small" />
         <div>
           <strong>{{ auth.personName ?? auth.session?.user.email }}</strong>
           <button class="linkish" @click="signOut">Sign out</button>

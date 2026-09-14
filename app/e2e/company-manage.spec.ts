@@ -140,7 +140,7 @@ test('admin creates a full company profile, edits it, then archives it', async (
   await expect(card).toContainText(DIRECTOR_NAME)
 
   // Edit
-  await card.getByRole('link', { name: 'Open company profile →' }).click()
+  await card.click()
   await page.getByRole('link', { name: 'Edit details' }).click()
   await expect(page).toHaveURL(new RegExp(`/companies/${companyId}/edit$`))
   await expect(page.locator('#company-name')).toHaveValue(NAME)

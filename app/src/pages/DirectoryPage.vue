@@ -8,10 +8,12 @@ import InviteAccessDialog from '@/components/InviteAccessDialog.vue'
 import AddPersonDialog from '@/components/AddPersonDialog.vue'
 import ImportPeopleDialog from '@/components/ImportPeopleDialog.vue'
 import CompanyFilter from '@/components/CompanyFilter.vue'
+import AvatarImage from '@/components/AvatarImage.vue'
 
 type DirectoryRow = {
   id: string
   full_name: string
+  avatar_url: string | null
   work_email: string | null
   employment_periods: {
     job_title: string
@@ -73,7 +75,7 @@ async function load(): Promise<void> {
   const { data, error: err } = await supabase
     .from('people')
     .select(
-      'id, full_name, work_email, employment_periods!person_id(job_title, status, start_date, end_date, last_working_date, company_id, company:companies(name), department:departments(name))',
+      'id, full_name, work_email, avatar_url, employment_periods!person_id(job_title, status, start_date, end_date, last_working_date, company_id, company:companies(name), department:departments(name))',
     )
     .is('archived_at', null)
     .order('full_name')
@@ -162,7 +164,7 @@ onMounted(load)
                   class="person-cell person-link"
                   :to="{ name: 'person', params: { personId: p.id } }"
                 >
-                  <span class="avatar" aria-hidden="true">{{ initials(p.full_name) }}</span>
+                  <AvatarImage :name="p.full_name" :path="p.avatar_url" />
                   <div>
                     <strong>{{ p.full_name }}</strong>
                     <small>{{ p.work_email ?? '—' }}</small>

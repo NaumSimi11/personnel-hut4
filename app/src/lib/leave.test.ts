@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   balanceAfter,
+  shortName,
   clashesWith,
   dayKind,
   leaveProgress,
@@ -86,5 +87,14 @@ describe('request preview', () => {
     ]
     const clashes = clashesWith(rows, { start: '2027-03-01', end: '2027-03-05', personId: 'me', colleagueIds: new Set(['p1', 'p3']) })
     expect(clashes.map((c) => c.full_name)).toEqual(['Ana', 'Cy'])
+  })
+})
+
+describe('shortName', () => {
+  it('keeps the first name and initials the rest', () => {
+    expect(shortName('Filip Babamov')).toBe('Filip B.')
+    expect(shortName('Ina Pop-Ducheva')).toBe('Ina P.')
+    expect(shortName('Ana')).toBe('Ana')
+    expect(shortName('  Marija  Serafimovska ')).toBe('Marija S.')
   })
 })

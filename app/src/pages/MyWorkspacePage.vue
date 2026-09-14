@@ -5,6 +5,7 @@ import { useAuthStore } from '@/stores/auth'
 import { departureState } from '@/lib/departure'
 import CompensationCard from '@/components/CompensationCard.vue'
 import LeaveCard from '@/components/LeaveCard.vue'
+import AvatarUpload from '@/components/AvatarUpload.vue'
 import DocumentsCard from '@/components/DocumentsCard.vue'
 import MyRequestsCard from '@/components/MyRequestsCard.vue'
 import MyPoliciesCard from '@/components/MyPoliciesCard.vue'
@@ -246,10 +247,20 @@ onMounted(load)
     </template>
 
     <template v-else>
-      <div class="page-head">
-        <div class="eyebrow">My workspace</div>
-        <h1>Welcome, {{ firstName }}.</h1>
-        <p class="page-sub">Your record, your tasks, and what you can do in each company.</p>
+      <div class="page-head me-head">
+        <AvatarUpload
+          v-if="auth.personId"
+          :person-id="auth.personId"
+          :name="auth.personName ?? ''"
+          :path="auth.avatarPath"
+          :editable="true"
+          @changed="(p) => (auth.avatarPath = p)"
+        />
+        <div>
+          <div class="eyebrow">My workspace</div>
+          <h1>Welcome, {{ firstName }}.</h1>
+          <p class="page-sub">Your record, your tasks, and what you can do in each company. Click the picture to add your photo.</p>
+        </div>
       </div>
 
       <p v-if="error" class="error-note" role="alert">{{ error }}</p>
@@ -396,6 +407,7 @@ onMounted(load)
 
 <style scoped>
 .page-head { margin-bottom: 22px; }
+.me-head { display: flex; align-items: center; gap: 22px; flex-wrap: wrap; }
 .page-sub { margin: 0; font-size: 12px; color: var(--muted); }
 .grid-two { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(260px, 1fr); gap: 22px; }
 @media (max-width: 900px) { .grid-two { grid-template-columns: 1fr; } }

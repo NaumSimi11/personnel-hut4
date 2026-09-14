@@ -72,6 +72,7 @@ round; merging it into `main` is the maintainer's decision.
 | 039 | Leave flows parity with Field Notebook: day rail on every calendar, balance-after + clash preview from `requestable_leave`, sick-leave certificates through the documents module (self-upload window, storage insert policy), notify route (approvers on submit/ask, person on decision; state-checked, throttled) (migration 0029) | DONE (reviewed, main; smoke; E2E leave) |
 | — | Hiring requests: a platform admin may decide their own request (the four-eyes rule stays for everyone else; decided_by still server-set) — asked for while testing (migration 0030) | DONE (main; smoke; E2E hiring-requests) |
 | — | Bulk CVs: "Upload CVs" on a job's Applications tab — drop many files, names guessed from file names and corrected in place, each becomes a candidate at New with the CV attached; per-file failure reporting — no migration | DONE (main; unit for the name guess; E2E upload-cvs) |
+| 040 | Profile photos (public `avatars` bucket, `set_avatar`, browser-side square + shrink, `AvatarImage` / `AvatarUpload` everywhere a face shows); Leave calendar love (stats strip, legend, type-coloured chips, today, richer day rail); Companies page as identity cards (migration 0031) | DONE (main; smoke; unit; E2E avatar + 7 restyled specs) |
 | — | Deployable product: the service serves the built app (SPA fallback, `/api` untouched), Dockerfile + `docs/deployment.md` | DONE (main; server tests 45/45; image built and smoked locally) |
 
 Round-03 executors branch from `main` as `feature/NNN-<slug>`; the reviewer

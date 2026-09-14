@@ -126,7 +126,7 @@ test('companies list → company profile → tabs → deep link', async ({ page 
 
   const snowballCard = page.locator('.company-card', { hasText: 'Snowball' })
   await expect(snowballCard).toBeVisible()
-  await snowballCard.getByRole('link', { name: 'Open company profile →' }).click()
+  await snowballCard.click()
 
   // Overview
   await expect(page.getByRole('heading', { name: 'Snowball' })).toBeVisible()

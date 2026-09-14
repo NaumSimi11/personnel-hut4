@@ -187,7 +187,7 @@ test('holiday import → entitlement → request (holiday excluded) → queue �
   // The company calendar shows the entry on the Wednesday-free week.
   await page.goto(`/leave?tab=calendar&company=${companyId}`)
   for (let i = 0; i < 12 && (await page.locator('.card-head h2').first().textContent())?.trim() !== MONTH_LABEL; i += 1) {
-    await page.getByRole('button', { name: 'Next ›' }).click()
+    await page.getByRole('button', { name: 'Next month' }).click()
   }
   // The entry shows on a working day of the week — the first one that is not a holiday.
   const off = new Set((offDays ?? []).map((h) => h.date))

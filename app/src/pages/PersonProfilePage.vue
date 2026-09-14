@@ -9,6 +9,7 @@ import ScheduleChangeDialog, { type ChangeTarget } from '@/components/ScheduleCh
 import TransferDialog from '@/components/TransferDialog.vue'
 import CompensationCard from '@/components/CompensationCard.vue'
 import LeaveCard from '@/components/LeaveCard.vue'
+import AvatarUpload from '@/components/AvatarUpload.vue'
 import DocumentsCard from '@/components/DocumentsCard.vue'
 import DocumentRequestsCard from '@/components/DocumentRequestsCard.vue'
 import PersonEquipmentCard from '@/components/PersonEquipmentCard.vue'
@@ -51,7 +52,7 @@ const route = useRoute()
 const auth = useAuthStore()
 const personId = route.params.personId as string
 
-const person = ref<{ full_name: string; work_email: string | null; user_id: string | null } | null>(null)
+const person = ref<{ full_name: string; work_email: string | null; user_id: string | null; avatar_url: string | null } | null>(null)
 const employments = ref<Employment[]>([])
 const grants = ref<Grant[]>([])
 // Companies the person has (had) employment with — where their documents may live.
@@ -215,7 +216,7 @@ async function load(): Promise<void> {
   const due = await supabase.rpc('apply_due_employment_changes')
   if (due.error) console.error('Applying due employment changes failed:', due.error.message)
   const [personRes, empRes, grantRes, deptRes, locRes, peopleRes, typesRes] = await Promise.all([
-    supabase.from('people').select('full_name, work_email, user_id').eq('id', personId).maybeSingle(),
+    supabase.from('people').select('full_name, work_email, user_id, avatar_url').eq('id', personId).maybeSingle(),
     supabase
       .from('employment_periods')
       .select(
@@ -326,7 +327,13 @@ onMounted(async () => {
     <template v-else-if="person">
       <header class="profile-head card">
         <div class="hero">
-          <span class="avatar big" aria-hidden="true">{{ initials(person.full_name) }}</span>
+          <AvatarUpload
+            :person-id="personId"
+            :name="person.full_name"
+            :path="person.avatar_url"
+            :editable="auth.personId === personId || editableCompanies.length > 0"
+            @changed="(p) => { if (person) person = { ...person, avatar_url: p }; if (auth.personId === personId) auth.avatarPath = p }"
+          />
           <div class="who">
             <div class="eyebrow">Employee profile</div>
             <h1>{{ person.full_name }}</h1>

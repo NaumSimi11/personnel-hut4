@@ -60,12 +60,18 @@ begin
       insert into fn_report values (r->>'email', 'never set a password — invite from Personnel'); continue;
     end if;
     v_id := case when exists (select 1 from auth.users where id = (r->>'id')::uuid) then gen_random_uuid() else (r->>'id')::uuid end;
+    -- GoTrue scans the token / change columns as plain strings: a NULL there
+    -- breaks every admin user lookup ("Database error finding users"), so
+    -- they are written as '' the way GoTrue itself does.
     insert into auth.users (id, instance_id, aud, role, email, encrypted_password, email_confirmed_at,
-      raw_app_meta_data, raw_user_meta_data, created_at, updated_at, last_sign_in_at)
+      raw_app_meta_data, raw_user_meta_data, created_at, updated_at, last_sign_in_at,
+      confirmation_token, recovery_token, email_change_token_new, email_change, email_change_token_current,
+      phone_change, phone_change_token, reauthentication_token, is_sso_user, is_anonymous)
     values (v_id, '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', r->>'email', r->>'hash',
       coalesce((r->>'confirmed_at')::timestamptz, now()),
       jsonb_build_object('provider', 'email', 'providers', jsonb_build_array('email'), 'must_change_password', false),
-      '{}'::jsonb, coalesce((r->>'created_at')::timestamptz, now()), now(), (r->>'last_sign_in_at')::timestamptz);
+      '{}'::jsonb, coalesce((r->>'created_at')::timestamptz, now()), now(), (r->>'last_sign_in_at')::timestamptz,
+      '', '', '', '', '', '', '', '', false, false);
     insert into auth.identities (id, user_id, provider_id, provider, identity_data, created_at, updated_at, last_sign_in_at)
     values (gen_random_uuid(), v_id, v_id::text, 'email',
       jsonb_build_object('sub', v_id::text, 'email', r->>'email', 'email_verified', true, 'phone_verified', false),

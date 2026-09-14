@@ -53,6 +53,15 @@ async function cleanup(): Promise<void> {
     await db.from('employment_periods').delete().in('id', periodIds)
   }
   if (ids.length) await db.from('people').delete().in('id', ids)
+  // The admin's own record rides on their real employment when they have one (see seed): remove it by its signature.
+  const adminPersonId = await findAdminPersonId().catch(() => null)
+  if (adminPersonId) {
+    const { data: own } = await db.from('employment_periods').select('id').eq('person_id', adminPersonId)
+    const ownIds = (own ?? []).map((p) => p.id)
+    if (ownIds.length) {
+      await db.from('compensation_records').delete().in('employment_period_id', ownIds).eq('amount', 5000).eq('pay_basis_key', 'monthly').eq('effective_date', '2024-01-01')
+    }
+  }
 }
 
 async function seed(adminPersonId: string): Promise<void> {
@@ -84,13 +93,26 @@ async function seed(adminPersonId: string): Promise<void> {
   })
   if (recErr) throw new Error(`Could not seed the record: ${recErr.message}`)
 
-  const { data: adminPeriod, error: adminErr } = await db
+  // The admin may already be employed for real (the Field Notebook import gave them a period);
+  // a second overlapping period is refused by the database, so ride on the existing one.
+  const { data: existing } = await db
     .from('employment_periods')
-    .insert({ person_id: adminPersonId, company_id: companyId, job_title: ADMIN_TITLE, status: 'active', start_date: '2024-01-01' })
     .select('id')
-    .single()
-  if (adminErr || !adminPeriod) throw new Error(`Could not seed the admin period: ${adminErr?.message}`)
-  adminPeriodId = adminPeriod.id
+    .eq('person_id', adminPersonId)
+    .in('status', ['active', 'pre_start'])
+    .limit(1)
+    .maybeSingle()
+  if (existing) {
+    adminPeriodId = existing.id
+  } else {
+    const { data: adminPeriod, error: adminErr } = await db
+      .from('employment_periods')
+      .insert({ person_id: adminPersonId, company_id: companyId, job_title: ADMIN_TITLE, status: 'active', start_date: '2024-01-01' })
+      .select('id')
+      .single()
+    if (adminErr || !adminPeriod) throw new Error(`Could not seed the admin period: ${adminErr?.message}`)
+    adminPeriodId = adminPeriod.id
+  }
   await db.from('compensation_records').insert({
     employment_period_id: adminPeriodId,
     amount: 5000,

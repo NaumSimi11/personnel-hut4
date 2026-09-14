@@ -102,7 +102,8 @@ test('structure → immediate change → scheduled change → cycle refused → 
   await expect(updated).toBeVisible()
   await expect(updated).toContainText(DEPARTMENT)
   await expect(updated).toContainText(`reports to ${MANAGER}`)
-  await expect(page.locator('.profile-head')).toContainText(`Manager: ${MANAGER}`)
+  // The facts strip under the name names the manager.
+  await expect(page.locator('.profile-head .fact', { hasText: 'Reports to' })).toContainText(MANAGER)
 
   const { data: period } = await db
     .from('employment_periods')

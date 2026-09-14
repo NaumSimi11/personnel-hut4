@@ -14,6 +14,8 @@ import DocumentRequestsCard from '@/components/DocumentRequestsCard.vue'
 import PersonEquipmentCard from '@/components/PersonEquipmentCard.vue'
 import { describeChanges, type Lookups } from '@/lib/employmentChanges'
 import { departureState, friendlyDepartureError } from '@/lib/departure'
+import { tenureLabel } from '@/lib/tenure'
+import { todayDb } from '@/lib/compensation'
 
 type Employment = {
   id: string
@@ -137,6 +139,34 @@ async function cancelChange(changeId: string): Promise<void> {
 // A scheduled departure keeps the person current until they are marked former.
 const current = computed(() => employments.value.find((e) => departureState(e) !== 'former') ?? null)
 
+// The facts strip under the name: what you would ask about this person first.
+const leaveLeft = ref<number | null>(null)
+const facts = computed(() => {
+  const c = current.value
+  if (!c) return []
+  const list: { label: string; value: string; sub?: string }[] = [
+    { label: 'Started', value: c.start_date, sub: tenureLabel(c.start_date, c.end_date, todayDb()) },
+  ]
+  if (c.department) list.push({ label: 'Department', value: c.department.name })
+  if (c.location) list.push({ label: 'Location', value: c.location.name })
+  if (c.manager) list.push({ label: 'Reports to', value: c.manager.full_name })
+  if (c.employment_type_key) list.push({ label: 'Type', value: c.employment_type_key.replace('_', '-').replace(/^./, (ch) => ch.toUpperCase()) })
+  if (leaveLeft.value !== null) list.push({ label: 'Leave left', value: `${leaveLeft.value} days`, sub: String(new Date().getUTCFullYear()) })
+  return list
+})
+
+async function loadLeaveLeft(): Promise<void> {
+  const c = current.value
+  if (!c) return
+  const { data } = await supabase.rpc('leave_balance', { p_person_id: personId, p_company_id: c.company_id, p_year: Number(todayDb().slice(0, 4)) })
+  const b = data as { exists?: boolean; remaining?: number } | null
+  leaveLeft.value = b?.exists ? Number(b.remaining ?? 0) : null
+}
+
+function tenure(emp: Employment): string {
+  return tenureLabel(emp.start_date, emp.end_date, todayDb())
+}
+
 function canStartDeparture(emp: Employment): boolean {
   return auth.can(emp.company_id, 'departure.start')
 }
@@ -222,6 +252,7 @@ async function load(): Promise<void> {
   }
   person.value = personRes.data
   employments.value = (empRes.data ?? []) as Employment[]
+  void loadLeaveLeft()
   grants.value = (grantRes.data ?? []) as Grant[]
   loading.value = false
 }
@@ -293,29 +324,36 @@ onMounted(async () => {
     <div v-if="loading" class="empty">Loading profile…</div>
 
     <template v-else-if="person">
-      <div class="profile-head">
-        <span class="avatar big" aria-hidden="true">{{ initials(person.full_name) }}</span>
-        <div>
-          <div class="eyebrow">Employee profile</div>
-          <h1>{{ person.full_name }}</h1>
-          <p class="meta">
-            {{ person.work_email ?? 'no work email' }} ·
-            {{ current ? `${current.job_title} · ${current.company?.name}` : 'no current employment' }}
-            <template v-if="current?.manager"> · Manager: {{ current.manager.full_name }}</template>
-            <span class="badge" :class="person.user_id ? 'green' : ''">
-              {{ person.user_id ? 'has sign-in account' : 'no account — record only' }}
-            </span>
-          </p>
+      <header class="profile-head card">
+        <div class="hero">
+          <span class="avatar big" aria-hidden="true">{{ initials(person.full_name) }}</span>
+          <div class="who">
+            <div class="eyebrow">Employee profile</div>
+            <h1>{{ person.full_name }}</h1>
+            <p class="meta">
+              <strong v-if="current">{{ current.job_title }}</strong>
+              <template v-if="current?.company"> · {{ current.company.name }}</template>
+              <template v-if="!current">No current employment</template>
+              <a v-if="person.work_email" :href="`mailto:${person.work_email}`" class="mail">{{ person.work_email }}</a>
+              <span v-if="current" class="badge" :class="current.status === 'active' ? 'green' : current.status === 'former' ? '' : 'blue'">{{ current.status.replace('_', ' ') }}</span>
+              <span class="badge" :class="person.user_id ? 'green' : ''">
+                {{ person.user_id ? 'has sign-in account' : 'no account — record only' }}
+              </span>
+            </p>
+          </div>
+          <div class="hero-actions">
+            <router-link class="button secondary" :to="{ name: 'access-editor', params: { personId } }">Manage access</router-link>
+          </div>
         </div>
-        <router-link
-          class="button secondary"
-          :to="{ name: 'access-editor', params: { personId } }"
-        >
-          Manage access
-        </router-link>
-      </div>
-
+        <dl v-if="facts.length" class="facts-strip">
+          <div v-for="f in facts" :key="f.label" class="fact">
+            <dt>{{ f.label }}</dt>
+            <dd>{{ f.value }}<small v-if="f.sub">{{ f.sub }}</small></dd>
+          </div>
+        </dl>
+      </header>
       <div class="grid-two">
+        <div class="main-column">
         <div class="card">
           <div class="card-head">
             <div>
@@ -359,11 +397,12 @@ onMounted(async () => {
           <div v-if="!employments.length" class="empty">
             No employment recorded. Add the first period to place them in a company.
           </div>
-          <div v-for="emp in employments" :key="emp.id" class="emp-row">
+          <div v-for="emp in employments" :key="emp.id" class="emp-row timeline" :class="{ current: emp.id === current?.id }">
+            <span class="dot" aria-hidden="true"></span>
             <div class="row-text">
               <strong>{{ emp.job_title }} · {{ emp.company?.name }}</strong>
               <small>
-                {{ emp.start_date }} → {{ emp.end_date ?? 'present' }}
+                {{ emp.start_date }} → {{ emp.end_date ?? 'present' }} · {{ tenure(emp) }}
                 <template v-if="emp.employment_type_key"> · {{ emp.employment_type_key.replace('_', ' ') }}</template>
               </small>
               <small v-if="employmentFacts(emp)" class="facts">{{ employmentFacts(emp) }}</small>
@@ -441,6 +480,10 @@ onMounted(async () => {
           </div>
         </div>
 
+        <LeaveCard :person-id="personId" :person-name="person.full_name" />
+        <CompensationCard :person-id="personId" :periods="employments" />
+        <PersonEquipmentCard :person-id="personId" :companies="personCompanies" />
+        </div>
         <ScheduleDepartureDialog ref="departureDialog" @scheduled="onDepartureScheduled" />
         <ScheduleChangeDialog ref="changeDialog" @saved="onChangeSaved" />
         <TransferDialog ref="transferDialog" @transferred="onTransferred" />
@@ -468,11 +511,8 @@ onMounted(async () => {
             </div>
           </div>
 
-          <LeaveCard :person-id="personId" :person-name="person.full_name" />
-          <CompensationCard :person-id="personId" :periods="employments" />
           <DocumentsCard :person-id="personId" :companies="personCompanies" />
           <DocumentRequestsCard :person-id="personId" :companies="personCompanies" />
-          <PersonEquipmentCard :person-id="personId" :companies="personCompanies" />
           <PrivateDetailsCard :person-id="personId" />
         </div>
       </div>
@@ -481,14 +521,32 @@ onMounted(async () => {
 </template>
 
 <style scoped>
-.profile-head { display: flex; align-items: center; gap: 18px; margin-bottom: 26px; flex-wrap: wrap; }
-.profile-head h1 { margin: 6px 0; }
-.profile-head .meta { margin: 0; color: var(--muted); font-size: 12px; display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
-.avatar.big { width: 62px; height: 62px; font-size: 20px; }
-.grid-two { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(260px, 1fr); gap: 22px; }
+.profile-head { margin-bottom: 22px; background: linear-gradient(135deg, #ffffff 0%, #f7faf6 100%); }
+.hero { display: flex; align-items: center; gap: 22px; padding: 26px 28px; flex-wrap: wrap; }
+.who { flex: 1; min-width: 240px; }
+.profile-head h1 { margin: 6px 0 8px; font-size: 32px; }
+.profile-head .meta { margin: 0; color: var(--muted); font-size: 13px; display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.profile-head .meta strong { color: var(--ink); font-weight: 600; }
+.profile-head .mail { color: var(--green); text-decoration: none; }
+.profile-head .mail:hover { text-decoration: underline; }
+.hero-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.avatar.big { width: 76px; height: 76px; font-size: 24px; background: linear-gradient(145deg, #dbe8d2, #b9d3c1); box-shadow: 0 10px 24px -12px rgba(22, 36, 31, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.8); }
+.facts-strip { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 0; margin: 0; border-top: 1px solid var(--line); background: #fff; }
+.fact { padding: 14px 22px; border-right: 1px solid var(--line); }
+.fact:last-child { border-right: 0; }
+.fact dt { font-size: 11px; text-transform: uppercase; letter-spacing: 0.1em; color: var(--muted); font-weight: 650; }
+.fact dd { margin: 4px 0 0; font-size: 14px; font-weight: 600; color: var(--ink); }
+.fact dd small { display: block; font-size: 11px; color: var(--muted); font-weight: 500; margin-top: 2px; text-transform: none; }
+.grid-two { display: grid; grid-template-columns: minmax(0, 1.45fr) minmax(300px, 1fr); gap: 22px; align-items: start; }
 @media (max-width: 900px) { .grid-two { grid-template-columns: 1fr; } }
-.right-column { display: grid; gap: 22px; align-content: start; }
+.main-column, .right-column { display: grid; gap: 22px; align-content: start; min-width: 0; }
 .emp-row { display: flex; align-items: center; gap: 13px; padding: 15px 24px; border-top: 1px solid #edf0eb; }
+.emp-row.timeline { position: relative; padding-left: 46px; }
+.emp-row.timeline::before { content: ''; position: absolute; left: 27px; top: 0; bottom: 0; width: 2px; background: var(--line); }
+.emp-row.timeline:first-of-type::before { top: 50%; }
+.emp-row.timeline:last-of-type::before { bottom: 50%; }
+.emp-row.timeline .dot { position: absolute; left: 22px; top: 50%; width: 12px; height: 12px; border-radius: 50%; transform: translateY(-50%); background: #fff; border: 2px solid var(--line-strong); box-shadow: 0 0 0 3px #fff; }
+.emp-row.timeline.current .dot { border-color: var(--green-bright); background: var(--green-bright); box-shadow: 0 0 0 3px #fff, 0 0 0 6px rgba(47, 122, 99, 0.18); }
 .row-text { flex: 1; min-width: 0; }
 .row-text strong { display: block; font-size: 12px; font-weight: 550; }
 .row-text small { display: block; font-size: 11px; color: var(--muted); margin-top: 4px; }

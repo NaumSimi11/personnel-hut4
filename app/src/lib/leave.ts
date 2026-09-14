@@ -230,3 +230,47 @@ export function shortDate(iso: string): string {
   const d = new Date(`${iso}T00:00:00Z`)
   return `${d.getUTCDate()} ${MONTHS[d.getUTCMonth()]}`
 }
+
+// ---------------------------------------------------------- corrections
+export interface CorrectionDay {
+  date: string
+  leave_type_key: string
+}
+
+/** The working days between two dates, in order — the rows of the correction dialog. */
+export function workingDaysInRange(start: string, end: string, holidays: readonly string[], closures: readonly string[]): string[] {
+  if (!ISO_DATE.test(start) || !ISO_DATE.test(end) || start > end) return []
+  const off = new Set([...holidays, ...closures])
+  const days: string[] = []
+  for (let t = Date.parse(`${start}T00:00:00Z`); t <= Date.parse(`${end}T00:00:00Z`); t += DAY_MS) {
+    const d = new Date(t)
+    const weekday = d.getUTCDay()
+    const iso = d.toISOString().slice(0, 10)
+    if (weekday !== 0 && weekday !== 6 && !off.has(iso)) days.push(iso)
+  }
+  return days
+}
+
+/**
+ * The line under the day pickers, as the old HR put it: how many working
+ * days, and what that does to the balance against what the leave deducts
+ * today. Mirrors correct_leave's deducting_before / deducting_after.
+ */
+export function correctionSummary(
+  days: readonly CorrectionDay[],
+  oldWorkingDays: number,
+  oldDeducts: boolean,
+  deductsByType: Record<string, boolean>,
+  firstName: string,
+): string {
+  if (!days.length) return 'Choose at least one working day.'
+  const deducting = days.filter((d) => deductsByType[d.leave_type_key]).length
+  const nonDeducting = days.length - deducting
+  const before = oldDeducts ? oldWorkingDays : 0
+  const count = `${days.length} working ${days.length === 1 ? 'day' : 'days'}`
+  const mix = nonDeducting ? ` (${nonDeducting} ${[...new Set(days.filter((d) => !deductsByType[d.leave_type_key]).map((d) => d.leave_type_key.replace('_', ' ')))].join(' / ')})` : ''
+  const delta = deducting - before
+  const move =
+    delta === 0 ? 'the balance does not move.' : delta > 0 ? `${delta} more taken from the balance.` : `${-delta} returned to ${firstName}.`
+  return `${count}${mix} — ${move}`
+}

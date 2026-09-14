@@ -121,7 +121,7 @@ onMounted(load)
         />
       </div>
       <LeaveCalendarPanel v-if="activeTab === 'calendar'" :companies="selected" />
-      <LeaveRequestsPanel v-else-if="activeTab === 'requests'" :company-ids="approverCompanies.map((c) => c.id)" />
+      <LeaveRequestsPanel v-else-if="activeTab === 'requests'" :company-ids="approverCompanies.map((c) => c.id)" :companies="approverCompanies" />
       <template v-else-if="activeTab === 'balances'">
         <LeaveBalancesPanel v-if="balanceCompanies.length" :companies="balanceCompanies" />
         <div v-else class="empty">Balances need leave.view in the selected company.</div>

@@ -2708,6 +2708,107 @@ end $$;
 reset role;
 set app.test_uid = '';
 
+-- ================================================================ 0032
+-- Correcting approved leave: only approvers (never their own, unless admin),
+-- only approved rows, working days only, no overlap; the balance follows
+-- both ways; a mix of types splits the leave; every correction is recorded.
+set app.test_uid = '00000000-0000-0000-0000-000000000021';  -- Pia, the owner
+set role authenticated;
+do $$
+declare v_aug uuid := (select id from public.leave_requests where person_id = '20000000-0000-0000-0000-000000000021' and start_date = '2027-08-02');
+begin
+  assert v_aug is not null, 'Pia''s August leave from the 0027 block is there';
+  begin
+    perform public.correct_leave(v_aug, '[{"date":"2027-08-02","leave_type_key":"annual"}]'::jsonb, 'Shorter');
+    raise exception 'FAIL: the owner corrected their own leave without leave.approve';
+  exception when insufficient_privilege then null;
+  end;
+end $$;
+reset role;
+set app.test_uid = '00000000-0000-0000-0000-000000000001';  -- Alex approves in A
+set role authenticated;
+do $$
+declare
+  v_aug uuid := (select id from public.leave_requests where person_id = '20000000-0000-0000-0000-000000000021' and start_date = '2027-08-02');
+  v_mar uuid := (select id from public.leave_requests where person_id = '20000000-0000-0000-0000-000000000021' and start_date = '2027-03-01');
+  r jsonb; b jsonb; c record;
+  v_before numeric := (public.leave_balance('20000000-0000-0000-0000-000000000021', '10000000-0000-0000-0000-00000000000a', 2027)->>'remaining')::numeric;
+begin
+  -- Refusals first: a weekend day, a day another leave covers, a pending/cancelled row.
+  begin
+    perform public.correct_leave(v_aug, '[{"date":"2027-08-07","leave_type_key":"annual"}]'::jsonb);
+    raise exception 'FAIL: corrected onto a Saturday';
+  exception when raise_exception then
+    if sqlerrm not like '%not a working day%' then raise; end if;
+  end;
+  begin
+    perform public.correct_leave(v_aug, '[{"date":"2027-03-01","leave_type_key":"annual"}]'::jsonb);
+    raise exception 'FAIL: corrected onto dates the March leave covers';
+  exception when raise_exception then
+    if sqlerrm not like '%already covers%' then raise; end if;
+  end;
+  begin
+    perform public.correct_leave(v_mar, '[]'::jsonb);
+    raise exception 'FAIL: accepted an empty correction';
+  exception when raise_exception then
+    if sqlerrm not like '%at least one%' then raise; end if;
+  end;
+  -- Longer: 2 → 4 working days, two more taken from the year.
+  r := public.correct_leave(v_aug, '[{"date":"2027-08-02","leave_type_key":"annual"},{"date":"2027-08-03","leave_type_key":"annual"},{"date":"2027-08-04","leave_type_key":"annual"},{"date":"2027-08-05","leave_type_key":"annual"}]'::jsonb, 'Stayed two more days');
+  assert (r->>'working_days')::int = 4 and (r->>'deducting_before')::int = 2 and (r->>'deducting_after')::int = 4, 'longer: ' || r::text;
+  assert jsonb_array_length(r->'split_request_ids') = 0, 'one type, no split';
+  b := public.leave_balance('20000000-0000-0000-0000-000000000021', '10000000-0000-0000-0000-00000000000a', 2027);
+  assert (b->>'remaining')::numeric = v_before - 2, 'two more days taken: ' || b::text;
+  assert (select end_date || '/' || working_days from public.leave_requests where id = v_aug) = '2027-08-05/4', 'the row itself moved';
+  select * into c from public.leave_corrections where request_id = v_aug order by corrected_at desc limit 1;
+  assert c.old_end = '2027-08-03' and c.old_working_days = 2 and c.new_end = '2027-08-05' and c.new_working_days = 4
+     and c.note = 'Stayed two more days' and c.corrected_by = '20000000-0000-0000-0000-000000000001', 'correction recorded';
+  -- Mixed: Mon annual, Tue sick, Wed annual → three rows, one day given back to the year.
+  r := public.correct_leave(v_aug, '[{"date":"2027-08-02","leave_type_key":"annual"},{"date":"2027-08-03","leave_type_key":"sick"},{"date":"2027-08-04","leave_type_key":"annual"}]'::jsonb, 'Tuesday was sick leave');
+  assert jsonb_array_length(r->'split_request_ids') = 2, 'two rows split off: ' || r::text;
+  assert (r->>'deducting_after')::int = 2, 'sick does not deduct';
+  assert (select start_date || '/' || end_date || '/' || leave_type_key || '/' || working_days from public.leave_requests where id = v_aug) = '2027-08-02/2027-08-02/annual/1', 'the original keeps the first run';
+  assert (select count(*) from public.leave_requests where corrected_from_id = v_aug and status = 'approved') = 2, 'split rows are approved and linked';
+  assert (select leave_type_key || '/' || requires_document::text from public.leave_requests where corrected_from_id = v_aug and start_date = '2027-08-03') = 'sick/true', 'the sick day carries its type flags';
+  b := public.leave_balance('20000000-0000-0000-0000-000000000021', '10000000-0000-0000-0000-00000000000a', 2027);
+  assert (b->>'remaining')::numeric = v_before, 'back to two deducting days: ' || b::text;
+  -- Too much: refused with what is available.
+  begin
+    perform public.correct_leave(v_aug, (select jsonb_agg(jsonb_build_object('date', d::date, 'leave_type_key', 'annual'))
+      from generate_series('2027-09-06'::date, '2027-10-15'::date, '1 day') d where extract(isodow from d) < 6));
+    raise exception 'FAIL: corrected past the balance';
+  exception when raise_exception then
+    if sqlerrm not like 'Not enough leave left%' then raise; end if;
+  end;
+  assert (public.leave_balance('20000000-0000-0000-0000-000000000021', '10000000-0000-0000-0000-00000000000a', 2027)->>'remaining')::numeric = v_before, 'a refused correction changes nothing';
+end $$;
+reset role;
+-- Alex may not correct his own approved leave; Ada (platform admin) may.
+set app.test_uid = '';
+insert into public.leave_requests (id, person_id, employment_period_id, company_id, leave_type_key, deducts_balance, requires_document, start_date, end_date, working_days, status)
+  values ('a1000000-0000-0000-0000-000000000032', '20000000-0000-0000-0000-000000000001', '30000000-0000-0000-0000-000000000001', '10000000-0000-0000-0000-00000000000a',
+          'other', false, false, '2027-09-06', '2027-09-07', 2, 'approved');
+set app.test_uid = '00000000-0000-0000-0000-000000000001';
+set role authenticated;
+do $$
+begin
+  begin
+    perform public.correct_leave('a1000000-0000-0000-0000-000000000032', '[{"date":"2027-09-06","leave_type_key":"other"}]'::jsonb);
+    raise exception 'FAIL: corrected own leave';
+  exception when insufficient_privilege then null;
+  end;
+end $$;
+reset role;
+set app.test_uid = '00000000-0000-0000-0000-000000000004';
+set role authenticated;
+do $$
+begin
+  perform public.correct_leave('a1000000-0000-0000-0000-000000000032', '[{"date":"2027-09-06","leave_type_key":"other"}]'::jsonb, 'One day only');
+  assert (select working_days from public.leave_requests where id = 'a1000000-0000-0000-0000-000000000032') = 1, 'admin corrected it';
+end $$;
+reset role;
+set app.test_uid = '';
+
 -- ================================================================ 0028
 -- Field Notebook import: dry run writes nothing, commit links an existing
 -- person by email, creates the rest, keeps legacy ids, reconciles and

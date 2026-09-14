@@ -2086,6 +2086,92 @@ export type Database = {
           },
         ]
       }
+      leave_corrections: {
+        Row: {
+          company_id: string
+          corrected_at: string
+          corrected_by: string | null
+          id: string
+          new_end: string
+          new_leave_type_key: string
+          new_start: string
+          new_working_days: number
+          note: string | null
+          old_end: string
+          old_leave_type_key: string
+          old_start: string
+          old_working_days: number
+          person_id: string
+          request_id: string
+          split_request_ids: string[]
+        }
+        Insert: {
+          company_id: string
+          corrected_at?: string
+          corrected_by?: string | null
+          id?: string
+          new_end: string
+          new_leave_type_key: string
+          new_start: string
+          new_working_days: number
+          note?: string | null
+          old_end: string
+          old_leave_type_key: string
+          old_start: string
+          old_working_days: number
+          person_id: string
+          request_id: string
+          split_request_ids?: string[]
+        }
+        Update: {
+          company_id?: string
+          corrected_at?: string
+          corrected_by?: string | null
+          id?: string
+          new_end?: string
+          new_leave_type_key?: string
+          new_start?: string
+          new_working_days?: number
+          note?: string | null
+          old_end?: string
+          old_leave_type_key?: string
+          old_start?: string
+          old_working_days?: number
+          person_id?: string
+          request_id?: string
+          split_request_ids?: string[]
+        }
+        Relationships: [
+          {
+            foreignKeyName: "leave_corrections_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "leave_corrections_corrected_by_fkey"
+            columns: ["corrected_by"]
+            isOneToOne: false
+            referencedRelation: "people"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "leave_corrections_person_id_fkey"
+            columns: ["person_id"]
+            isOneToOne: false
+            referencedRelation: "people"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "leave_corrections_request_id_fkey"
+            columns: ["request_id"]
+            isOneToOne: false
+            referencedRelation: "leave_requests"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       leave_links: {
         Row: {
           external_employee_id: string
@@ -2176,6 +2262,7 @@ export type Database = {
           cancelled_by: string | null
           carry_over_days_used: number
           company_id: string
+          corrected_from_id: string | null
           created_at: string
           decided_at: string | null
           decided_by: string | null
@@ -2207,6 +2294,7 @@ export type Database = {
           cancelled_by?: string | null
           carry_over_days_used?: number
           company_id: string
+          corrected_from_id?: string | null
           created_at?: string
           decided_at?: string | null
           decided_by?: string | null
@@ -2238,6 +2326,7 @@ export type Database = {
           cancelled_by?: string | null
           carry_over_days_used?: number
           company_id?: string
+          corrected_from_id?: string | null
           created_at?: string
           decided_at?: string | null
           decided_by?: string | null
@@ -2278,6 +2367,13 @@ export type Database = {
             columns: ["company_id"]
             isOneToOne: false
             referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "leave_requests_corrected_from_id_fkey"
+            columns: ["corrected_from_id"]
+            isOneToOne: false
+            referencedRelation: "leave_requests"
             referencedColumns: ["id"]
           },
           {
@@ -3600,6 +3696,10 @@ export type Database = {
           p_manager_id?: string
           p_start_date: string
         }
+        Returns: Json
+      }
+      correct_leave: {
+        Args: { p_days: Json; p_note?: string; p_request_id: string }
         Returns: Json
       }
       decide_compensation: {

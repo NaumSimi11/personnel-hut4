@@ -55,6 +55,8 @@ async function cleanup(): Promise<void> {
   await db.from('public_holidays').delete().eq('name', HOLIDAY)
   const { data: people } = await db.from('people').select('id, user_id').eq('full_name', PERSON)
   for (const p of people ?? []) {
+    await db.from('leave_corrections').delete().eq('person_id', p.id)
+    await db.from('leave_requests').update({ corrected_from_id: null }).eq('person_id', p.id)
     await db.from('leave_request_documents').delete().in('request_id', (await db.from('leave_requests').select('id').eq('person_id', p.id)).data?.map((r) => r.id) ?? [])
     await db.from('leave_requests').delete().eq('person_id', p.id)
     const { data: docs } = await db.from('documents').select('id, storage_path').eq('person_id', p.id)
@@ -179,10 +181,38 @@ test('holiday import → entitlement → request (holiday excluded) → queue �
   const pending = page.locator('.req-row', { hasText: PERSON })
   await expect(pending).toContainText(`${DAYS} working days`)
   await pending.getByRole('button', { name: 'Approve' }).click()
-  await expect(page.locator('details .req-row', { hasText: PERSON }).locator('.badge')).toHaveText('Approved')
+  await expect(page.locator('.tab', { hasText: 'To decide' }).locator('.count')).toHaveText('0')
 
   const { data: approved } = await db.from('leave_requests').select('status, working_days, carry_over_days_used').eq('person_id', personId).single()
   expect(approved).toMatchObject({ status: 'approved', working_days: DAYS })
+
+  // The settled record: HR corrects the leave — it ran one working day longer
+  // (the following Monday). The summary says what the balance does; the row
+  // then carries the correction.
+  await page.locator('.tab', { hasText: 'Approved' }).click()
+  const record = page.locator('tbody tr', { hasText: PERSON })
+  await expect(record.locator('td.num b')).toHaveText(String(DAYS))
+  await record.getByRole('button', { name: 'Correct' }).click()
+  const correct = page.getByRole('dialog')
+  const nextMonday = iso(monday, 7)
+  const { data: nextOff } = await db.from('public_holidays').select('date').eq('country_code', 'MK').eq('date', nextMonday)
+  const extra = nextOff?.length ? 0 : 1
+  await correct.locator('#cl-end').fill(nextMonday)
+  await expect(correct.getByTestId('correction-summary')).toContainText(extra ? `${DAYS + 1} working days — 1 more taken from the balance.` : 'the balance does not move')
+  await correct.locator('#cl-note').fill('Came back a day later')
+  if (extra) {
+    await correct.getByRole('button', { name: 'Save the correction' }).click()
+    await expect(page.getByText(/Corrected: \d+ working days/)).toBeVisible()
+    await expect(record.locator('td.num b')).toHaveText(String(DAYS + 1))
+    await expect(record).toContainText('Came back a day later')
+    const { data: corrected } = await db.from('leave_requests').select('end_date, working_days').eq('person_id', personId).eq('status', 'approved').single()
+    expect(corrected).toMatchObject({ end_date: nextMonday, working_days: DAYS + 1 })
+    const { data: log } = await db.from('leave_corrections').select('old_working_days, new_working_days, note').eq('person_id', personId).single()
+    expect(log).toMatchObject({ old_working_days: DAYS, new_working_days: DAYS + 1, note: 'Came back a day later' })
+  } else {
+    await correct.getByRole('button', { name: 'Leave it as it is' }).click()
+  }
+  const TAKEN = DAYS + extra
 
   // The company calendar shows the entry on the Wednesday-free week.
   await page.goto(`/leave?tab=calendar&company=${companyId}`)
@@ -207,8 +237,8 @@ test('holiday import → entitlement → request (holiday excluded) → queue �
 
   // The employee's balance moved, and they cancel before the start.
   await employee.reload()
-  await expect(rail.locator('.stat', { hasText: 'taken' })).toContainText(String(DAYS))
-  await expect(rail.locator('.stat', { hasText: 'days left' })).toContainText(String(20 - DAYS))
+  await expect(rail.locator('.stat', { hasText: 'taken' })).toContainText(String(TAKEN))
+  await expect(rail.locator('.stat', { hasText: 'days left' })).toContainText(String(20 - TAKEN))
   answerDialogs(employee, ['Plans changed'])
   await employee.locator('.req-row', { hasText: 'Winter break' }).getByRole('button', { name: 'Cancel' }).click()
   await expect(employee.locator('.req-row', { hasText: 'Cancelled: Plans changed' })).toBeVisible()

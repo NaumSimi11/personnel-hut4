@@ -73,6 +73,7 @@ round; merging it into `main` is the maintainer's decision.
 | — | Hiring requests: a platform admin may decide their own request (the four-eyes rule stays for everyone else; decided_by still server-set) — asked for while testing (migration 0030) | DONE (main; smoke; E2E hiring-requests) |
 | — | Bulk CVs: "Upload CVs" on a job's Applications tab — drop many files, names guessed from file names and corrected in place, each becomes a candidate at New with the CV attached; per-file failure reporting — no migration | DONE (main; unit for the name guess; E2E upload-cvs) |
 | 040 | Profile photos (public `avatars` bucket, `set_avatar`, browser-side square + shrink, `AvatarImage` / `AvatarUpload` everywhere a face shows); Leave calendar love (stats strip, legend, type-coloured chips, today, richer day rail); Companies page as identity cards (migration 0031) | DONE (main; smoke; unit; E2E avatar + 7 restyled specs) |
+| 041 | Leave manager desk (To decide · Asks · Approved · Cancelled, filters, table) and corrections of approved leave: dates and per-day kinds, split into rows when kinds differ, balance re-checked per year with carry-over re-drawn, every correction recorded (migration 0032) | DONE (main; smoke; unit; E2E leave) |
 | — | Deployable product: the service serves the built app (SPA fallback, `/api` untouched), Dockerfile + `docs/deployment.md` | DONE (main; server tests 45/45; image built and smoked locally) |
 
 Round-03 executors branch from `main` as `feature/NNN-<slug>`; the reviewer

@@ -37,8 +37,8 @@ export type LeaveRequestRow = {
 }
 
 const props = withDefaults(
-  defineProps<{ requests: LeaveRequestRow[]; showPerson?: boolean; showCompany?: boolean; emptyText?: string }>(),
-  { showPerson: false, showCompany: false, emptyText: 'No leave requests.' },
+  defineProps<{ requests: LeaveRequestRow[]; showPerson?: boolean; showCompany?: boolean; emptyText?: string; compact?: boolean }>(),
+  { showPerson: false, showCompany: false, emptyText: 'No leave requests.', compact: false },
 )
 const emit = defineEmits<{ changed: []; error: [message: string] }>()
 
@@ -212,7 +212,27 @@ async function run(r: LeaveRequestRow, key: LeaveAction['key'] | 'decline-ask'):
 </script>
 
 <template>
-  <div v-if="!requests.length" class="empty">{{ emptyText }}</div>
+  <!-- Compact: only the buttons, for a table cell that already shows the record. -->
+  <div v-if="compact" class="compact-actions">
+    <template v-for="r in requests" :key="r.id">
+      <template v-if="canAnswerAsk(r)">
+        <button class="button small-btn" type="button" @click="run(r, 'cancel')">Cancel leave</button>
+        <button class="button secondary small-btn" type="button" @click="run(r, 'decline-ask')">Decline ask</button>
+      </template>
+      <button
+        v-for="a in actionsFor(r)"
+        v-else
+        :key="a.key"
+        class="button small-btn"
+        :class="{ secondary: a.key !== 'approve' }"
+        type="button"
+        @click="run(r, a.key)"
+      >
+        {{ a.label }}
+      </button>
+    </template>
+  </div>
+  <div v-else-if="!requests.length" class="empty">{{ emptyText }}</div>
   <div v-else>
     <div v-for="r in requests" :key="r.id" class="req-row" :data-testid="`leave-${r.id}`">
       <div class="row-text">
@@ -271,4 +291,5 @@ async function run(r: LeaveRequestRow, key: LeaveAction['key'] | 'decline-ask'):
 .attach input { display: none; }
 .row-actions { display: flex; gap: 6px; flex-wrap: wrap; }
 .small-btn { padding: 7px 11px; font-size: 11px; }
+.compact-actions { display: inline-flex; gap: 6px; }
 </style>

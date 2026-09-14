@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import {
   balanceAfter,
+  correctionSummary,
+  workingDaysInRange,
   leaveProgressWorking,
   shortDate,
   shortName,
@@ -123,5 +125,25 @@ describe('shortDate', () => {
   it('reads like a person would say it', () => {
     expect(shortDate('2026-08-24')).toBe('24 Aug')
     expect(shortDate('2026-09-07')).toBe('7 Sep')
+  })
+})
+
+describe('workingDaysInRange', () => {
+  it('lists the working days, skipping weekends, holidays and closures', () => {
+    expect(workingDaysInRange('2026-12-02', '2026-12-07', ['2026-12-04'], [])).toEqual(['2026-12-02', '2026-12-03', '2026-12-07'])
+    expect(workingDaysInRange('2026-12-05', '2026-12-06', [], [])).toEqual([])
+    expect(workingDaysInRange('2026-12-07', '2026-12-02', [], [])).toEqual([])
+  })
+})
+
+describe('correctionSummary', () => {
+  const types = { annual: true, sick: false }
+  it('says how the balance moves for the new picture of days', () => {
+    const days = (n: number, key = 'annual') => Array.from({ length: n }, (_, i) => ({ date: `2026-12-0${i + 1}`, leave_type_key: key }))
+    expect(correctionSummary(days(4), 4, true, types, 'Bojan')).toBe('4 working days — the balance does not move.')
+    expect(correctionSummary(days(5), 4, true, types, 'Bojan')).toBe('5 working days — 1 more taken from the balance.')
+    expect(correctionSummary(days(2), 4, true, types, 'Bojan')).toBe('2 working days — 2 returned to Bojan.')
+    expect(correctionSummary([...days(2), ...days(1, 'sick').map((d) => ({ ...d, date: '2026-12-03' }))], 3, true, types, 'Bojan')).toBe('3 working days (1 sick) — 1 returned to Bojan.')
+    expect(correctionSummary([], 4, true, types, 'Bojan')).toBe('Choose at least one working day.')
   })
 })

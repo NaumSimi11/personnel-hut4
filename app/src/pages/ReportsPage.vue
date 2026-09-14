@@ -278,7 +278,7 @@ watch([companyId, () => range.value.from, () => range.value.to], load)
 .attention-list { padding: 6px 0; }
 .attention { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 13px 24px; border-top: 1px solid #edf0eb; }
 .attention strong { display: block; font-size: 12px; font-weight: 550; }
-.attention small { display: block; font-size: 10px; color: var(--muted); margin-top: 3px; }
+.attention small { display: block; font-size: 11px; color: var(--muted); margin-top: 3px; }
 .attention .kpi-value { font-size: 20px; }
 .attention .warn { color: var(--amber); }
 </style>

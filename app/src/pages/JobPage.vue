@@ -693,7 +693,7 @@ onMounted(async () => {
 }
 .tab.active { color: var(--green); font-weight: 600; border-bottom-color: var(--green); }
 .tab .count {
-  font-size: 10px;
+  font-size: 11px;
   padding: 1px 6px;
   border-radius: 999px;
   background: #f0f1ef;
@@ -705,7 +705,7 @@ onMounted(async () => {
 .metric-label { font-size: 11px; color: var(--muted); font-weight: 550; }
 .metric-value { font-size: 26px; font-weight: 750; letter-spacing: -0.02em; }
 .detail-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 18px 20px; padding: 20px 24px 23px; margin: 0; }
-.detail-grid dt { font-size: 10px; color: var(--muted); margin-bottom: 6px; }
+.detail-grid dt { font-size: 11px; color: var(--muted); margin-bottom: 6px; }
 .detail-grid dd { margin: 0; font-size: 12px; line-height: 1.6; }
 @media (max-width: 560px) { .detail-grid { grid-template-columns: 1fr; } }
 .stage-count { display: inline-block; margin-right: 10px; text-transform: capitalize; }
@@ -747,7 +747,7 @@ textarea[readonly] { background: #fafbf9; }
 }
 .row-text { flex: 1; min-width: 220px; }
 .row-text strong { display: block; font-size: 12px; font-weight: 550; }
-.row-text small { display: block; font-size: 10px; color: var(--muted); margin-top: 4px; }
+.row-text small { display: block; font-size: 11px; color: var(--muted); margin-top: 4px; }
 .candidate-link { text-decoration: none; color: inherit; }
 .candidate-link:hover strong { color: var(--green); text-decoration: underline; }
 .row-actions { display: flex; gap: 7px; flex-wrap: wrap; }

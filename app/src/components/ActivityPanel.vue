@@ -125,11 +125,11 @@ watch(() => props.companyId, load)
 .filters input { flex: 1; min-width: 160px; }
 .count { font-size: 11px; color: var(--muted); }
 .activity-row { display: flex; gap: 14px; padding: 11px 24px; border-top: 1px solid #edf0eb; }
-.when { font-size: 10px; color: var(--muted); white-space: nowrap; padding-top: 2px; min-width: 110px; }
+.when { font-size: 11px; color: var(--muted); white-space: nowrap; padding-top: 2px; min-width: 110px; }
 .row-text { flex: 1; min-width: 0; }
 .row-text strong { display: block; font-size: 12px; font-weight: 500; }
 .entity { font-weight: 600; }
 .actor { font-weight: 600; }
-.row-text small { display: block; font-size: 10px; color: var(--muted); margin-top: 3px; }
+.row-text small { display: block; font-size: 11px; color: var(--muted); margin-top: 3px; }
 .error { margin: 14px 24px 0; padding: 10px 14px; border-radius: 9px; background: #fbeaea; color: var(--red); font-size: 12px; }
 </style>

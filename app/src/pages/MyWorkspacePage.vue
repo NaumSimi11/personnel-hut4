@@ -411,7 +411,7 @@ onMounted(load)
 }
 .row-text { flex: 1; min-width: 220px; }
 .row-text strong { display: block; font-size: 12px; font-weight: 550; }
-.row-text small { display: block; font-size: 10px; color: var(--muted); margin-top: 4px; }
+.row-text small { display: block; font-size: 11px; color: var(--muted); margin-top: 4px; }
 .row-actions { display: flex; gap: 7px; flex-wrap: wrap; }
 .small-btn { font-size: 11px; padding: 7px 11px; text-decoration: none; }
 .emp-row { display: flex; align-items: center; gap: 13px; padding: 15px 24px; border-top: 1px solid #edf0eb; }
@@ -428,7 +428,7 @@ onMounted(load)
 .access-block { padding: 15px 24px; border-top: 1px solid #edf0eb; }
 .access-block-head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
 .access-block-head strong { font-size: 12px; font-weight: 550; }
-.muted-count { font-size: 10px; color: var(--muted); }
+.muted-count { font-size: 11px; color: var(--muted); }
 .access-block ul { margin: 10px 0 0; padding-left: 18px; font-size: 11px; color: var(--ink); }
 .access-block li { margin-bottom: 4px; }
 .access-block .empty { padding: 8px 0 0; text-align: left; }

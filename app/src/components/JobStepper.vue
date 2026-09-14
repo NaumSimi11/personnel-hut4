@@ -51,7 +51,7 @@ const currentIndex = computed(() => stepIndex(props.current))
   height: 24px;
   border-radius: 7px;
   background: #f0f1ef;
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 650;
   flex-shrink: 0;
 }

@@ -404,14 +404,14 @@ onMounted(load)
 .schedule-form { padding: 16px 24px 18px; border-top: 1px solid var(--line); background: #fafbf9; }
 .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0 16px; }
 @media (max-width: 640px) { .grid { grid-template-columns: 1fr; } }
-.field-hint { display: block; font-size: 10px; color: var(--muted); margin-top: -8px; margin-bottom: 12px; }
+.field-hint { display: block; font-size: 11px; color: var(--muted); margin-top: -8px; margin-bottom: 12px; }
 .field select[multiple] { height: auto; }
 .actions { display: flex; gap: 9px; justify-content: flex-end; }
 .interview-card { padding: 16px 24px 18px; border-top: 1px solid #edf0eb; }
 .interview-head { display: flex; align-items: center; gap: 13px; flex-wrap: wrap; }
 .row-text { flex: 1; min-width: 220px; }
 .row-text strong { display: block; font-size: 12px; font-weight: 550; }
-.row-text small { display: block; font-size: 10px; color: var(--muted); margin-top: 4px; }
+.row-text small { display: block; font-size: 11px; color: var(--muted); margin-top: 4px; }
 .row-text .tally { color: var(--green); font-weight: 550; }
 .row-actions { display: flex; gap: 7px; flex-wrap: wrap; }
 .small-btn { font-size: 11px; padding: 7px 11px; }
@@ -419,7 +419,7 @@ onMounted(load)
 .scorecard-form { margin-top: 14px; padding: 16px; border: 1px solid var(--line); border-radius: 12px; background: #fafbf9; }
 .criterion { display: grid; gap: 8px; margin-bottom: 16px; }
 .criterion-head strong { display: block; font-size: 12px; }
-.criterion-head small { display: block; font-size: 10px; color: var(--muted); margin-top: 2px; }
+.criterion-head small { display: block; font-size: 11px; color: var(--muted); margin-top: 2px; }
 .scale { display: flex; gap: 8px; }
 .scale-option { display: grid; place-items: center; }
 .scale-option { position: relative; }
@@ -451,7 +451,7 @@ onMounted(load)
 .scorecard-row { margin-top: 14px; padding: 14px 16px; border: 1px solid var(--line); border-radius: 12px; }
 .scorecard-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .scorecard-head strong { font-size: 12px; }
-.scorecard-head small { font-size: 10px; color: var(--muted); }
+.scorecard-head small { font-size: 11px; color: var(--muted); }
 .ratings { list-style: none; margin: 10px 0 0; padding: 0; display: grid; gap: 6px; }
 .ratings li { display: flex; align-items: baseline; gap: 8px; font-size: 11px; }
 .rating-pill {

@@ -270,9 +270,9 @@ h1 { margin-bottom: 24px; }
 }
 .row-text { flex: 1; min-width: 220px; }
 .row-text strong { display: block; font-size: 12px; font-weight: 550; }
-.row-text small { display: block; font-size: 10px; color: var(--muted); margin-top: 4px; }
+.row-text small { display: block; font-size: 11px; color: var(--muted); margin-top: 4px; }
 .change-reason { margin: 6px 0 0; font-size: 11px; color: var(--amber); }
-.awaiting { margin: 4px 0 0; font-size: 10px; color: var(--amber); }
+.awaiting { margin: 4px 0 0; font-size: 11px; color: var(--amber); }
 .row-actions { display: flex; gap: 7px; flex-wrap: wrap; }
 .small-btn { font-size: 11px; padding: 7px 11px; }
 </style>

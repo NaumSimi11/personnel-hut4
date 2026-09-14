@@ -151,7 +151,7 @@ onMounted(load)
 .row { display: flex; align-items: center; gap: 13px; padding: 13px 24px; border-top: 1px solid #edf0eb; flex-wrap: wrap; }
 .row-text { flex: 1; min-width: 220px; }
 .row-text strong { display: block; font-size: 12px; font-weight: 550; }
-.row-text small { display: block; font-size: 10px; color: var(--muted); margin-top: 4px; }
+.row-text small { display: block; font-size: 11px; color: var(--muted); margin-top: 4px; }
 .candidate-link { text-decoration: none; color: inherit; }
 .candidate-link:hover strong { color: var(--green); text-decoration: underline; }
 </style>

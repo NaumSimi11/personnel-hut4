@@ -122,7 +122,7 @@ watch(() => props.companyId, load)
 .owner-row { display: flex; align-items: center; gap: 12px; padding: 13px 24px; border-top: 1px solid #edf0eb; flex-wrap: wrap; }
 .row-text { flex: 1; min-width: 160px; }
 .row-text strong { display: block; font-size: 12px; font-weight: 550; }
-.row-text small { display: block; font-size: 10px; color: var(--muted); margin-top: 3px; }
+.row-text small { display: block; font-size: 11px; color: var(--muted); margin-top: 3px; }
 select { font: inherit; font-size: 12px; padding: 7px 9px; border: 1px solid var(--line); border-radius: 7px; background: #fff; min-width: 180px; }
 .small-btn { font-size: 11px; padding: 7px 11px; }
 .saved { font-size: 11px; color: #3e744e; }

@@ -46,6 +46,7 @@ prototype in `../prototype` is the UI spec. Updated as milestones land.
 | Leave: schema and rules ported from Field Notebook — statutory holidays per country and closures per company, working days, a balance per person / company / year with carry-over drawn by the requested dates inside its window, requests decided by someone else under a row lock (pending counted), cancellation before the start or an ask after it, medical certificates as documents, yearly rollover scheduled, colleagues redacted to "Away" server-side | migration 0027 + plan 035 | smoke for working days, balance math incl. carry-over expiry, pending counted, approval lock, self-cancel rules, redaction, gates, rollover idempotence |
 | Field Notebook import (code): one function imports people, requests, balances (reconciled + verified), holidays and approver grants from the old leave app in one transaction with a dry run; account carry-over script with password hashes; cutover runbook | migration 0028 + plans 037/038 | smoke for verdicts, linking, idempotent re-run, reconciliation, per-faith skip, grants, overlap refusal; live dry runs |
 | Deployable product: one container (Fastify service serves the built app with an SPA fallback, `/api` kept separate), Dockerfile with build args for the browser-safe values, `docs/deployment.md` (Fly / Railway / Render, checklist) | `server/src/serveApp.ts`, `Dockerfile` | 2 server tests; image built and smoked locally (app, deep link, assets, JSON 404 from the service) |
+| Visual pass from the ui-ux-pro-max audit: every text colour ≥ 4.5:1 (muted, table headers, badges), one keyboard focus ring for every control, reduced-motion honoured, no text below 11px, SVG close icons; the look — DM Sans, layered card depth, gradient buttons with hover lift, pill badges, sidebar gradient with an accent bar, dialog backdrop blur — lives in the shared tokens so every page gets it | `styles/main.css`, `AppShell.vue` | contrast computed for 10 pairs; E2E 8/8 after the restyle |
 | Bulk CVs: HR drops the CVs they hold into a job; each file becomes a candidate (name guessed from the file name, editable) with the CV attached | `UploadCvsDialog` | E2E three files → three candidates with CVs; unit tests for the name guess |
 | Admin self-approval of hiring requests: the owner both raises and approves hires, so platform admins may decide their own request; everyone else keeps the four-eyes rule | migration 0030 | smoke: admin approves own, requester refused; E2E hiring-requests |
 | Leave flows as in Field Notebook: click a day for who is away and how far along; the request form shows the balance after and who else in the department is away; sick-leave certificates attached from the request (self-upload window); emails to approvers on a new request or an ask, to the person on the decision (once mail is configured) | migration 0029 + plan 039 | E2E preview → rail → certificate; smoke for windows and the preview arithmetic; server tests for mails |
@@ -74,6 +75,10 @@ prototype in `../prototype` is the UI spec. Updated as milestones land.
    allowances and one-off items.
 
 ## Standing rules
+
+- Before a UI slice ships, run the `ui-ux-pro-max` pre-delivery checklist:
+  contrast 4.5:1, visible focus, ≥ 11px text, hover/loading states,
+  reduced motion, no emoji/glyph icons, responsive at 375/768/1024/1440.
 
 - Schema changes = new numbered migration + `local-verify.sh` green + apply to
   live + regenerate `app/src/types/database.ts`.

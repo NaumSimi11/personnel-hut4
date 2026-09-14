@@ -277,7 +277,7 @@ h1 { margin-bottom: 24px; }
   justify-content: space-between;
   background: #fafbf8;
 }
-.permission-group summary span { color: var(--muted); font-size: 10px; font-weight: 400; }
+.permission-group summary span { color: var(--muted); font-size: 11px; font-weight: 400; }
 .permission-check {
   display: flex;
   align-items: center;
@@ -288,13 +288,13 @@ h1 { margin-bottom: 24px; }
   cursor: pointer;
 }
 .permission-check input { accent-color: var(--green); width: 15px; height: 15px; }
-.permission-check small { margin-left: auto; color: #9c8051; font-size: 9px; }
+.permission-check small { margin-left: auto; color: #9c8051; font-size: 11px; }
 .actions { display: flex; gap: 9px; justify-content: flex-end; margin-top: 18px; }
 .preview { background: #f5f7f1; align-self: start; }
 .preview-title { font-size: 14px; margin: 12px 0; }
 .preview-list { padding-left: 17px; font-size: 11px; line-height: 1.8; color: #566750; margin: 0 0 14px; }
 .preview-warning {
-  font-size: 10px;
+  font-size: 11px;
   color: #8b7247;
   line-height: 1.6;
   padding-top: 12px;

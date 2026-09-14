@@ -204,7 +204,7 @@ defineExpose({ reload: load })
 .rail { border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; display: flex; flex-wrap: wrap; gap: 12px 18px; }
 .rail-company { width: 100%; font-size: 11px; font-weight: 600; }
 .stat b { display: block; font-size: 20px; font-weight: 600; }
-.stat span { font-size: 10px; color: var(--muted); }
+.stat span { font-size: 11px; color: var(--muted); }
 .stat.muted b { font-size: 14px; }
 .no-balance { font-size: 11px; color: var(--muted); }
 </style>

@@ -439,7 +439,7 @@ watch(() => props.companyId, load)
 .request-row.blocked { background: #fbf7ea; }
 .row-text { flex: 1; min-width: 220px; }
 .row-text strong { display: block; font-size: 12px; font-weight: 550; }
-.row-text small { display: block; font-size: 10px; color: var(--muted); margin-top: 4px; }
+.row-text small { display: block; font-size: 11px; color: var(--muted); margin-top: 4px; }
 .muted { font-weight: 400; color: var(--muted); }
 .actions { display: flex; gap: 8px; flex-wrap: wrap; }
 .small-btn { font-size: 11px; padding: 7px 11px; }

@@ -297,7 +297,7 @@ defineExpose({ reload: load })
 }
 .row-text { flex: 1; min-width: 240px; }
 .row-text strong { display: block; font-size: 12px; font-weight: 550; }
-.row-text small { display: block; font-size: 10px; color: var(--muted); margin-top: 4px; line-height: 1.6; }
+.row-text small { display: block; font-size: 11px; color: var(--muted); margin-top: 4px; line-height: 1.6; }
 .row-text small a { color: var(--green); text-decoration: none; }
 .row-text small a:hover { text-decoration: underline; }
 .manual-form { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }

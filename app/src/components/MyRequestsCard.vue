@@ -125,7 +125,7 @@ onMounted(load)
 .request-row.needs_correction { background: #fbf7ea; }
 .row-text { flex: 1; min-width: 200px; }
 .row-text strong { display: block; font-size: 12px; font-weight: 550; }
-.row-text small { display: block; font-size: 10px; color: var(--muted); margin-top: 4px; }
+.row-text small { display: block; font-size: 11px; color: var(--muted); margin-top: 4px; }
 .upload { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 .upload input { font-size: 11px; max-width: 220px; }
 .small-btn { font-size: 11px; padding: 7px 11px; }

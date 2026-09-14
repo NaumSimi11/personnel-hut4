@@ -300,11 +300,11 @@ watch(() => props.periods.map((p) => p.id).join(','), load)
 .period-title { padding: 12px 24px 0; font-size: 11px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; }
 .comp-current { padding: 15px 24px; }
 .comp-current strong { display: block; font-size: 15px; font-weight: 600; }
-.comp-current small { display: block; font-size: 10px; color: var(--muted); margin-top: 4px; }
+.comp-current small { display: block; font-size: 11px; color: var(--muted); margin-top: 4px; }
 .comp-pending { display: flex; align-items: center; gap: 13px; padding: 13px 24px; background: #fbf7ea; border-top: 1px solid #f1e8c8; }
 .row-text { flex: 1; min-width: 0; }
 .row-text strong { display: block; font-size: 12px; font-weight: 550; }
-.row-text small { display: block; font-size: 10px; color: var(--muted); margin-top: 4px; }
+.row-text small { display: block; font-size: 11px; color: var(--muted); margin-top: 4px; }
 .actions { display: flex; gap: 8px; }
 .small-btn { font-size: 11px; padding: 7px 11px; }
 .propose { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 14px; padding: 16px 24px; background: #fafbf8; border-top: 1px solid var(--line); }
@@ -314,7 +314,7 @@ watch(() => props.periods.map((p) => p.id).join(','), load)
 .form-actions { display: flex; justify-content: flex-end; gap: 8px; }
 .propose-cta { padding: 0 24px 16px; }
 .comp-history { border-top: 1px solid #edf0eb; }
-.history-title { padding: 12px 24px 4px; font-size: 10px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; }
+.history-title { padding: 12px 24px 4px; font-size: 11px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; }
 .comp-history-row { display: flex; align-items: center; gap: 13px; padding: 10px 24px; }
 .badge.superseded, .badge.rejected { background: #f1f1ee; color: var(--muted); }
 .badge.current { background: #edf5ed; color: #3e744e; }

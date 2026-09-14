@@ -570,7 +570,7 @@ onMounted(load)
 .answer-row { display: grid; gap: 7px; margin-bottom: 16px; }
 .answer-row.orphaned { opacity: 0.7; }
 .question { font-size: 11px; font-weight: 550; color: #566653; display: flex; gap: 8px; align-items: center; }
-.required { font-size: 9px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); font-weight: 500; }
+.required { font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); font-weight: 500; }
 .answer-row select, .answer-row textarea, .note-form textarea {
   width: 100%;
   border: 1px solid #dce3d7;
@@ -590,7 +590,7 @@ onMounted(load)
 .event-row { display: flex; align-items: flex-start; gap: 13px; padding: 13px 24px; border-top: 1px solid #edf0eb; }
 .row-text { flex: 1; min-width: 0; }
 .row-text strong { display: block; font-size: 12px; font-weight: 500; white-space: pre-wrap; }
-.row-text small { display: block; font-size: 10px; color: var(--muted); margin-top: 3px; }
+.row-text small { display: block; font-size: 11px; color: var(--muted); margin-top: 3px; }
 .sub-heading { font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); margin: 20px 0 10px; }
 .stage-actions { display: flex; gap: 7px; flex-wrap: wrap; }
 .reason { margin: 0; font-size: 12px; line-height: 1.6; }

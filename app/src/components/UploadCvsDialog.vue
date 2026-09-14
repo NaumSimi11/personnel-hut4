@@ -133,7 +133,7 @@ function friendly(message: string): string {
           <span v-if="r.state === 'done'" class="badge green">Added</span>
           <span v-else-if="r.state === 'saving'" class="badge">Saving…</span>
           <span v-else-if="r.problem" class="badge amber" :title="r.problem">{{ r.state === 'failed' ? 'Failed' : 'Skipped' }}</span>
-          <button v-else class="linkish" type="button" aria-label="Remove" @click="removeRow(i)">×</button>
+          <button v-else class="linkish" type="button" aria-label="Remove" @click="removeRow(i)"><svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M4 4l8 8M12 4l-8 8" /></svg></button>
           <small v-if="r.problem" class="problem">{{ r.problem }}</small>
         </div>
       </div>
@@ -162,7 +162,7 @@ h2 { font-size: 19px; margin: 10px 0 8px; }
 .row .file { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); font-size: 11px; }
 .row input { border: 1px solid #dce3d7; padding: 8px 10px; font-size: 12px; min-width: 0; }
 .row.done input { background: #f7f8f5; }
-.row .problem { grid-column: 1 / -1; color: #946d24; font-size: 10px; }
+.row .problem { grid-column: 1 / -1; color: #946d24; font-size: 11px; }
 .linkish { background: none; border: 0; color: var(--muted); font-size: 16px; padding: 0 6px; }
 .actions { display: flex; gap: 9px; justify-content: flex-end; align-items: center; margin-top: 18px; }
 .count { margin-right: auto; font-size: 12px; color: #3e744e; font-weight: 550; }

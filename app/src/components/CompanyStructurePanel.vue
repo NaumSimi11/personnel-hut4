@@ -202,7 +202,7 @@ onMounted(load)
 .structure-row { display: flex; align-items: center; gap: 13px; padding: 13px 24px; border-top: 1px solid #edf0eb; }
 .row-text { flex: 1; min-width: 0; }
 .row-text strong { display: block; font-size: 12px; font-weight: 550; }
-.row-text small { display: block; font-size: 10px; color: var(--muted); margin-top: 3px; }
+.row-text small { display: block; font-size: 11px; color: var(--muted); margin-top: 3px; }
 .small-btn { font-size: 11px; padding: 7px 11px; }
 .add-form { display: flex; gap: 8px; padding: 14px 24px; border-top: 1px solid var(--line); background: #fafbf9; flex-wrap: wrap; }
 .add-form input {

@@ -125,6 +125,6 @@ h2 { font-size: 19px; margin: 10px 0 10px; }
   font-size: 12px;
   resize: vertical;
 }
-.field-hint { display: block; font-size: 10px; color: var(--muted); line-height: 1.5; }
+.field-hint { display: block; font-size: 11px; color: var(--muted); line-height: 1.5; }
 .actions { display: flex; gap: 9px; justify-content: flex-end; margin-top: 14px; }
 </style>

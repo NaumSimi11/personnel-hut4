@@ -128,5 +128,5 @@ defineExpose({ reload: load })
 }
 .row-text { flex: 1; min-width: 0; }
 .row-text strong { display: block; font-size: 12px; font-weight: 500; }
-.row-text small { display: block; font-size: 10px; color: var(--muted); margin-top: 3px; }
+.row-text small { display: block; font-size: 11px; color: var(--muted); margin-top: 3px; }
 </style>

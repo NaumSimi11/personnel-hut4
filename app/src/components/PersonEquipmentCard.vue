@@ -110,7 +110,7 @@ watch(() => `${props.personId}|${props.companies.map((c) => c.id).join(',')}`, (
 <style scoped>
 .equipment-row { display: flex; align-items: center; gap: 13px; padding: 13px 24px; border-top: 1px solid #edf0eb; }
 .row-text strong { display: block; font-size: 12px; font-weight: 550; }
-.row-text small { display: block; font-size: 10px; color: var(--muted); margin-top: 4px; }
+.row-text small { display: block; font-size: 11px; color: var(--muted); margin-top: 4px; }
 .muted { font-weight: 400; color: var(--muted); }
 .error { margin: 14px 24px 0; padding: 10px 14px; border-radius: 9px; background: #fbeaea; color: var(--red); font-size: 12px; }
 </style>

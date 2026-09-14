@@ -311,7 +311,7 @@ defineExpose({ reload: load, liveTerms: () => (live.value ? terms(live.value) : 
 .offer-head { display: flex; align-items: center; gap: 13px; flex-wrap: wrap; }
 .row-text { flex: 1; min-width: 220px; }
 .row-text strong { display: block; font-size: 12px; font-weight: 550; }
-.row-text small { display: block; font-size: 10px; color: var(--muted); margin-top: 4px; }
+.row-text small { display: block; font-size: 11px; color: var(--muted); margin-top: 4px; }
 .inline-note { margin: 10px 0 0; font-size: 11px; color: var(--amber); }
 .small-btn { font-size: 11px; padding: 7px 11px; }
 .history { border-top: 1px solid var(--line); }

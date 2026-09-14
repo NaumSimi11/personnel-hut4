@@ -177,7 +177,7 @@ onMounted(load)
           <strong>{{ kindText[selectedKind].title }}</strong>
           <small>{{ holidays[selected] || closures[selected] || kindText[selectedKind].sub }}</small>
         </div>
-        <button class="button secondary small-btn" type="button" aria-label="Close day" @click="selected = null">×</button>
+        <button class="button secondary small-btn" type="button" aria-label="Close day" @click="selected = null"><svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M4 4l8 8M12 4l-8 8" /></svg></button>
       </div>
       <div class="rail-count">
         <template v-if="selectedLeaves.length">
@@ -219,10 +219,10 @@ onMounted(load)
 .rail-count { margin: 14px 0 10px; font-size: 12px; }
 .rail-people { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
 .rail-people li { border: 1px solid var(--line); border-radius: 8px; padding: 9px 11px; display: grid; gap: 2px; }
-.rail-people small { color: var(--muted); font-size: 10px; }
+.rail-people small { color: var(--muted); font-size: 11px; }
 .rail-people .note { color: var(--ink); }
 @media (max-width: 720px) { .layout.open { grid-template-columns: 1fr; } .rail { border-left: 0; } }
-.dow { font-size: 9px; text-transform: uppercase; letter-spacing: 0.08em; color: #85907f; padding: 10px 8px; background: #fafbf8; }
+.dow { font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; color: #85907f; padding: 10px 8px; background: #fafbf8; }
 .day { min-height: 84px; padding: 6px 8px; border-top: 1px solid #edf0eb; border-left: 1px solid #edf0eb; font-size: 11px; }
 .day:nth-child(7n + 1) { border-left: 0; }
 .day.out { color: #b5bcb1; background: #fcfcfb; }
@@ -230,8 +230,8 @@ onMounted(load)
 .day.holiday { background: #fbf2df; }
 .day.today .num { color: var(--green); font-weight: 700; }
 .num { font-size: 11px; font-weight: 550; margin-bottom: 4px; }
-.hol { display: block; font-size: 9px; color: #946d24; margin-bottom: 3px; }
-.entry { font-size: 10px; padding: 2px 5px; border-radius: 4px; background: #edf5ed; color: #3e744e; margin-bottom: 3px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hol { display: block; font-size: 11px; color: #946d24; margin-bottom: 3px; }
+.entry { font-size: 11px; padding: 2px 5px; border-radius: 4px; background: #edf5ed; color: #3e744e; margin-bottom: 3px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .entry.pending { background: #f0f1ef; color: #7b8378; border: 1px dashed #c9cfc5; }
 .entry.mine { background: #edf2f9; color: #567399; }
 @media (max-width: 720px) { .day { min-height: 56px; } .entry { white-space: normal; } }

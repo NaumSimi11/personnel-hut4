@@ -313,8 +313,8 @@ watch(
 .doc-row.archived { opacity: 0.6; }
 .row-text { flex: 1; min-width: 200px; }
 .row-text strong { display: block; font-size: 12px; font-weight: 550; }
-.row-text small { display: block; font-size: 10px; color: var(--muted); margin-top: 4px; }
-.version { font-size: 10px; font-weight: 600; color: var(--muted); margin-left: 4px; }
+.row-text small { display: block; font-size: 11px; color: var(--muted); margin-top: 4px; }
+.version { font-size: 11px; font-weight: 600; color: var(--muted); margin-left: 4px; }
 .actions { display: flex; gap: 8px; flex-wrap: wrap; }
 .small-btn { font-size: 11px; padding: 7px 11px; }
 .doc-form { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 14px; padding: 16px 24px; background: #fafbf8; border-top: 1px solid var(--line); }

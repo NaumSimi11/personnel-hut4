@@ -271,7 +271,7 @@ onMounted(load)
 .promotion-card { padding: 18px 24px 20px; border-top: 1px solid #edf0eb; display: grid; gap: 12px; }
 .promotion-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
 .promotion-head strong { display: block; font-size: 12px; font-weight: 550; }
-.promotion-head small { display: block; font-size: 10px; color: var(--muted); margin-top: 4px; }
+.promotion-head small { display: block; font-size: 11px; color: var(--muted); margin-top: 4px; }
 .brief { padding: 12px 14px; border-radius: 10px; background: #f6f8f4; }
 .brief strong { display: block; font-size: 12px; margin-top: 6px; }
 .brief p { margin: 6px 0 0; font-size: 11px; color: var(--muted); line-height: 1.6; white-space: pre-wrap; }

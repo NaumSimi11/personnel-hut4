@@ -288,13 +288,13 @@ watch(() => props.companyId, load)
 .period-row.exported { opacity: 0.75; }
 .row-text { flex: 1; min-width: 220px; }
 .row-text strong { display: block; font-size: 12px; font-weight: 550; }
-.row-text small { display: block; font-size: 10px; color: var(--muted); margin-top: 4px; }
+.row-text small { display: block; font-size: 11px; color: var(--muted); margin-top: 4px; }
 .muted { font-weight: 400; color: var(--muted); }
 .actions { display: flex; gap: 8px; flex-wrap: wrap; }
 .small-btn { font-size: 11px; padding: 7px 11px; }
 .lines { background: #fafbf8; border-top: 1px solid #edf0eb; }
 .line-row { padding: 9px 24px 9px 40px; border-top: 1px solid #f1f3ee; }
-.lines-total { padding: 10px 24px 12px 40px; font-size: 10px; color: var(--muted); }
+.lines-total { padding: 10px 24px 12px 40px; font-size: 11px; color: var(--muted); }
 .form { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 14px; padding: 16px 24px; background: #fafbf8; border-top: 1px solid var(--line); }
 .form label { display: grid; gap: 4px; font-size: 11px; color: var(--muted); }
 .form .form-actions { grid-column: 1 / -1; display: flex; justify-content: flex-end; gap: 8px; }

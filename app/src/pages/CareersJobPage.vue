@@ -254,7 +254,7 @@ onMounted(async () => {
   resize: vertical;
 }
 .field input[type='file'] { padding: 9px 10px; font-size: 12px; }
-.required { font-size: 9px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); margin-left: 8px; }
+.required { font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); margin-left: 8px; }
 .hint { display: block; font-size: 11px; color: var(--muted); margin-top: -8px; margin-bottom: 14px; }
 .trap { position: absolute; left: -10000px; top: auto; width: 1px; height: 1px; overflow: hidden; }
 .consent { display: flex; gap: 10px; align-items: flex-start; font-size: 12px; line-height: 1.6; margin: 6px 0 14px; }

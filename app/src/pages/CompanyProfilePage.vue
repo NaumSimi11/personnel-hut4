@@ -817,7 +817,7 @@ onMounted(load)
 .company-banner { display: flex; align-items: center; gap: 18px; margin-bottom: 20px; }
 .company-banner h1 { margin: 4px 0 5px; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .company-banner .meta { margin: 0; font-size: 12px; color: var(--muted); }
-.archived-badge { font-size: 10px; letter-spacing: 0.04em; text-transform: uppercase; }
+.archived-badge { font-size: 11px; letter-spacing: 0.04em; text-transform: uppercase; }
 .archive-card { margin-top: 18px; }
 .archive-card .row { border-top: 0; }
 .archive-card .row-text small { line-height: 1.6; }
@@ -832,7 +832,7 @@ onMounted(load)
 .detail-section h3 {
   margin: 0;
   padding: 18px 24px 0;
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 600;
   letter-spacing: 0.08em;
   text-transform: uppercase;
@@ -865,7 +865,7 @@ onMounted(load)
 .metric-label { font-size: 11px; color: var(--muted); font-weight: 550; }
 .metric-value { font-size: 26px; font-weight: 750; letter-spacing: -0.02em; }
 .detail-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 18px 20px; padding: 16px 24px 23px; margin: 0; }
-.detail-grid dt { font-size: 10px; color: var(--muted); margin-bottom: 6px; }
+.detail-grid dt { font-size: 11px; color: var(--muted); margin-bottom: 6px; }
 .detail-grid dd { margin: 0; font-size: 12px; }
 @media (max-width: 560px) {
   .detail-grid { grid-template-columns: 1fr; }
@@ -880,7 +880,7 @@ onMounted(load)
 }
 .row-text { flex: 1; min-width: 220px; }
 .row-text strong { display: block; font-size: 12px; font-weight: 550; }
-.row-text small { display: block; font-size: 10px; color: var(--muted); margin-top: 4px; }
+.row-text small { display: block; font-size: 11px; color: var(--muted); margin-top: 4px; }
 .small-btn { font-size: 11px; padding: 7px 11px; text-decoration: none; }
 .person-link { text-decoration: none; color: inherit; }
 .person-link:hover strong { color: var(--green); text-decoration: underline; }

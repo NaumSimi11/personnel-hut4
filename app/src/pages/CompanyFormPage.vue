@@ -471,7 +471,7 @@ watch(companyId, load)
   .grid, .grid.three { grid-template-columns: 1fr; }
 }
 .code { text-transform: uppercase; letter-spacing: 0.08em; }
-.field-hint { display: block; font-size: 10px; color: var(--muted); margin-top: -2px; }
+.field-hint { display: block; font-size: 11px; color: var(--muted); margin-top: -2px; }
 .accent-row { display: flex; gap: 8px; align-items: center; }
 .accent-row input[type='color'] {
   width: 42px;

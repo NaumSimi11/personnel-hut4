@@ -4,7 +4,7 @@ import { QUESTION_KINDS, newQuestion, type ScreeningQuestion } from '@/lib/jobWo
 /**
  * Edit a job's screening questions (jobs.screening_questions). Immutable
  * updates: every change emits a new array. Options for choice questions are
- * one per line in a textarea — simple to type, simple to validate.
+ * separate editable rows; unfinished options remain until save-time validation.
  */
 const props = defineProps<{ modelValue: ScreeningQuestion[]; disabled?: boolean }>()
 const emit = defineEmits<{ 'update:modelValue': [questions: ScreeningQuestion[]] }>()
@@ -33,13 +33,6 @@ function remove(index: number): void {
   )
 }
 
-function optionsText(q: ScreeningQuestion): string {
-  return (q.options ?? []).join('\n')
-}
-
-function setOptions(index: number, raw: string): void {
-  update(index, { options: raw.split('\n').map((o) => o.trim()).filter(Boolean) })
-}
 </script>
 
 <template>
@@ -58,23 +51,21 @@ function setOptions(index: number, raw: string): void {
           :aria-label="`Question ${i + 1}`"
           @input="update(i, { prompt: ($event.target as HTMLInputElement).value })"
         />
-        <textarea
-          v-if="q.kind === 'choice'"
-          class="question-options"
-          rows="3"
-          :value="optionsText(q)"
-          :disabled="disabled"
-          placeholder="One option per line"
-          :aria-label="`Options for question ${i + 1}`"
-          @input="setOptions(i, ($event.target as HTMLTextAreaElement).value)"
-        ></textarea>
+        <div v-if="q.kind === 'choice'" class="choice-options">
+          <div v-for="(option, j) in q.options ?? []" :key="j" class="choice-option">
+            <input class="question-options" :value="option" :disabled="disabled" :aria-label="`Option ${j + 1} for question ${i + 1}`" placeholder="Choice label" @input="update(i, { options: (q.options ?? []).map((o, k) => k === j ? ($event.target as HTMLInputElement).value : o) })" />
+            <button class="button secondary small-btn" type="button" :disabled="disabled" :aria-label="`Remove option ${j + 1} for question ${i + 1}`" @click="update(i, { options: (q.options ?? []).filter((_, k) => k !== j) })">Remove option</button>
+          </div>
+          <button class="button secondary small-btn" type="button" :disabled="disabled" @click="update(i, { options: [...(q.options ?? []), ''] })">Add option</button>
+          <p class="empty-note">Add at least two choices. Save the description to make these questions available on candidate pages.</p>
+        </div>
       </div>
       <select
         class="question-kind"
         :value="q.kind"
         :disabled="disabled"
         :aria-label="`Answer type for question ${i + 1}`"
-        @change="update(i, { kind: ($event.target as HTMLSelectElement).value as ScreeningQuestion['kind'] })"
+        @change="update(i, { kind: ($event.target as HTMLSelectElement).value as ScreeningQuestion['kind'], options: ($event.target as HTMLSelectElement).value === 'choice' ? q.options?.length ? q.options : ['', ''] : undefined })"
       >
         <option v-for="kind in QUESTION_KINDS" :key="kind" :value="kind">{{ KIND_LABELS[kind] }}</option>
       </select>
@@ -116,7 +107,8 @@ function setOptions(index: number, raw: string): void {
   font-family: inherit;
 }
 .question-kind { width: auto; }
-.question-options { resize: vertical; }
+.choice-options { display: grid; gap: 8px; }
+.choice-option { display: flex; gap: 8px; align-items: center; }
 .required { display: flex; align-items: center; gap: 6px; font-size: 11px; padding-top: 9px; }
 .small-btn { font-size: 11px; padding: 7px 11px; align-self: flex-start; }
 </style>

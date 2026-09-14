@@ -3,6 +3,7 @@ import { env } from './env.js'
 import { registerRoutes } from './routes.js'
 import { registerCareersRoutes } from './careersRoutes.js'
 import { registerLeaveRoutes } from './leaveRoutes.js'
+import { registerCandidateNotifications } from './candidateNotifications.js'
 import { registerAppServing } from './serveApp.js'
 
 /**
@@ -17,6 +18,7 @@ export async function createApp(options: { serveAppDir?: string }): Promise<Fast
   const app = Fastify({ logger: { level: 'warn' }, trustProxy: env('TRUST_PROXY') === 'true' })
   registerRoutes(app)
   registerLeaveRoutes(app)
+  registerCandidateNotifications(app)
   await registerCareersRoutes(app)
   await registerAppServing(app, options.serveAppDir)
   return app

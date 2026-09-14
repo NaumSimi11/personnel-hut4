@@ -26,7 +26,7 @@ const people = ref<{ id: string; full_name: string }[]>([])
 const form = ref({ fullName: '', jobTitle: '', startDate: '', managerId: '' })
 const error = ref<string | null>(null)
 const busy = ref(false)
-const result = ref<{ personId: string } | null>(null)
+const result = ref<{ personId: string; planId: string | null } | null>(null)
 
 function open(t: Target): void {
   target.value = t
@@ -67,8 +67,8 @@ async function submit(): Promise<void> {
       p_manager_id: parsed.data.managerId || undefined,
     })
     if (rpcErr) throw new Error(friendly(rpcErr.message))
-    const payload = data as { person_id: string }
-    result.value = { personId: payload.person_id }
+    const payload = data as { person_id: string; plan_id: string | null }
+    result.value = { personId: payload.person_id, planId: payload.plan_id }
   } catch (e) {
     error.value = e instanceof Error ? e.message : 'Could not confirm the hire.'
   } finally {
@@ -97,11 +97,14 @@ onMounted(async () => {
   <dialog ref="dialog" class="confirm-hire" aria-labelledby="confirm-hire-title">
     <div v-if="result" class="body">
       <div class="eyebrow">Hire confirmed</div>
-      <h2 id="confirm-hire-title">Hired. Employment and the onboarding plan were created.</h2>
+      <h2 id="confirm-hire-title">{{ result.planId ? 'Hired. Employment and the onboarding plan were created.' : 'Hired. Employment was created.' }}</h2>
+      <p v-if="!result.planId" class="hint">No onboarding plan was returned. Check onboarding setup for this company.</p>
       <div class="actions">
+        <router-link v-if="result.planId" class="button" :to="{ name: 'onboarding-plan', params: { planId: result.planId } }" @click="done">Open onboarding</router-link>
         <router-link
           class="button secondary"
           :to="{ name: 'person', params: { personId: result.personId } }"
+          @click="done"
         >
           Open employee profile
         </router-link>

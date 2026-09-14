@@ -11,6 +11,9 @@ import ConfirmHireDialog from '@/components/ConfirmHireDialog.vue'
 import RejectApplicationDialog from '@/components/RejectApplicationDialog.vue'
 import { friendlyRecruitmentError, salvageQuestions } from '@/lib/jobWorkspace'
 import { answersFromRows, mergeAnswers, type AnswerRow } from '@/lib/screeningAnswers'
+import CandidateHandoffDialog, { type HandoffPayload } from '@/components/CandidateHandoffDialog.vue'
+import { notifyCandidateAssignment } from '@/lib/candidateNotifications'
+import { candidateNextStep } from '@/lib/hiringJourney'
 import { criteriaFor } from '@/lib/interviews'
 import type { OfferTerms } from '@/lib/offers'
 
@@ -28,6 +31,7 @@ type Application = {
   job_id: string
   company_id: string
   stage_key: string
+  updated_at: string
   owner_id: string | null
   next_action: string | null
   next_action_due: string | null
@@ -70,6 +74,9 @@ const auth = useAuthStore()
 const applicationId = route.params.applicationId as string
 
 const application = ref<Application | null>(null)
+const onboarding = ref<{ id: string; status: string; plan_tasks: { status: string; critical: boolean }[] } | null>(null)
+const onboardingError = ref(false)
+const onboardingGaps = computed(() => onboarding.value?.plan_tasks.filter(t => t.critical && !['done', 'skipped'].includes(t.status)).length ?? 0)
 const events = ref<EventRow[]>([])
 const people = ref<{ id: string; full_name: string }[]>([])
 const channelLabels = ref<Record<string, string>>({})
@@ -77,6 +84,61 @@ const loading = ref(true)
 const error = ref<string | null>(null)
 
 const answerRows = ref<AnswerRow[]>([])
+const questionsError = ref<string | null>(null)
+const handoffDialog = ref<InstanceType<typeof CandidateHandoffDialog> | null>(null)
+const handoffNotice = ref('')
+
+async function refreshQuestions(): Promise<void> {
+  if (!application.value) return
+  questionsError.value = null
+  const { data, error: err } = await supabase.from('jobs').select('screening_questions').eq('id', application.value.job_id).maybeSingle()
+  if (err || !data) { questionsError.value = 'Could not load role questions. Check your access and try again.'; return }
+  const parsed = salvageQuestions(data.screening_questions)
+  if (parsed.lossy) { questionsError.value = 'The saved questions could not be read. Open the role to review them.'; return }
+  answerRows.value = mergeAnswers(parsed.questions, answersFromRows(answerRows.value))
+}
+
+function openHandoff(mode: 'assign' | 'start' | 'outcome'): void {
+  if (!application.value) return
+  handoffDialog.value?.open(mode, application.value.stage_key, {
+    ownerId: application.value.owner_id ?? '',
+    nextAction: application.value.next_action ?? '',
+    nextActionDue: application.value.next_action_due ?? '',
+  })
+}
+
+async function saveHandoff(payload: HandoffPayload): Promise<void> {
+  if (!application.value) throw new Error('Reload this application before continuing.')
+  const current = application.value
+  const terminal = payload.stage === 'rejected'
+  if (current.stage_key === 'screening' && payload.stage === 'interview') {
+    const missing = answerRows.value.find(r => !r.orphaned && r.question.required && !r.answer.trim())
+    if (missing) throw new Error(`Answer the required question before proceeding: ${missing.question.prompt}`)
+  }
+  // Answers typed on the page travel with a screening outcome; an assignment edit leaves them alone.
+  const { data, error: err } = await supabase.from('applications').update({
+    stage_key: payload.stage,
+    owner_id: terminal ? null : payload.ownerId,
+    next_action: terminal ? null : payload.nextAction,
+    next_action_due: terminal ? null : payload.nextActionDue,
+    ...(payload.stage !== current.stage_key || terminal ? { screening_answers: answersFromRows(answerRows.value) } : {}),
+    ...(terminal ? { rejected_reason: payload.note } : {}),
+  }).eq('id', current.id).eq('updated_at', current.updated_at).select('id, updated_at').maybeSingle()
+  if (err) throw new Error(friendlyReview(err.message))
+  if (!data) throw new Error('This candidate changed since you opened the page. Cancel, refresh the page, and review the latest assignment.')
+  const { error: eventErr } = await supabase.from('application_events').insert({
+    application_id: current.id, actor_id: auth.personId,
+    kind: payload.stage === current.stage_key ? 'note' : 'stage_change',
+    from_stage_key: current.stage_key, to_stage_key: payload.stage,
+    body: payload.note || `Assigned next action: ${payload.nextAction}; due ${payload.nextActionDue}.`,
+  })
+  handoffNotice.value = terminal ? 'Screening outcome saved. Application closed.' : 'Assignment saved.'
+  // The owner hears about it when they are newly assigned or the ask changed — not on every save.
+  const ownerChanged = payload.ownerId !== (current.owner_id ?? '') || payload.nextAction !== (current.next_action ?? '') || payload.stage !== current.stage_key
+  if (!terminal && ownerChanged) handoffNotice.value += ' ' + await notifyCandidateAssignment(current.id, data.updated_at)
+  if (eventErr) handoffNotice.value += ' The timeline note could not be saved; the assignment and outcome were saved.'
+  await load()
+}
 const answersSaving = ref(false)
 const answersError = ref<string | null>(null)
 const answersSaved = ref(false)
@@ -96,6 +158,13 @@ const stageError = ref<string | null>(null)
 const rejectDialog = ref<InstanceType<typeof RejectApplicationDialog> | null>(null)
 const confirmHireDialog = ref<InstanceType<typeof ConfirmHireDialog> | null>(null)
 const offerCard = ref<InstanceType<typeof ApplicationOfferCard> | null>(null)
+
+const guidance = computed(() => candidateNextStep(application.value?.stage_key ?? ''))
+function focusSection(id: string): void {
+  const section = document.getElementById(id)
+  section?.scrollIntoView({ block: 'start' })
+  section?.focus({ preventScroll: true })
+}
 
 const criteria = computed(() => criteriaFor(application.value?.job?.scorecard_criteria))
 
@@ -139,7 +208,7 @@ async function load(): Promise<void> {
     supabase
       .from('applications')
       .select(
-        `id, job_id, company_id, stage_key, owner_id, next_action, next_action_due, source_channel_key,
+        `id, job_id, company_id, stage_key, updated_at, owner_id, next_action, next_action_due, source_channel_key,
          received_at, rejected_reason, withdrawn_reason, screening_answers, employment_period_id,
          candidate:candidates(id, full_name, email, phone),
          job:jobs(id, title, screening_questions, scorecard_criteria, company:companies(name)),
@@ -163,6 +232,14 @@ async function load(): Promise<void> {
     return
   }
   application.value = appRes.data as Application
+  onboarding.value = null
+  onboardingError.value = false
+  if (application.value.stage_key === 'hired' && application.value.employment_period_id) {
+    const plan = await supabase.from('plans').select('id, status, plan_tasks(status, critical)')
+      .eq('employment_period_id', application.value.employment_period_id).eq('kind', 'onboarding').maybeSingle()
+    onboardingError.value = Boolean(plan.error)
+    onboarding.value = plan.data
+  }
   events.value = (eventsRes.data ?? []) as EventRow[]
   people.value = peopleRes.data ?? []
   channelLabels.value = Object.fromEntries((channelsRes.data ?? []).map((c) => [c.key, c.label]))
@@ -192,13 +269,14 @@ async function saveAnswers(): Promise<void> {
     .from('applications')
     .update({ screening_answers: answersFromRows(answerRows.value) })
     .eq('id', application.value.id)
-    .select('id')
+    .select('id, updated_at')
     .maybeSingle()
   answersSaving.value = false
   if (err || !data) {
     answersError.value = friendlyReview(err?.message ?? 'row-level security')
     return
   }
+  application.value = { ...application.value, updated_at: data.updated_at }
   answersSaved.value = true
 }
 
@@ -220,15 +298,19 @@ async function saveDecision(): Promise<void> {
       next_action_due: parsed.data.nextActionDue || null,
     })
     .eq('id', application.value.id)
-    .select('owner_id, next_action, next_action_due, owner:people!applications_owner_id_fkey(full_name)')
+    .select('updated_at, owner_id, next_action, next_action_due, owner:people!applications_owner_id_fkey(full_name)')
     .maybeSingle()
   decisionSaving.value = false
   if (err || !data) {
     decisionError.value = friendlyReview(err?.message ?? 'row-level security')
     return
   }
+  const before = application.value
   application.value = { ...application.value, ...(data as Partial<Application>) }
   decisionSaved.value = true
+  const live = !['hired', 'rejected', 'withdrawn'].includes(before.stage_key)
+  const ownerChanged = data.owner_id !== before.owner_id || data.next_action !== before.next_action
+  if (live && data.owner_id && ownerChanged) handoffNotice.value = 'Assignment saved. ' + await notifyCandidateAssignment(application.value.id, data.updated_at)
 }
 
 async function addNote(): Promise<void> {
@@ -350,34 +432,52 @@ onMounted(load)
         <span class="badge stage-badge" :class="stageBadgeClass(application.stage_key)">{{ application.stage_key }}</span>
       </div>
 
+      <section class="card journey-focus" aria-label="Candidate next step">
+        <div>
+          <div class="eyebrow">{{ isTerminal ? 'Outcome' : 'Next action' }}</div>
+          <h2>{{ !isTerminal && application.next_action ? application.next_action : guidance.title }}</h2>
+          <p v-if="!isTerminal">Owner: {{ application.owner?.full_name ?? 'Not assigned' }} &middot; {{ application.next_action_due ? `Due ${application.next_action_due}` : 'No due date set' }}</p>
+          <p v-if="!isTerminal && !application.owner">Assign an owner in Decision so this candidate has a clear point of contact.</p>
+        </div>
+        <template v-if="canReview && !isTerminal">
+          <button v-if="application.stage_key === 'new'" class="button" type="button" @click="openHandoff('start')">Start screening</button>
+          <button v-else-if="application.stage_key === 'screening'" class="button" type="button" @click="openHandoff('outcome')">Record screening outcome</button>
+          <button v-else class="button" type="button" @click="focusSection(guidance.target)">{{ guidance.label }}</button>
+          <button class="button secondary" type="button" @click="openHandoff('assign')">Edit assignment</button>
+        </template>
+        <button v-else class="button secondary" type="button" @click="focusSection(guidance.target)">{{ guidance.label }}</button>
+      </section>
+
+      <p v-if="handoffNotice" class="handoff-notice" role="status">{{ handoffNotice }}</p>
+      <section v-if="application.stage_key === 'hired'" class="card journey-focus" aria-label="Onboarding handoff">
+        <div><div class="eyebrow">Onboarding</div>
+          <h2>{{ onboarding ? onboarding.status === 'completed' ? 'Onboarding completed' : `${onboardingGaps} critical preparations outstanding` : 'Check onboarding preparations' }}</h2>
+          <p v-if="onboardingError">Could not load onboarding. Try reloading the page.</p>
+          <p v-else-if="!onboarding">No onboarding plan is visible with your access.</p>
+          <p v-else>Open the plan to review task owners, due dates, and readiness for the first day.</p>
+        </div>
+        <router-link v-if="onboarding" class="button" :to="{ name: 'onboarding-plan', params: { planId: onboarding.id } }">Open onboarding</router-link>
+        <router-link v-if="application.employment_period?.person_id" class="button secondary" :to="{ name: 'person', params: { personId: application.employment_period.person_id } }">View employee record</router-link>
+      </section>
+
       <div class="layout">
         <div class="main-column">
+          <section id="candidate-review" tabindex="-1" aria-label="Candidate files">
           <ApplicationFilesCard :application-id="application.id" :company-id="application.company_id" :can-review="canReview" />
 
-          <ApplicationInterviewsCard
-            :application-id="application.id"
-            :company-id="application.company_id"
-            :can-review="canReview"
-            :criteria="criteria"
-          />
-
-          <ApplicationOfferCard
-            ref="offerCard"
-            :application-id="application.id"
-            :company-id="application.company_id"
-            :can-review="canReview"
-            :stage="application.stage_key"
-          />
-
-          <div class="card">
+          </section>
+          <div id="candidate-answers" class="card" tabindex="-1">
             <div class="card-head">
               <div>
                 <h2>Screening answers</h2>
-                <p>The job's screening questions and what the candidate answered.</p>
+                <p>Questions saved on this role. Record the candidate's responses here during screening.</p>
               </div>
             </div>
-            <div v-if="!answerRows.length" class="empty">This job has no screening questions.</div>
-            <div v-else class="card-body">
+            <div v-if="!application.job" class="error-note" role="alert">The linked role is not visible. Check your access to this role.</div>
+            <div v-else-if="!answerRows.length" class="empty">No questions are saved on this role. Add them on the job's Description tab and save the description.</div>
+            <div class="card-body question-tools"><router-link :to="{ name: 'job', params: { jobId: application.job_id }, query: { tab: 'description' } }">View role questions</router-link><button class="button secondary small-btn" type="button" @click="refreshQuestions">Refresh questions</button></div>
+            <p v-if="questionsError" class="error-note" role="alert">{{ questionsError }}</p>
+            <div v-if="answerRows.length" class="card-body">
               <div v-for="(row, i) in answerRows" :key="row.question.id" class="answer-row" :class="{ orphaned: row.orphaned }">
                 <label :for="`answer-${row.question.id}`" class="question">
                   {{ row.question.prompt }}
@@ -424,6 +524,25 @@ onMounted(load)
             </div>
           </div>
 
+          <section id="candidate-interviews" tabindex="-1" aria-label="Candidate interviews">
+          <ApplicationInterviewsCard
+            :application-id="application.id"
+            :company-id="application.company_id"
+            :can-review="canReview"
+            :criteria="criteria"
+          />
+
+          </section>
+          <section id="candidate-offer" tabindex="-1" aria-label="Candidate offer">
+          <ApplicationOfferCard
+            ref="offerCard"
+            :application-id="application.id"
+            :company-id="application.company_id"
+            :can-review="canReview"
+            :stage="application.stage_key"
+          />
+          </section>
+
           <div class="card">
             <div class="card-head">
               <div>
@@ -452,7 +571,7 @@ onMounted(load)
         </div>
 
         <aside class="side-column">
-          <div class="card decision-panel">
+          <div id="candidate-decision" class="card decision-panel" tabindex="-1">
             <div class="card-head">
               <div>
                 <h2>Decision</h2>
@@ -460,6 +579,8 @@ onMounted(load)
               </div>
             </div>
             <div class="card-body">
+              <p>Use the guided actions above to assign work and record outcomes.</p>
+              <details><summary>Manual assignment fields</summary>
               <div class="field">
                 <label for="decision-owner">Owner</label>
                 <select id="decision-owner" v-model="decision.ownerId" :disabled="!canReview">
@@ -483,6 +604,7 @@ onMounted(load)
                 </button>
               </div>
 
+              </details>
               <template v-if="canReview">
                 <h3 class="sub-heading">Stage</h3>
                 <p v-if="stageError" class="error-note" role="alert">{{ stageError }}</p>
@@ -496,7 +618,7 @@ onMounted(load)
                   </router-link>
                   <template v-else-if="!isTerminal">
                     <button
-                      v-for="a in nextStages"
+                      v-for="a in nextStages.filter(s => s.to === 'offer')"
                       :key="a.to"
                       class="button secondary small-btn"
                       type="button"
@@ -541,12 +663,21 @@ onMounted(load)
       </div>
     </template>
 
+    <CandidateHandoffDialog ref="handoffDialog" :people="people" :save="saveHandoff" />
     <RejectApplicationDialog ref="rejectDialog" @confirmed="onDecided" />
     <ConfirmHireDialog ref="confirmHireDialog" @hired="load" />
   </div>
 </template>
 
 <style scoped>
+.handoff-notice { padding: 12px 16px; background: #f4f6ef; border: 1px solid var(--line); border-radius: 8px; font-size: 12px; }
+summary { cursor: pointer; margin-bottom: 12px; font-size: 12px; }
+.journey-focus { padding: 20px 24px; margin-bottom: 20px; display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.journey-focus > div { flex: 1; min-width: 220px; }
+.journey-focus h2 { font-size: 16px; margin: 6px 0; }
+.journey-focus p { color: var(--muted); font-size: 12px; margin: 6px 0; }
+section[id], #candidate-decision { scroll-margin-top: 20px; }
+
 .back-link {
   display: inline-block;
   font-size: 11px;
@@ -566,7 +697,10 @@ onMounted(load)
 .meta { margin: 4px 0 0; font-size: 11px; color: var(--muted); }
 .layout { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 18px; align-items: start; }
 @media (max-width: 960px) { .layout { grid-template-columns: 1fr; } }
-.main-column, .side-column { display: grid; gap: 18px; }
+.main-column, .side-column { display: flex; flex-direction: column; gap: 18px; }
+.question-tools { display: flex; gap: 14px; align-items: center; }
+.main-column #candidate-interviews { order: v-bind("application?.stage_key === 'interview' ? -1 : 0"); }
+.main-column #candidate-offer { order: v-bind("application?.stage_key === 'offer' ? -1 : 0"); }
 .answer-row { display: grid; gap: 7px; margin-bottom: 16px; }
 .answer-row.orphaned { opacity: 0.7; }
 .question { font-size: 11px; font-weight: 550; color: #566653; display: flex; gap: 8px; align-items: center; }

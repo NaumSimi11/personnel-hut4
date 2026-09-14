@@ -200,6 +200,7 @@ async function load(): Promise<void> {
     onboardingGapsRes,
     myTasksRes,
     laterRes,
+    candidateAssignments,
   ] = await Promise.all([
     supabase.from('people').select('*', { count: 'exact', head: true }).is('archived_at', null),
     supabase.from('companies').select('*', { count: 'exact', head: true }).is('archived_at', null),
@@ -236,6 +237,8 @@ async function load(): Promise<void> {
       .eq('status', 'in_progress'),
     loadMyTasks(),
     loadLaterQueues(),
+    auth.personId ? supabase.from('applications').select('id, company_id, stage_key, next_action, next_action_due, candidate:candidates(full_name), job:jobs(title)')
+      .eq('owner_id', auth.personId).in('stage_key', ['new', 'screening', 'interview', 'offer']).order('next_action_due', { ascending: true }) : Promise.resolve({ data: [], error: null }),
   ])
   const [compRes, docReviewRes, myReqRes, policyRes, ackRes, itRes, payrollRes, leaveRes] = laterRes
 
@@ -254,6 +257,7 @@ async function load(): Promise<void> {
   logIfError('offers queue', offersRes.error)
   logIfError('onboarding gaps queue', onboardingGapsRes.error)
   logIfError('my tasks', myTasksRes.error)
+  logIfError('candidate assignments', candidateAssignments.error)
   logIfError('compensation queue', compRes.error)
   logIfError('document reviews queue', docReviewRes.error)
   logIfError('my document requests', myReqRes.error)
@@ -271,6 +275,11 @@ async function load(): Promise<void> {
   }
 
   queueRows.value = [
+    ...(candidateAssignments.data ?? []).filter(a => auth.can(a.company_id, 'candidates.review')).map(a => ({
+      id: `candidate-${a.id}`, title: `Candidate: ${a.candidate?.full_name ?? 'Candidate'}`,
+      sub: `${a.job?.title ?? 'Role'} · ${a.next_action || 'Set next action'} · ${a.next_action_due ? `Due ${a.next_action_due}` : 'No due date set'}`,
+      actionLabel: 'Open candidate', to: { name: 'application', params: { applicationId: a.id } },
+    })),
     ...hiringRequestsToRows((hiringRequestsRes.data ?? []) as HiringRequestRow[]),
     ...offersToRows((offersRes.data ?? []) as OfferRow[]),
     ...onboardingGapsToRows((onboardingGapsRes.data ?? []) as OnboardingGapRow[]),

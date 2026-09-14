@@ -103,6 +103,17 @@ test('prepare job → describe → publish channels → promote → applications
   const second = page.locator('.question-row').nth(1)
   await second.locator('.question-prompt').fill('Eligible to work in North Macedonia?')
   await second.locator('.question-kind').selectOption('yes_no')
+  await page.getByRole('button', { name: 'Add question', exact: true }).click()
+  const choice = page.locator('.question-row').nth(2)
+  await choice.locator('.question-prompt').fill('Preferred schedule?')
+  await choice.locator('.question-kind').selectOption('choice')
+  await choice.getByRole('textbox', { name: 'Option 1 for question 3', exact: true }).fill('Morning')
+  await choice.getByRole('textbox', { name: 'Option 2 for question 3', exact: true }).fill('Evening')
+  await choice.getByRole('button', { name: 'Add option', exact: true }).click()
+  await choice.getByRole('textbox', { name: 'Option 3 for question 3', exact: true }).fill('Flexible')
+  await choice.getByRole('button', { name: 'Remove option 2 for question 3', exact: true }).click()
+  await expect(choice.locator('.question-options')).toHaveCount(2)
+
   await page.getByRole('button', { name: 'Save description' }).click()
   await expect(page.getByText('Description saved')).toBeVisible()
 
@@ -112,7 +123,8 @@ test('prepare job → describe → publish channels → promote → applications
     .eq('id', jobId)
     .single()
   expect(afterSave?.description_revision).toBe(2)
-  expect((afterSave?.screening_questions as unknown[]).length).toBe(2)
+  expect((afterSave?.screening_questions as unknown[]).length).toBe(3)
+  expect((afterSave?.screening_questions as { options?: string[] }[])[2]?.options).toEqual(['Morning', 'Flexible'])
 
   await page.getByRole('tab', { name: 'Overview' }).click()
   await page.getByRole('button', { name: 'Mark ready' }).click()

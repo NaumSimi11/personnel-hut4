@@ -3,6 +3,7 @@ import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/stores/auth'
+import { candidateQueue, candidateNextStep } from '@/lib/hiringJourney'
 import AddCandidateDialog from '@/components/AddCandidateDialog.vue'
 import UploadCvsDialog from '@/components/UploadCvsDialog.vue'
 import ConfirmHireDialog from '@/components/ConfirmHireDialog.vue'
@@ -119,6 +120,7 @@ const hiredCount = computed(() => applications.value.filter((a) => a.stage_key =
 const activeCount = computed(
   () => applications.value.filter((a) => !['hired', 'rejected', 'withdrawn'].includes(a.stage_key)).length,
 )
+const actionQueue = computed(() => candidateQueue(applications.value))
 const liveChannels = computed(() => channels.value.filter(isPublished).length)
 
 const step = computed(() =>
@@ -407,8 +409,39 @@ onMounted(async () => {
         </button>
       </div>
 
+      <section v-if="activeTab === 'overview'" class="card journey-focus" aria-label="Role next step">
+        <div>
+          <div class="eyebrow">Next action</div>
+          <h2>{{ appError ? 'Candidate status unavailable' : actionQueue.length ? 'Keep candidates moving' : hiredCount ? 'Continue the hiring handoff' : job.status === 'draft' ? 'Prepare this role' : 'Find your next colleague' }}</h2>
+          <p>{{ appError ? 'Reload the page to check candidate progress.' : actionQueue.length ? `${actionQueue.length} active candidates. Review due actions and assign an owner to each candidate.` : hiredCount ? 'Open a hired candidate to continue to their employee record and onboarding.' : job.status === 'draft' ? 'Complete the description, then mark the role ready from Overview.' : 'Review your channels or add candidates directly to the role.' }}</p>
+          <p v-if="['on_hold', 'closed', 'filled'].includes(job.status)">This role is {{ job.status.replace('_', ' ') }}. Review its status before starting new recruitment activity.</p>
+          <small>Hiring manager: {{ job.request?.hiring_manager?.full_name ?? 'Not assigned' }}<template v-if="job.request?.target_start_date"> &middot; Target start: {{ job.request.target_start_date }}</template></small>
+        </div>
+        <button class="button" type="button" @click="selectTab(actionQueue.length || hiredCount ? 'applications' : job.status === 'draft' ? 'description' : 'channels')">{{ actionQueue.length || hiredCount ? 'View candidates' : job.status === 'draft' ? 'Review description' : 'Review channels' }}</button>
+      </section>
+
       <!-- Overview -->
       <div v-if="activeTab === 'overview'">
+        <section class="card journey-queue" aria-label="Candidate next actions">
+          <div class="card-head"><div><h2>Candidate next actions</h2><p>Due dates first. Open a candidate to review, interview, or agree an offer.</p></div></div>
+          <p v-if="appError" class="error-note" role="alert">{{ appError }}</p>
+          <div v-else-if="!actionQueue.length" class="empty">No active candidates awaiting a next step.</div>
+          <div v-for="a in actionQueue" v-else :key="a.id" class="journey-candidate">
+            <div><router-link :to="{ name: 'application', params: { applicationId: a.id } }"><strong>{{ a.candidate?.full_name ?? 'Candidate' }}</strong></router-link>
+              <p>{{ a.next_action || candidateNextStep(a.stage_key).title }}</p>
+              <small>{{ a.owner?.full_name ?? 'Owner needed' }} &middot; {{ a.next_action_due ? `Due ${a.next_action_due}` : 'No due date set' }}</small>
+            </div>
+            <span class="badge" :class="stageBadgeClass(a.stage_key)">{{ a.stage_key }}</span>
+            <router-link class="button secondary small-btn" :to="{ name: 'application', params: { applicationId: a.id } }">{{ candidateNextStep(a.stage_key).label }}</router-link>
+          </div>
+        </section>
+        <section v-if="hiredCount" class="card journey-queue" aria-label="Hired candidates">
+          <div class="card-head"><div><h2>Hired &middot; continue to onboarding</h2><p>Review each new colleague's preparations and employee record.</p></div></div>
+          <div v-for="a in applications.filter(a => a.stage_key === 'hired')" :key="a.id" class="journey-candidate">
+            <div><strong>{{ a.candidate?.full_name ?? 'New colleague' }}</strong><p>Hire confirmed</p></div>
+            <router-link class="button secondary small-btn" :to="{ name: 'application', params: { applicationId: a.id } }">View onboarding handoff</router-link>
+          </div>
+        </section>
         <div class="metrics">
           <div class="card metric-tile">
             <span class="metric-label">Live listings</span>
@@ -660,6 +693,15 @@ onMounted(async () => {
 </template>
 
 <style scoped>
+.journey-focus { padding: 20px 24px; margin-bottom: 18px; display: flex; align-items: center; justify-content: space-between; gap: 18px; flex-wrap: wrap; }
+.journey-focus h2 { margin: 5px 0; }
+.journey-focus p, .journey-candidate p { margin: 6px 0; font-size: 12px; }
+.journey-focus small, .journey-candidate small { color: var(--muted); }
+.journey-queue { margin-bottom: 18px; }
+.journey-candidate { padding: 16px 24px; border-top: 1px solid var(--line); display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
+.journey-candidate > div { flex: 1; min-width: 180px; }
+.journey-candidate a { color: var(--ink); }
+
 .back-link {
   display: inline-block;
   font-size: 11px;

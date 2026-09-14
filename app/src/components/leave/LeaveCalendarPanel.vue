@@ -3,7 +3,7 @@ import { computed, onMounted, ref, watch } from 'vue'
 import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/stores/auth'
 import { todayDb } from '@/lib/compensation'
-import { LEAVE_TYPE_TONE, dayKind, leaveProgress, monthGrid, shortName, type GridDay } from '@/lib/leave'
+import { LEAVE_TYPE_TONE, dayKind, leaveProgressWorking, monthGrid, shortDate, shortName, type GridDay } from '@/lib/leave'
 
 /**
  * Who is away, month by month (plan 036, styled per 039's day rail and
@@ -130,10 +130,20 @@ function dayTitle(iso: string): string {
 function canOpen(r: TeamRow): boolean {
   return r.person_id === auth.personId || r.leave_type_key !== 'away'
 }
+/** Where the leave stands on the clicked day, in working days (the unit the request and balance use). */
 function progress(r: TeamRow): { text: string; pct: number } {
-  const p = leaveProgress(r, selected.value ?? r.start_date)
-  return { text: p.of === 1 ? 'one day' : `day ${p.day} of ${p.of}`, pct: Math.round((p.day / p.of) * 100) }
+  const p = leaveProgressWorking(r, selected.value ?? r.start_date, Object.keys(holidays.value), Object.keys(closures.value))
+  if (p.of <= 1) return { text: 'one working day', pct: 100 }
+  const left = p.left === 0 ? 'last day' : `${p.left} left`
+  return { text: `working day ${p.day} of ${p.of} · ${left}`, pct: Math.round((p.day / p.of) * 100) }
 }
+const selectedDayNumber = computed(() => (selected.value ? Number(selected.value.slice(8, 10)) : 0))
+const selectedWeekday = computed(() =>
+  selected.value ? new Date(`${selected.value}T00:00:00Z`).toLocaleDateString('en-GB', { weekday: 'long', timeZone: 'UTC' }) : '',
+)
+const selectedMonthYear = computed(() =>
+  selected.value ? new Date(`${selected.value}T00:00:00Z`).toLocaleDateString('en-GB', { month: 'long', year: 'numeric', timeZone: 'UTC' }) : '',
+)
 function select(day: GridDay): void {
   selected.value = selected.value === day.iso ? null : day.iso
 }
@@ -145,13 +155,9 @@ async function load(): Promise<void> {
   const first = grid.value[0]?.iso ?? today
   const last = grid.value[grid.value.length - 1]?.iso ?? today
   // One team_leave call per company (the redaction is per company), merged.
-  const [teamRes, holRes, cloRes] = await Promise.all([
-    Promise.all(props.companies.map((c) => supabase.rpc('team_leave', { p_company_id: c.id, p_from: first, p_to: last }).then((r) => ({ ...r, company: c })))),
-    countries.value.length
-      ? supabase.from('public_holidays').select('date, name, country_code').in('country_code', countries.value).gte('date', first).lte('date', last)
-      : Promise.resolve({ data: [] as { date: string; name: string; country_code: string }[], error: null }),
-    supabase.from('company_closures').select('date, name, company_id').in('company_id', props.companies.map((c) => c.id)).gte('date', first).lte('date', last),
-  ])
+  const teamRes = await Promise.all(
+    props.companies.map((c) => supabase.rpc('team_leave', { p_company_id: c.id, p_from: first, p_to: last }).then((r) => ({ ...r, company: c }))),
+  )
   const failed = teamRes.find((r) => r.error)
   if (failed?.error) {
     error.value = failed.error.message
@@ -159,6 +165,16 @@ async function load(): Promise<void> {
   } else {
     rows.value = teamRes.flatMap((r) => ((r.data ?? []) as Omit<TeamRow, 'company_id'>[]).map((row) => ({ ...row, company_id: r.company.id })))
   }
+  // Days off for the whole span of the leaves on screen — a leave that began
+  // last month is counted with last month's holidays too.
+  const from = rows.value.reduce((min, r) => (r.start_date < min ? r.start_date : min), first)
+  const to = rows.value.reduce((max, r) => (r.end_date > max ? r.end_date : max), last)
+  const [holRes, cloRes] = await Promise.all([
+    countries.value.length
+      ? supabase.from('public_holidays').select('date, name, country_code').in('country_code', countries.value).gte('date', from).lte('date', to)
+      : Promise.resolve({ data: [] as { date: string; name: string; country_code: string }[], error: null }),
+    supabase.from('company_closures').select('date, name, company_id').in('company_id', props.companies.map((c) => c.id)).gte('date', from).lte('date', to),
+  ])
   // With several countries or companies, the label says which one the day off belongs to.
   const tag = (name: string, t: string, tagged: boolean) => (tagged ? `${name} (${t})` : name)
   holidays.value = Object.fromEntries((holRes.data ?? []).map((h) => [h.date, tag(h.name, h.country_code, countries.value.length > 1)]))
@@ -260,32 +276,43 @@ onMounted(load)
         <aside v-if="selected" class="rail" data-testid="day-rail" :aria-label="dayTitle(selected)">
           <div class="rail-head">
             <div>
-              <div class="eyebrow">{{ dayTitle(selected) }}</div>
-              <strong>{{ kindText[selectedKind].title }}</strong>
-              <small>{{ holidays[selected] || closures[selected] || kindText[selectedKind].sub }}</small>
+              <span class="eyebrow">{{ selectedWeekday }}</span>
+              <strong class="day-number">{{ selectedDayNumber }}</strong>
+              <small>{{ selectedMonthYear }}</small>
             </div>
             <button class="button secondary small-btn icon" type="button" aria-label="Close day" @click="selected = null">
               <svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M4 4l8 8M12 4l-8 8" /></svg>
             </button>
           </div>
+          <div class="rail-kind" :class="selectedKind">
+            <svg v-if="selectedKind === 'holiday' || selectedKind === 'closure'" width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 2v3M3.8 3.8l2 2M12.2 3.8l-2 2M2 8h3M11 8h3M8 8l4.5 6H3.5z" /></svg>
+            <svg v-else-if="selectedKind === 'weekend'" width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="3" width="12" height="11" rx="2" /><path d="M2 7h12M5 2v2M11 2v2M6 10l4 2M10 10l-4 2" /></svg>
+            <svg v-else width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="8" cy="8" r="3" /><path d="M8 1.5v2M8 12.5v2M1.5 8h2M12.5 8h2M3.4 3.4l1.4 1.4M11.2 11.2l1.4 1.4M3.4 12.6l1.4-1.4M11.2 4.8l1.4-1.4" /></svg>
+            <span>
+              <b>{{ holidays[selected] || closures[selected] || kindText[selectedKind].title }}</b>
+              <small>{{ selectedKind === 'holiday' ? 'Public holiday · does not count as leave' : selectedKind === 'closure' ? 'Company closure · does not count as leave' : kindText[selectedKind].sub }}</small>
+            </span>
+          </div>
           <div class="rail-count">
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="6" cy="5.5" r="2.5" /><path d="M1.5 13.5c0-2.5 2-4 4.5-4s4.5 1.5 4.5 4M11 4a2.2 2.2 0 0 1 0 4.4M12.5 9.6c1.4.5 2 1.7 2 3.4" /></svg>
             <template v-if="selectedLeaves.length">
-              <b>{{ selectedLeaves.length }}</b> {{ selectedLeaves.length === 1 ? 'person is' : 'people are' }} away
+              <span><b>{{ selectedLeaves.length }}</b> {{ selectedLeaves.length === 1 ? 'person is' : 'people are' }} away</span>
             </template>
-            <template v-else-if="selectedKind !== 'working'">Nobody is away — not a working day.</template>
-            <template v-else>Nobody is away — a full team.</template>
+            <span v-else-if="selectedKind !== 'working'">Nobody is away — not a working day.</span>
+            <span v-else>Nobody is away — a full team.</span>
           </div>
           <ul class="rail-people">
             <li v-for="r in selectedLeaves" :key="r.id" :class="tone(r)">
-              <span class="avatar small" aria-hidden="true">{{ initials(r.full_name) }}</span>
+              <i class="dot" aria-hidden="true"></i>
               <div class="who">
                 <router-link v-if="canOpen(r)" :to="{ name: 'person', params: { personId: r.person_id } }"><b>{{ r.full_name }}</b></router-link>
                 <b v-else>{{ r.full_name }}</b>
-                <small>
-                  <i class="key" :class="tone(r)"></i>{{ typeLabel(r) }}{{ r.status === 'pending' ? ' · pending' : '' }}{{ r.cancellation_asked ? ' · asks to cancel' : '' }}{{ many ? ` · ${nameOf(r.company_id)}` : '' }}
-                </small>
-                <small>{{ r.start_date }} → {{ r.end_date }} · {{ progress(r).text }}</small>
-                <span class="bar" aria-hidden="true"><i :style="{ width: `${progress(r).pct}%` }"></i></span>
+                <small>{{ typeLabel(r) }}{{ r.status === 'pending' ? ' · pending' : '' }}{{ r.cancellation_asked ? ' · asks to cancel' : '' }}{{ many ? ` · ${nameOf(r.company_id)}` : '' }}</small>
+                <small>{{ shortDate(r.start_date) }} → {{ shortDate(r.end_date) }} · {{ r.working_days }} working {{ Number(r.working_days) === 1 ? 'day' : 'days' }}</small>
+                <span class="progress">
+                  <span class="bar" aria-hidden="true"><i :style="{ width: `${progress(r).pct}%` }"></i></span>
+                  <small>{{ progress(r).text }}</small>
+                </span>
                 <small v-if="r.note" class="note">“{{ r.note }}”</small>
               </div>
             </li>
@@ -350,22 +377,38 @@ onMounted(load)
 .more { font-size: 10px; color: var(--muted); font-weight: 600; padding: 2px 6px; }
 .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 
-.rail { border-top: 1px solid var(--line); border-left: 1px solid var(--line); padding: 16px 18px; font-size: 12px; background: #fbfcfa; }
-.rail-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; }
-.rail-head strong { display: block; font-size: 15px; margin-top: 4px; }
-.rail-head small { display: block; color: var(--muted); font-size: 11px; }
-.rail-count { margin: 14px 0 10px; font-size: 12px; }
-.rail-people { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
-.rail-people li { display: flex; gap: 10px; align-items: flex-start; border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; background: #fff; box-shadow: var(--shadow-sm); }
-.rail-people .who { display: grid; gap: 3px; min-width: 0; flex: 1; }
-.rail-people .who > a { text-decoration: none; }
-.rail-people small { color: var(--muted); font-size: 11px; display: flex; align-items: center; gap: 5px; }
-.rail-people .note { color: var(--ink); display: block; }
-.avatar.small { width: 30px; height: 30px; font-size: 11px; }
-.bar { display: block; height: 4px; border-radius: 4px; background: #e9eee6; overflow: hidden; margin: 2px 0; }
-.bar i { display: block; height: 100%; background: linear-gradient(90deg, var(--green-bright), var(--green)); border-radius: 4px; transition: width 0.3s var(--ease); }
-.rail-people li.amber .bar i { background: linear-gradient(90deg, #d29a2f, var(--amber)); }
-.rail-people li.blue .bar i { background: linear-gradient(90deg, #5a7fb8, #3f5f8f); }
+.rail { border-top: 1px solid var(--line); border-left: 1px solid var(--line); padding: 20px 20px 22px; font-size: 12px; background: #fbfcfa; }
+.rail-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
+.rail-head > div { display: grid; gap: 2px; }
+.day-number { font-size: 46px; line-height: 0.9; font-weight: 700; letter-spacing: -0.05em; color: var(--ink); margin-top: 6px; }
+.rail-head small { color: var(--muted); font-size: 11.5px; margin-top: 4px; }
+.rail-kind { display: flex; align-items: center; gap: 9px; margin-top: 18px; padding: 11px 12px; border-left: 3px solid; border-radius: 0 8px 8px 0; }
+.rail-kind span { display: grid; gap: 1px; min-width: 0; }
+.rail-kind b { font-size: 12.5px; }
+.rail-kind small { font-size: 10.5px; opacity: 0.85; }
+.rail-kind.working { color: var(--green-deep); background: #e9f0eb; border-color: var(--green); }
+.rail-kind.weekend { color: #5f6b62; background: #eef0ea; border-color: #9aafa4; }
+.rail-kind.holiday, .rail-kind.closure { color: #8a5e21; background: #f5ead8; border-color: #c08a3a; }
+.rail-count { display: flex; align-items: center; gap: 7px; margin: 16px 0 0; color: var(--muted); font-size: 12.5px; }
+.rail-count b { color: var(--green); font-size: 15px; }
+.rail-people { list-style: none; margin: 13px 0 0; padding: 0; display: grid; gap: 6px; }
+.rail-people li { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 10px; border: 1px solid var(--line); border-radius: 8px; padding: 10px 11px; background: #fff; transition: border-color 0.18s var(--ease), background 0.18s var(--ease); }
+.rail-people li:hover { border-color: var(--green); background: #f4f8f3; }
+.rail-people .dot { width: 9px; height: 9px; margin-top: 5px; border-radius: 50%; background: #9aa39c; }
+.rail-people li.green .dot { background: #3a8a63; }
+.rail-people li.amber .dot { background: #d29a2f; }
+.rail-people li.blue .dot { background: #5a7fb8; }
+.rail-people .who { display: grid; gap: 2px; min-width: 0; }
+.rail-people .who > a { text-decoration: none; color: var(--ink); }
+.rail-people .who > a:hover b { color: var(--green); }
+.rail-people b { font-size: 12.5px; }
+.rail-people small { color: var(--muted); font-size: 11px; }
+.rail-people .note { color: var(--ink); margin-top: 2px; }
+.progress { display: grid; gap: 4px; margin-top: 5px; }
+.bar { display: block; height: 3px; border-radius: 3px; background: #e6ebe3; overflow: hidden; }
+.bar i { display: block; height: 100%; background: var(--green); border-radius: 3px; transition: width 0.3s var(--ease); }
+.rail-people li.amber .bar i { background: var(--amber); }
+.rail-people li.blue .bar i { background: #3f5f8f; }
 @media (max-width: 720px) {
   .layout.open { grid-template-columns: 1fr; }
   .rail { border-left: 0; }

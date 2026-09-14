@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import {
   balanceAfter,
+  leaveProgressWorking,
+  shortDate,
   shortName,
   clashesWith,
   dayKind,
@@ -96,5 +98,30 @@ describe('shortName', () => {
     expect(shortName('Ina Pop-Ducheva')).toBe('Ina P.')
     expect(shortName('Ana')).toBe('Ana')
     expect(shortName('  Marija  Serafimovska ')).toBe('Marija S.')
+  })
+})
+
+describe('leaveProgressWorking', () => {
+  // Filip: 24 Aug → 7 Sep 2026 = 11 working days (two weekends inside).
+  it('counts the clicked day in working days, the unit the rest of the system uses', () => {
+    const leave = { start_date: '2026-08-24', end_date: '2026-09-07', working_days: 11 }
+    expect(leaveProgressWorking(leave, '2026-09-03', [], [])).toEqual({ day: 9, of: 11, left: 2 })
+    expect(leaveProgressWorking(leave, '2026-08-24', [], [])).toEqual({ day: 1, of: 11, left: 10 })
+    expect(leaveProgressWorking(leave, '2026-09-07', [], [])).toEqual({ day: 11, of: 11, left: 0 })
+  })
+  it('skips holidays and closures the way the balance did', () => {
+    const leave = { start_date: '2026-09-07', end_date: '2026-09-11', working_days: 4 }
+    expect(leaveProgressWorking(leave, '2026-09-09', ['2026-09-08'], [])).toEqual({ day: 2, of: 4, left: 2 })
+  })
+  it('never claims more than the total when the calendar view is missing a holiday', () => {
+    const leave = { start_date: '2026-09-07', end_date: '2026-09-11', working_days: 4 }
+    expect(leaveProgressWorking(leave, '2026-09-11', [], [])).toEqual({ day: 4, of: 4, left: 0 })
+  })
+})
+
+describe('shortDate', () => {
+  it('reads like a person would say it', () => {
+    expect(shortDate('2026-08-24')).toBe('24 Aug')
+    expect(shortDate('2026-09-07')).toBe('7 Sep')
   })
 })

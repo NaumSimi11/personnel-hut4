@@ -204,3 +204,29 @@ export const LEAVE_TYPE_TONE: Record<string, 'green' | 'amber' | 'blue' | 'grey'
   other: 'blue',
   away: 'grey',
 }
+
+/**
+ * Where a leave stands on a given day, in working days — the unit the
+ * request and the balance use (Field Notebook counted calendar days here,
+ * which read as "day 11 of 15" for an 11-day leave). `of` is the server's
+ * snapshot; the clicked day is counted with the same calendar rules and
+ * clamped, so a holiday missing from the loaded window never overstates.
+ */
+export function leaveProgressWorking(
+  leave: { start_date: string; end_date: string; working_days: number },
+  iso: string,
+  holidays: readonly string[],
+  closures: readonly string[],
+): { day: number; of: number; left: number } {
+  const of = Number(leave.working_days)
+  const day = Math.min(of, Math.max(1, workingDaysBetween(leave.start_date, iso, holidays, closures)))
+  return { day, of, left: Math.max(0, of - day) }
+}
+
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+
+/** "2026-08-24" → "24 Aug" — fixed abbreviations, the same on every machine. */
+export function shortDate(iso: string): string {
+  const d = new Date(`${iso}T00:00:00Z`)
+  return `${d.getUTCDate()} ${MONTHS[d.getUTCMonth()]}`
+}

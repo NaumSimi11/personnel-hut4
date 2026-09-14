@@ -323,7 +323,7 @@ onMounted(load)
 
 .layout { display: grid; grid-template-columns: 1fr; }
 .layout.open { grid-template-columns: minmax(0, 1fr) 300px; }
-.grid { display: grid; grid-template-columns: repeat(7, 1fr); }
+.grid { display: grid; grid-template-columns: repeat(7, 1fr); align-content: start; }
 .dow { font-size: 10px; text-transform: uppercase; letter-spacing: 0.1em; color: var(--muted); padding: 10px 10px 8px; background: #fafbf8; font-weight: 650; }
 .day { min-height: 112px; padding: 8px 8px 10px; border-top: 1px solid var(--line); border-left: 1px solid var(--line); font-size: 11px; cursor: pointer; transition: background 0.15s var(--ease), box-shadow 0.15s var(--ease); position: relative; }
 .day:nth-child(7n + 1) { border-left: 0; }

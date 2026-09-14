@@ -1,9 +1,11 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { computed, onMounted, ref } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { supabase } from '@/lib/supabase'
 import RequestHireDialog from '@/components/RequestHireDialog.vue'
 import DecideHiringRequestDialog from '@/components/DecideHiringRequestDialog.vue'
+import JobOpeningsPanel from '@/components/hiring/JobOpeningsPanel.vue'
+import ApplicantsPanel from '@/components/hiring/ApplicantsPanel.vue'
 import { useAuthStore } from '@/stores/auth'
 import { awaitingLabel } from '@/lib/companyOps'
 import { deliverNotifications, deliverySentence } from '@/lib/notificationsApi'
@@ -30,7 +32,24 @@ type HiringRequestRow = {
 type HistoryRow = { id: string; kind: string; reason: string | null; at: string; actor: { full_name: string } | null }
 
 const router = useRouter()
+const route = useRoute()
 const auth = useAuthStore()
+
+// Requests · Job openings · Applicants (plan 044) — the prototype's Recruitment tabs, on the URL.
+const TABS = [
+  { id: 'requests', label: 'Hiring requests' },
+  { id: 'openings', label: 'Job openings' },
+  { id: 'applicants', label: 'Applicants' },
+] as const
+type TabId = (typeof TABS)[number]['id']
+const activeTab = computed<TabId>(() => {
+  const raw = route.query.tab
+  const id = Array.isArray(raw) ? raw[0] : raw
+  return TABS.some((t) => t.id === id) ? (id as TabId) : 'requests'
+})
+function selectTab(id: TabId): void {
+  void router.replace({ query: { ...route.query, tab: id } })
+}
 const requests = ref<HiringRequestRow[]>([])
 const decideDialog = ref<InstanceType<typeof DecideHiringRequestDialog> | null>(null)
 const notice = ref<string | null>(null)
@@ -216,7 +235,25 @@ onMounted(load)
       </div>
     </div>
 
-    <div class="card">
+    <div class="tabs" role="tablist" aria-label="Recruitment">
+      <button
+        v-for="tab in TABS"
+        :key="tab.id"
+        class="tab"
+        :class="{ active: activeTab === tab.id }"
+        type="button"
+        role="tab"
+        :aria-selected="activeTab === tab.id"
+        :data-testid="`hiring-tab-${tab.id}`"
+        @click="selectTab(tab.id)"
+      >
+        {{ tab.label }}
+      </button>
+    </div>
+
+    <JobOpeningsPanel v-if="activeTab === 'openings'" />
+    <ApplicantsPanel v-else-if="activeTab === 'applicants'" />
+    <div v-else class="card">
       <div class="card-head">
         <div>
           <h2>Hiring requests</h2>
@@ -329,6 +366,22 @@ onMounted(load)
 }
 .head-actions { display: flex; gap: 9px; flex-wrap: wrap; }
 h1 { margin-bottom: 24px; }
+.tabs { display: flex; gap: 22px; border-bottom: 1px solid var(--line); margin-bottom: 22px; overflow: auto; }
+.tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  padding: 0 1px 13px;
+  border-bottom: 2px solid transparent;
+  border-radius: 0;
+  white-space: nowrap;
+  font-size: 12px;
+  min-height: 36px;
+}
+.tab.active { color: var(--green); font-weight: 600; border-bottom-color: var(--green); }
 .request-row {
   display: flex;
   align-items: center;

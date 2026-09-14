@@ -74,6 +74,11 @@ export const useAuthStore = defineStore('auth', () => {
     return isAdmin.value || (capabilities.value[companyId]?.has(capability) ?? false)
   }
 
+  /** ...in any company — the gate for holding-wide panels (the dashboard's pipeline, the Hiring tabs). */
+  function canAnywhere(capability: string): boolean {
+    return isAdmin.value || Object.values(capabilities.value).some((caps) => caps.has(capability))
+  }
+
   /** Pull fresh JWT claims (e.g. after the must-change flag is cleared). */
   async function refresh(): Promise<void> {
     const { data } = await supabase.auth.refreshSession()
@@ -110,6 +115,7 @@ export const useAuthStore = defineStore('auth', () => {
     isAdmin,
     capabilities,
     can,
+    canAnywhere,
     ready,
     isAuthenticated,
     mustChangePassword,

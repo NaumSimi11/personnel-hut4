@@ -2038,6 +2038,45 @@ export type Database = {
           },
         ]
       }
+      kudos: {
+        Row: {
+          created_at: string
+          from_person_id: string
+          id: string
+          message: string
+          to_person_id: string
+        }
+        Insert: {
+          created_at?: string
+          from_person_id: string
+          id?: string
+          message: string
+          to_person_id: string
+        }
+        Update: {
+          created_at?: string
+          from_person_id?: string
+          id?: string
+          message?: string
+          to_person_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "kudos_from_person_id_fkey"
+            columns: ["from_person_id"]
+            isOneToOne: false
+            referencedRelation: "people"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "kudos_to_person_id_fkey"
+            columns: ["to_person_id"]
+            isOneToOne: false
+            referencedRelation: "people"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       leave_adjustments: {
         Row: {
           balance_id: string
@@ -3835,6 +3874,7 @@ export type Database = {
         Args: { p_days: Json; p_note?: string; p_request_id: string }
         Returns: Json
       }
+      dashboard_snapshot: { Args: { p_days?: number }; Returns: Json }
       decide_compensation: {
         Args: { p_decision: string; p_note?: string; p_record_id: string }
         Returns: Json

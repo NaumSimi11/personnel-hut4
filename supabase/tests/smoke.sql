@@ -3005,6 +3005,97 @@ begin
 end $$;
 update public.people set work_email = 'alex@a.test' where id = '20000000-0000-0000-0000-000000000001';
 
+-- ================================================================ 0035
+-- Dashboard: the snapshot is scoped to the viewer's companies, birthdays
+-- carry no year, payroll only for payroll.summary holders; kudos go to
+-- colleagues only and are removed by the giver.
+set app.test_uid = '';
+insert into public.people (id, full_name, work_email) values
+  ('20000000-0000-0000-0000-000000000031','Nia Newcomer','nia@a.test'),
+  ('20000000-0000-0000-0000-000000000032','Ivo Anniversary','ivo@a.test');
+insert into public.employment_periods (id, person_id, company_id, job_title, status, start_date) values
+  ('30000000-0000-0000-0000-000000000031','20000000-0000-0000-0000-000000000031','10000000-0000-0000-0000-00000000000a','Designer','active', current_date - 10),
+  ('30000000-0000-0000-0000-000000000032','20000000-0000-0000-0000-000000000032','10000000-0000-0000-0000-00000000000a','Analyst','active', (current_date - interval '2 years' + interval '3 days')::date);
+insert into public.person_private_details (person_id, birth_date) values
+  ('20000000-0000-0000-0000-000000000032', (current_date + 5 - interval '30 years')::date);
+-- Omar (employee in A, no grants): colleagues from A only, the facts, no payroll.
+set app.test_uid = '00000000-0000-0000-0000-000000000003';
+set role authenticated;
+do $$
+declare s jsonb; b jsonb; a jsonb;
+begin
+  s := public.dashboard_snapshot(30);
+  assert (s->>'headcount')::int >= 6, 'the team is everyone employed in A';
+  assert exists (select 1 from jsonb_array_elements(s->'colleagues') c where c->>'full_name' = 'Alex Director'), 'Alex is a colleague';
+  assert not exists (select 1 from jsonb_array_elements(s->'colleagues') c where c->>'full_name' = 'Bea HR'), 'Bea (Company B) is not';
+  assert not exists (select 1 from jsonb_array_elements(s->'colleagues') c where c->>'full_name' = 'Omar Employee'), 'I am not my own colleague';
+  select c into b from jsonb_array_elements(s->'birthdays') c where c->>'full_name' = 'Ivo Anniversary';
+  assert b is not null, 'Ivo''s birthday is coming';
+  assert (b->>'in_days')::int = 5, 'in five days';
+  assert b->>'on_day' !~ '\d{4}' and b ? 'on_day' and not (b ? 'birth_date'), 'day and month only, never the year';
+  select c into a from jsonb_array_elements(s->'anniversaries') c where c->>'full_name' = 'Ivo Anniversary';
+  assert a is not null and (a->>'years')::int = 2 and (a->>'in_days')::int = 3, 'Ivo''s second anniversary is in three days';
+  assert exists (select 1 from jsonb_array_elements(s->'newcomers') c where c->>'full_name' = 'Nia Newcomer'), 'Nia started ten days ago';
+  assert not exists (select 1 from jsonb_array_elements(s->'anniversaries') c where c->>'full_name' = 'Nia Newcomer'), 'a newcomer has no anniversary yet';
+  assert s->'payroll' = '[]'::jsonb, 'no payroll.summary, no payroll';
+  assert (s->'biggest_team'->>'name') = 'Company A', 'the biggest team I can see';
+  -- Kudos to a colleague lands; to someone in another company or to myself does not.
+  insert into public.kudos (from_person_id, to_person_id, message)
+  values ('20000000-0000-0000-0000-000000000003', '20000000-0000-0000-0000-000000000001', 'Thanks for the quick approval!');
+  begin
+    insert into public.kudos (from_person_id, to_person_id, message)
+    values ('20000000-0000-0000-0000-000000000003', '20000000-0000-0000-0000-000000000005', 'Hi Bea');
+    raise exception 'FAIL: kudos to another company accepted';
+  exception when insufficient_privilege then null;
+  end;
+  begin
+    insert into public.kudos (from_person_id, to_person_id, message)
+    values ('20000000-0000-0000-0000-000000000003', '20000000-0000-0000-0000-000000000003', 'Me');
+    raise exception 'FAIL: kudos to myself accepted';
+  exception when check_violation then null;
+  end;
+  begin
+    insert into public.kudos (from_person_id, to_person_id, message)
+    values ('20000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000003', 'Forged');
+    raise exception 'FAIL: kudos in someone else''s name accepted';
+  exception when insufficient_privilege then null;
+  end;
+  s := public.dashboard_snapshot(30);
+  assert (select count(*) from jsonb_array_elements(s->'kudos') k where k->>'to_name' = 'Alex Director' and k->>'from_name' = 'Omar Employee' and (k->>'mine')::boolean) = 1,
+    'the wall shows it with names, marked mine';
+  assert (s->'top_kudos'->>'full_name') = 'Alex Director', 'Alex has the most kudos';
+end $$;
+reset role;
+-- Fiona (payroll.summary in A) sees A's last payroll; Bea cannot remove Omar's kudos, Omar can.
+set app.test_uid = '00000000-0000-0000-0000-000000000002';
+set role authenticated;
+do $$
+declare s jsonb;
+begin
+  s := public.dashboard_snapshot(30);
+  assert jsonb_array_length(s->'payroll') >= 1 and (s->'payroll'->0->>'company_name') = 'Company A' and (s->'payroll'->0->>'total')::numeric > 0,
+    'the last approved payroll of A, with its total';
+  assert exists (select 1 from jsonb_array_elements(s->'birthdays') c where c->>'full_name' = 'Ivo Anniversary'), 'a grant in A shows A''s team';
+end $$;
+reset role;
+set app.test_uid = '00000000-0000-0000-0000-000000000005';
+set role authenticated;
+do $$
+begin
+  assert (select count(*) from public.kudos) = 0, 'Bea (Company B) does not see kudos in A';
+  delete from public.kudos where message = 'Thanks for the quick approval!';
+  assert (select count(*) from public.kudos) = 0, 'and cannot delete them';
+end $$;
+reset role;
+set app.test_uid = '';
+do $$ begin assert (select count(*) from public.kudos where message = 'Thanks for the quick approval!') = 1, 'still there'; end $$;
+set app.test_uid = '00000000-0000-0000-0000-000000000003';
+set role authenticated;
+delete from public.kudos where message = 'Thanks for the quick approval!';
+reset role;
+set app.test_uid = '';
+do $$ begin assert (select count(*) from public.kudos) = 0, 'the giver removed it'; end $$;
+
 -- ================================================================ 0028
 -- Field Notebook import: dry run writes nothing, commit links an existing
 -- person by email, creates the rest, keeps legacy ids, reconciles and

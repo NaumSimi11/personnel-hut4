@@ -23,11 +23,26 @@ import {
   type PolicyQueueRow,
 } from '@/lib/homeQueue'
 import { todayDb } from '@/lib/compensation'
+import {
+  EMPTY_SNAPSHOT,
+  applicantsInProgress,
+  awayToday,
+  payrollLabel,
+  type ApplicationLite,
+  type AwayRow,
+  type DashboardSnapshot,
+  type JobLite,
+} from '@/lib/dashboard'
+import DashboardStats, { type StatTile } from '@/components/home/DashboardStats.vue'
+import RecruitmentSnapshot from '@/components/home/RecruitmentSnapshot.vue'
+import CelebratePanel from '@/components/home/CelebratePanel.vue'
+import AwayToday from '@/components/home/AwayToday.vue'
 
 /**
- * Overview: the post-login "what needs me" screen (blueprint §7.1). Four
- * headline metrics, then one merged queue of pending handoffs across hiring
- * and onboarding, then the signed-in person's own open tasks.
+ * Home (blueprint §7.1, plan 044): headline numbers by what the viewer may
+ * see, the merged queue of what needs a decision, the recruitment snapshot
+ * for people who see jobs, the celebrate block for everyone, then the
+ * signed-in person's own open tasks.
  */
 
 type PlanTaskLite = { id: string; critical: boolean; status: string }
@@ -74,11 +89,13 @@ const loading = ref(true)
 const error = ref<string | null>(null)
 
 const metrics = ref({
-  people: 0,
-  companies: 0,
   hiringRequests: 0,
   openOnboardingTasks: 0,
 })
+const snapshot = ref<DashboardSnapshot>(EMPTY_SNAPSHOT)
+const applications = ref<ApplicationLite[]>([])
+const jobs = ref<JobLite[]>([])
+const away = ref<AwayRow[]>([])
 
 const queueRows = ref<QueueRow[]>([])
 const myTasks = ref<MyTaskRow[]>([])
@@ -92,6 +109,27 @@ const viewer = {
   can: (companyId: string, cap: string) => auth.can(companyId, cap),
 }
 const queueBadgeClass = computed(() => (queueRows.value.length > 0 ? 'amber' : 'green'))
+const showRecruitment = computed(() => auth.canAnywhere('jobs.view'))
+// The database's today (UTC), the same day the facts below are computed for.
+const todayLabel = new Date(`${todayDb()}T00:00:00Z`).toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'UTC' })
+
+/** The tiles the prototype showed per role, decided here by capability. */
+const tiles = computed<StatTile[]>(() => {
+  const s = snapshot.value
+  const list: StatTile[] = [
+    { key: 'active', label: 'Active employees', value: s.active, sub: s.starting ? `${s.starting} starting soon` : undefined },
+    { key: 'away', label: 'Away today', value: away.value.length, tone: away.value.length ? 'hot' : undefined },
+  ]
+  if (showRecruitment.value) list.push({ key: 'applicants', label: 'Applicants in progress', value: applicantsInProgress(applications.value) })
+  if (auth.canAnywhere('jobs.approve')) list.push({ key: 'requests', label: 'Hiring requests to decide', value: metrics.value.hiringRequests })
+  const pay = s.payroll[0]
+  if (pay) {
+    const { value, sub } = payrollLabel(pay)
+    const more = s.payroll.length - 1
+    list.push({ key: 'payroll', label: 'Last payroll', value, sub: more ? `${sub} · +${more} more` : sub, tone: 'gold' })
+  }
+  return list
+})
 
 function criticalOpenCount(tasks: PlanTaskLite[]): number {
   return tasks.filter((t) => t.critical && t.status !== 'done' && t.status !== 'skipped').length
@@ -195,13 +233,20 @@ function loadLaterQueues() {
   ])
 }
 
+async function loadSnapshot(): Promise<{ error: { message: string } | null }> {
+  const { data, error: err } = await supabase.rpc('dashboard_snapshot', { p_days: 30 })
+  if (err) return { error: err }
+  snapshot.value = { ...EMPTY_SNAPSHOT, ...(data as Partial<DashboardSnapshot>) }
+  return { error: null }
+}
+
 async function load(): Promise<void> {
   loading.value = true
   error.value = null
 
   const [
-    peopleCount,
-    companiesCount,
+    applicationsRes,
+    jobsRes,
     hiringRequestsCount,
     openTasksCount,
     hiringRequestsRes,
@@ -209,10 +254,14 @@ async function load(): Promise<void> {
     onboardingGapsRes,
     myTasksRes,
     laterRes,
+    snapshotRes,
     candidateAssignments,
   ] = await Promise.all([
-    supabase.from('people').select('*', { count: 'exact', head: true }).is('archived_at', null),
-    supabase.from('companies').select('*', { count: 'exact', head: true }).is('archived_at', null),
+    supabase
+      .from('applications')
+      .select('id, job_id, stage_key, received_at, candidate:candidates(full_name), job:jobs(title, company:companies(name))')
+      .order('received_at', { ascending: false }),  // every application the viewer may see: the pipeline counts all of them
+    supabase.from('jobs').select('id, title, status, company:companies(name), request:hiring_requests!jobs_hiring_request_id_fkey(headcount)').in('status', ['ready', 'open']),
     supabase
       .from('hiring_requests')
       .select('*', { count: 'exact', head: true })
@@ -246,6 +295,7 @@ async function load(): Promise<void> {
       .eq('status', 'in_progress'),
     loadMyTasks(),
     loadLaterQueues(),
+    loadSnapshot(),
     auth.personId ? supabase.from('applications').select('id, company_id, stage_key, next_action, next_action_due, candidate:candidates(full_name), job:jobs(title)')
       .eq('owner_id', auth.personId).in('stage_key', ['new', 'screening', 'interview', 'offer']).order('next_action_due', { ascending: true }) : Promise.resolve({ data: [], error: null }),
   ])
@@ -258,8 +308,9 @@ async function load(): Promise<void> {
     console.error(`Overview: ${label} failed:`, err.message)
   }
 
-  logIfError('people count', peopleCount.error)
-  logIfError('companies count', companiesCount.error)
+  logIfError('applications', applicationsRes.error)
+  logIfError('open jobs', jobsRes.error)
+  logIfError('team snapshot', snapshotRes.error)
   logIfError('hiring requests count', hiringRequestsCount.error)
   logIfError('open onboarding tasks count', openTasksCount.error)
   logIfError('hiring requests queue', hiringRequestsRes.error)
@@ -278,11 +329,12 @@ async function load(): Promise<void> {
   logIfError('hiring manager queue', managerRes.error)
 
   metrics.value = {
-    people: peopleCount.count ?? 0,
-    companies: companiesCount.count ?? 0,
     hiringRequests: hiringRequestsCount.count ?? 0,
     openOnboardingTasks: openTasksCount.count ?? 0,
   }
+  applications.value = (applicationsRes.data ?? []) as unknown as ApplicationLite[]
+  jobs.value = (jobsRes.data ?? []) as unknown as JobLite[]
+  away.value = awayToday((leaveRes.data ?? []) as unknown as Parameters<typeof awayToday>[0], todayDb())
 
   queueRows.value = [
     ...(candidateAssignments.data ?? []).filter(a => auth.can(a.company_id, 'candidates.review')).map(a => ({
@@ -314,31 +366,14 @@ onMounted(load)
 <template>
   <div>
     <div class="page-head">
-      <div class="eyebrow">Your people, connected</div>
+      <div class="eyebrow">{{ todayLabel }}</div>
       <h1>Welcome, {{ firstName }}.</h1>
-      <p class="page-sub">People, hiring decisions, and the next step that needs an owner.</p>
+      <p class="page-sub">A clear view of the team — what needs you, who is where, and what is coming up.</p>
     </div>
 
     <p v-if="error" class="error-note" role="alert">{{ error }}</p>
 
-    <div class="metrics">
-      <div class="card metric-tile">
-        <span class="metric-label">People</span>
-        <span class="metric-value">{{ metrics.people }}</span>
-      </div>
-      <div class="card metric-tile">
-        <span class="metric-label">Companies</span>
-        <span class="metric-value">{{ metrics.companies }}</span>
-      </div>
-      <div class="card metric-tile">
-        <span class="metric-label">Hiring requests</span>
-        <span class="metric-value">{{ metrics.hiringRequests }}</span>
-      </div>
-      <div class="card metric-tile">
-        <span class="metric-label">Open onboarding tasks</span>
-        <span class="metric-value">{{ metrics.openOnboardingTasks }}</span>
-      </div>
-    </div>
+    <DashboardStats :tiles="tiles" :loading="loading" />
 
     <div class="card queue-card">
       <div class="card-head">
@@ -365,6 +400,14 @@ onMounted(load)
         </div>
       </div>
     </div>
+
+    <RecruitmentSnapshot v-if="showRecruitment" :applications="applications" :jobs="jobs" :loading="loading" />
+
+    <CelebratePanel :snapshot="snapshot" :loading="loading" @changed="loadSnapshot">
+      <template #aside>
+        <AwayToday :rows="away" :loading="loading" />
+      </template>
+    </CelebratePanel>
 
     <div class="card tasks-card">
       <div class="card-head">
@@ -398,18 +441,6 @@ onMounted(load)
 <style scoped>
 .page-head { margin-bottom: 22px; }
 .page-sub { margin: 0; font-size: 12px; color: var(--muted); }
-.metrics {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 14px;
-  margin-bottom: 22px;
-}
-@media (max-width: 900px) {
-  .metrics { grid-template-columns: repeat(2, 1fr); }
-}
-.metric-tile { display: flex; flex-direction: column; gap: 8px; padding: 18px 20px; }
-.metric-label { font-size: 11px; color: var(--muted); font-weight: 550; }
-.metric-value { font-size: 26px; font-weight: 750; letter-spacing: -0.02em; }
 .queue-card { margin-bottom: 22px; }
 .queue-row {
   display: flex;

@@ -58,6 +58,7 @@ prototype in `../prototype` is the UI spec. Updated as milestones land.
 | Admin self-approval of hiring requests: the owner both raises and approves hires, so platform admins may decide their own request; everyone else keeps the four-eyes rule | migration 0030 | smoke: admin approves own, requester refused; E2E hiring-requests |
 | Leave flows as in Field Notebook: click a day for who is away and how far along; the request form shows the balance after and who else in the department is away; sick-leave certificates attached from the request (self-upload window); emails to approvers on a new request or an ask, to the person on the decision (once mail is configured) | migration 0029 + plan 039 | E2E preview → rail → certificate; smoke for windows and the preview arithmetic; server tests for mails |
 | Leave UI: Leave nav (Calendar · Requests · Balances · Holidays with the official-programme parser), My leave with a working-day preview from the person's own calendar, Leave card on the profile for recording on behalf, company Leave tab, country + leave defaults on the company form, Home queue rows for approvers | plan 036 | E2E paste import → entitlement → request with the holiday excluded → queue → approve → calendar → cancel before start; 27 unit tests |
+| Dashboard by role: what the stakeholders saw on the prototype (personnel-hut4.vercel.app), on real data and gated by capability — active employees and away today for everyone, applicants in progress and the pipeline / open positions / recent applicants for `jobs.view`, requests to decide for `jobs.approve`, the last payroll for `payroll.summary`; a celebrate block for everyone (kudos wall with a `kudos` table, birthdays as day and month only, work anniversaries, new teammates, fun corner); Hiring page tabs Job openings and Applicants across every job | migration 0035 + plan 044 | smoke for scoping, no-year birthdays, payroll gate, kudos RLS; unit; E2E home-dashboard |
 
 ## Next (in order)
 
@@ -67,7 +68,9 @@ prototype in `../prototype` is the UI spec. Updated as milestones land.
    ([integrations-zoho.md](integrations-zoho.md)).
 2. **Setup by the maintainer** — Ivana as Holding HR in every company;
    director and HR contact per company; invite the ten people without a
-   carried-over password once email sends.
+   carried-over password once email sends; real start dates (the import
+   set every employment to 2026-01-01, so no anniversaries yet) and birth
+   dates (none carried over) so the dashboard's celebrate block fills.
 3. **Go live on Vercel** ([deployment.md](deployment.md)) when the
    maintainer says so, then the Field Notebook redirect and read-only
    (plan 038 runbook).

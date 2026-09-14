@@ -199,6 +199,7 @@ test('overview queue merges hiring, offer, and onboarding rows', async ({ page }
   // Back to Overview → metrics tiles render numbers (live data varies, so
   // only the shape is asserted).
   await page.getByRole('link', { name: 'Overview', exact: true }).click()
-  const hiringTile = page.locator('.metric-tile', { hasText: 'Hiring requests' })
-  await expect(hiringTile.locator('.metric-value')).toHaveText(/^\d+$/)
+  const hiringTile = page.getByTestId('stat-requests')
+  await expect(hiringTile).toContainText('Hiring requests to decide')
+  await expect(hiringTile.locator('b')).toHaveText(/^\d+$/)
 })

@@ -99,3 +99,26 @@ export async function removeApplicationFile(fileId: string, storagePath: string)
   const { error: removeError } = await supabase.storage.from(FILE_BUCKET).remove([storagePath])
   if (removeError) console.warn('Candidate file object not removed:', removeError.message)
 }
+
+// Words that name the document, not the person — dropped from a CV file name.
+const NOISE = /\b(cv|resume|résumé|curriculum|vitae|final|latest|new|updated|copy|eng|en|mk|v\d+|\d{2,4})\b/gi
+
+/**
+ * A candidate name guessed from a CV file name ("Ana_Ilievska_CV.pdf" →
+ * "Ana Ilievska"). A guess for the person to correct before saving, never
+ * silently trusted: the bulk upload shows it in an editable field.
+ */
+export function candidateNameFromFile(fileName: string): string {
+  const stem = fileName.replace(/\.[a-z0-9]+$/i, '')
+  const cleaned = stem
+    .replace(/\([^)]*\)/g, ' ')
+    .replace(/[_\-.,]+/g, ' ')
+    .replace(NOISE, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+  if (!cleaned) return stem.trim()
+  return cleaned
+    .split(' ')
+    .map((w) => (w === w.toUpperCase() && w.length > 1 ? w[0] + w.slice(1).toLowerCase() : w[0]?.toUpperCase() + w.slice(1)))
+    .join(' ')
+}

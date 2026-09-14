@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   FILE_KINDS,
+  candidateNameFromFile,
   FILE_MAX_BYTES,
   fileObjectPath,
   formatBytes,
@@ -52,5 +53,19 @@ describe('formatBytes', () => {
 describe('FILE_KINDS', () => {
   it('offers the four kinds with CV first', () => {
     expect(FILE_KINDS.map((k) => k.key)).toEqual(['cv', 'cover_letter', 'portfolio', 'other'])
+  })
+})
+
+describe('candidateNameFromFile', () => {
+  it('reads a person name out of the usual CV file names', () => {
+    expect(candidateNameFromFile('Ana_Ilievska_CV.pdf')).toBe('Ana Ilievska')
+    expect(candidateNameFromFile('cv-marko-petrov-2026.docx')).toBe('Marko Petrov')
+    expect(candidateNameFromFile('Resume - Jovan Stojanov (final).pdf')).toBe('Jovan Stojanov')
+    expect(candidateNameFromFile('CURRICULUM VITAE Elena.pdf')).toBe('Elena')
+    expect(candidateNameFromFile('Bojan Ivanovski.PDF')).toBe('Bojan Ivanovski')
+  })
+  it('falls back to the file name without extension when nothing is left', () => {
+    expect(candidateNameFromFile('CV.pdf')).toBe('CV')
+    expect(candidateNameFromFile('2026.pdf')).toBe('2026')
   })
 })

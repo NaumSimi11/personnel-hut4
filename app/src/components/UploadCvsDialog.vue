@@ -1,0 +1,170 @@
+<script setup lang="ts">
+import { computed, ref } from 'vue'
+import { supabase } from '@/lib/supabase'
+import { useAuthStore } from '@/stores/auth'
+import { FILE_ACCEPT, candidateNameFromFile, uploadApplicationFile, validateApplicationFile } from '@/lib/applicationFiles'
+
+/**
+ * Twenty CVs on a laptop → twenty candidates in this job's pipeline. Drop
+ * the files, correct the guessed names, save: each file becomes a candidate
+ * with an application at `new` and the CV attached. Files are saved one by
+ * one so a bad file only fails its own row; the rest land.
+ */
+const props = defineProps<{ jobId: string; companyId: string }>()
+const emit = defineEmits<{ created: [count: number] }>()
+
+type Row = { file: File; name: string; email: string; problem: string | null; state: 'ready' | 'saving' | 'done' | 'failed' }
+
+const auth = useAuthStore()
+const dialog = ref<HTMLDialogElement | null>(null)
+const fileInput = ref<HTMLInputElement | null>(null)
+const rows = ref<Row[]>([])
+const busy = ref(false)
+const dragging = ref(false)
+
+const ready = computed(() => rows.value.filter((r) => r.state === 'ready' && !r.problem && r.name.trim().length >= 2))
+const done = computed(() => rows.value.filter((r) => r.state === 'done').length)
+
+function open(): void {
+  rows.value = []
+  busy.value = false
+  dialog.value?.showModal()
+}
+defineExpose({ open })
+
+function addFiles(list: FileList | File[]): void {
+  const added = Array.from(list).map((file) => ({
+    file,
+    name: candidateNameFromFile(file.name),
+    email: '',
+    problem: validateApplicationFile(file),
+    state: 'ready' as const,
+  }))
+  rows.value = [...rows.value, ...added]
+}
+
+function onPick(event: Event): void {
+  const input = event.target as HTMLInputElement
+  if (input.files?.length) addFiles(input.files)
+  input.value = ''
+}
+
+function onDrop(event: DragEvent): void {
+  dragging.value = false
+  if (event.dataTransfer?.files.length) addFiles(event.dataTransfer.files)
+}
+
+function removeRow(i: number): void {
+  rows.value = rows.value.filter((_, idx) => idx !== i)
+}
+
+function setRow(i: number, patch: Partial<Row>): void {
+  rows.value = rows.value.map((r, idx) => (idx === i ? { ...r, ...patch } : r))
+}
+
+async function saveOne(i: number): Promise<void> {
+  const row = rows.value[i]
+  if (!row) return
+  setRow(i, { state: 'saving', problem: null })
+  try {
+    const { data: candidate, error: candErr } = await supabase
+      .from('candidates')
+      .insert({ full_name: row.name.trim(), email: row.email.trim().toLowerCase() || null })
+      .select('id')
+      .single()
+    if (candErr) throw new Error(friendly(candErr.message))
+    const { data: application, error: appErr } = await supabase
+      .from('applications')
+      .insert({ job_id: props.jobId, company_id: props.companyId, candidate_id: candidate.id, stage_key: 'new' })
+      .select('id')
+      .single()
+    if (appErr) throw new Error(friendly(appErr.message))
+    await uploadApplicationFile({ applicationId: application.id, companyId: props.companyId, file: row.file, kind: 'cv', uploadedBy: auth.personId })
+    setRow(i, { state: 'done' })
+  } catch (e) {
+    const message = e instanceof Error ? e.message : 'Could not save this candidate.'
+    console.error('CV upload failed:', row.file.name, message)
+    setRow(i, { state: 'failed', problem: message })
+  }
+}
+
+async function submit(): Promise<void> {
+  if (!ready.value.length) return
+  busy.value = true
+  for (let i = 0; i < rows.value.length; i += 1) {
+    const r = rows.value[i]
+    if (r && r.state === 'ready' && !r.problem && r.name.trim().length >= 2) await saveOne(i)
+  }
+  busy.value = false
+  emit('created', done.value)
+  if (rows.value.every((r) => r.state === 'done')) dialog.value?.close()
+}
+
+function friendly(message: string): string {
+  if (/row-level security/.test(message)) return 'Adding candidates needs candidates.review in this company.'
+  return message
+}
+</script>
+
+<template>
+  <dialog ref="dialog" class="upload-cvs" aria-labelledby="upload-cvs-title">
+    <form class="body" novalidate @submit.prevent="submit">
+      <div class="eyebrow">Recruitment</div>
+      <h2 id="upload-cvs-title">Upload CVs — each one becomes a candidate.</h2>
+      <p class="hint">Names are guessed from the file names; fix them here before saving. Every candidate starts at "New" with the CV attached.</p>
+
+      <div
+        class="drop"
+        :class="{ over: dragging }"
+        @dragover.prevent="dragging = true"
+        @dragleave="dragging = false"
+        @drop.prevent="onDrop"
+      >
+        <input ref="fileInput" type="file" multiple :accept="FILE_ACCEPT" aria-label="CV files" hidden @change="onPick" />
+        <button class="button secondary" type="button" @click="fileInput?.click()">Choose files</button>
+        <span>or drop them here · PDF, Word, images · up to 10 MB each</span>
+      </div>
+
+      <div v-if="rows.length" class="rows">
+        <div v-for="(r, i) in rows" :key="r.file.name + i" class="row" :class="r.state" :data-testid="`cv-row-${i}`">
+          <div class="file" :title="r.file.name">{{ r.file.name }}</div>
+          <input v-model="r.name" class="name" aria-label="Candidate name" maxlength="120" :disabled="r.state !== 'ready'" @input="setRow(i, { name: ($event.target as HTMLInputElement).value })" />
+          <input v-model="r.email" class="email" aria-label="Email (optional)" placeholder="email (optional)" maxlength="320" :disabled="r.state !== 'ready'" @input="setRow(i, { email: ($event.target as HTMLInputElement).value })" />
+          <span v-if="r.state === 'done'" class="badge green">Added</span>
+          <span v-else-if="r.state === 'saving'" class="badge">Saving…</span>
+          <span v-else-if="r.problem" class="badge amber" :title="r.problem">{{ r.state === 'failed' ? 'Failed' : 'Skipped' }}</span>
+          <button v-else class="linkish" type="button" aria-label="Remove" @click="removeRow(i)">×</button>
+          <small v-if="r.problem" class="problem">{{ r.problem }}</small>
+        </div>
+      </div>
+
+      <div class="actions">
+        <span v-if="done" class="count">{{ done }} added</span>
+        <button class="button secondary" type="button" @click="dialog?.close()">{{ done ? 'Close' : 'Cancel' }}</button>
+        <button class="button" type="submit" :disabled="busy || !ready.length">
+          {{ busy ? 'Saving…' : `Save ${ready.length || ''} candidate${ready.length === 1 ? '' : 's'}` }}
+        </button>
+      </div>
+    </form>
+  </dialog>
+</template>
+
+<style scoped>
+.upload-cvs { border: 0; border-radius: 15px; padding: 0; width: min(720px, calc(100vw - 36px)); box-shadow: 0 25px 100px #122f3038; color: var(--ink); }
+.upload-cvs::backdrop { background: #18372d70; }
+.body { padding: 26px 28px; }
+h2 { font-size: 19px; margin: 10px 0 8px; }
+.hint { font-size: 11px; color: var(--muted); line-height: 1.6; margin: 0 0 16px; }
+.drop { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; padding: 18px; border: 1.5px dashed #c9d3c4; border-radius: 10px; font-size: 12px; color: var(--muted); }
+.drop.over { border-color: var(--green); background: #f1f5ef; }
+.rows { margin-top: 16px; max-height: min(50vh, 420px); overflow: auto; display: grid; gap: 8px; }
+.row { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr) minmax(0, 1fr) auto; gap: 8px; align-items: center; font-size: 12px; }
+.row .file { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); font-size: 11px; }
+.row input { border: 1px solid #dce3d7; padding: 8px 10px; font-size: 12px; min-width: 0; }
+.row.done input { background: #f7f8f5; }
+.row .problem { grid-column: 1 / -1; color: #946d24; font-size: 10px; }
+.linkish { background: none; border: 0; color: var(--muted); font-size: 16px; padding: 0 6px; }
+.actions { display: flex; gap: 9px; justify-content: flex-end; align-items: center; margin-top: 18px; }
+.count { margin-right: auto; font-size: 12px; color: #3e744e; font-weight: 550; }
+@media (max-width: 560px) { .row { grid-template-columns: 1fr; } }
+</style>

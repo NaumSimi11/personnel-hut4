@@ -4,6 +4,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/stores/auth'
 import AddCandidateDialog from '@/components/AddCandidateDialog.vue'
+import UploadCvsDialog from '@/components/UploadCvsDialog.vue'
 import ConfirmHireDialog from '@/components/ConfirmHireDialog.vue'
 import JobStepper from '@/components/JobStepper.vue'
 import ScreeningQuestionsEditor from '@/components/ScreeningQuestionsEditor.vue'
@@ -98,6 +99,7 @@ const descSaved = ref(false)
 const questionsUnreadable = ref(false)
 
 const addCandidateDialog = ref<InstanceType<typeof AddCandidateDialog> | null>(null)
+const uploadCvsDialog = ref<InstanceType<typeof UploadCvsDialog> | null>(null)
 const confirmHireDialog = ref<InstanceType<typeof ConfirmHireDialog> | null>(null)
 const channelsPanel = ref<InstanceType<typeof JobChannelsPanel> | null>(null)
 const activityPanel = ref<InstanceType<typeof JobActivityPanel> | null>(null)
@@ -567,9 +569,14 @@ onMounted(async () => {
             <h2>Applications</h2>
             <p>Candidates moving through this job's pipeline.</p>
           </div>
-          <button class="button secondary" type="button" @click="addCandidateDialog?.open()">
-            Add candidate
-          </button>
+          <div class="head-actions">
+            <button class="button secondary" type="button" @click="addCandidateDialog?.open()">
+              Add candidate
+            </button>
+            <button class="button" type="button" @click="uploadCvsDialog?.open()">
+              Upload CVs
+            </button>
+          </div>
         </div>
         <p v-if="appError" class="error-note" role="alert" style="margin: 16px 24px">{{ appError }}</p>
         <p v-if="actionError" class="error-note" role="alert" style="margin: 16px 24px">{{ actionError }}</p>
@@ -637,6 +644,13 @@ onMounted(async () => {
     <AddCandidateDialog
       v-if="job"
       ref="addCandidateDialog"
+      :job-id="job.id"
+      :company-id="job.company_id"
+      @created="loadApplications"
+    />
+    <UploadCvsDialog
+      v-if="job"
+      ref="uploadCvsDialog"
       :job-id="job.id"
       :company-id="job.company_id"
       @created="loadApplications"
@@ -738,4 +752,5 @@ textarea[readonly] { background: #fafbf9; }
 .candidate-link:hover strong { color: var(--green); text-decoration: underline; }
 .row-actions { display: flex; gap: 7px; flex-wrap: wrap; }
 .small-btn { font-size: 11px; padding: 7px 11px; text-decoration: none; }
+.head-actions { display: flex; gap: 8px; flex-wrap: wrap; }
 </style>

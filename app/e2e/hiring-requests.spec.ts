@@ -35,7 +35,7 @@ test.afterAll(async () => {
   await removeTestRequests()
 })
 
-test('request a hire → changes requested → admin approves their own → service request approved', async ({
+test('request a hire → changes requested (dialog) → edit and resubmit → history → admin approves their own → service request approved', async ({
   page,
 }) => {
   await page.goto('/login')
@@ -59,14 +59,43 @@ test('request a hire → changes requested → admin approves their own → serv
   await expect(alphaRow.locator('.badge')).toHaveText('submitted')
   await expect(alphaRow).toContainText('Snowball')
 
-  // Request changes on Alpha, with a reason surfaced on the row.
-  page.once('dialog', (dialog) => dialog.accept('Need budget range'))
+  // Request changes through the app's dialog (no browser prompt): an empty
+  // reason is refused, cancelling changes nothing, the reason lands on the row.
   await alphaRow.getByRole('button', { name: 'Request changes' }).click()
+  const decide = page.getByRole('dialog')
+  await expect(decide).toContainText(TITLE_ALPHA)
+  await expect(decide).toContainText('Snowball')
+  await decide.getByRole('button', { name: 'Request changes' }).click()
+  await expect(decide.getByRole('alert')).toContainText('Say what needs to change')
+  await decide.getByRole('button', { name: 'Cancel' }).click()
+  await expect(alphaRow.locator('.badge')).toHaveText('submitted')
+  await alphaRow.getByRole('button', { name: 'Request changes' }).click()
+  await decide.locator('#decide-reason').fill('Need budget range')
+  await decide.getByRole('button', { name: 'Request changes' }).click()
   await expect(alphaRow.locator('.badge')).toHaveText('changes requested')
-  await expect(alphaRow).toContainText('Need budget range')
+  await expect(alphaRow.getByTestId('changes-requested')).toContainText('Need budget range')
+
+  // The requester reads the reason, edits and resubmits — the same request,
+  // back in the queue with the decision cleared.
+  await alphaRow.getByRole('button', { name: 'Edit and resubmit' }).click()
+  const revise = page.getByRole('dialog')
+  await expect(revise.getByTestId('revision-reason')).toContainText('Need budget range')
+  await expect(revise.locator('#rh-title')).toHaveValue(TITLE_ALPHA)
+  await revise.locator('#rh-headcount').fill('2')
+  await revise.locator('#rh-reason').fill('Budget: 40–48k EUR')
+  await revise.getByRole('button', { name: 'Resubmit request' }).click()
+  await expect(alphaRow.locator('.badge')).toHaveText('submitted')
+  await expect(alphaRow).toContainText('headcount 2')
+  await expect(alphaRow).not.toContainText('Need budget range')
+  await alphaRow.getByRole('button', { name: /History \(3\)/ }).click()
+  const history = alphaRow.locator('.history')
+  await expect(history).toContainText('Submitted')
+  await expect(history).toContainText('Changes requested')
+  await expect(history).toContainText('Revised and resubmitted')
+  await expect(history).toContainText('Need budget range')
 
   // The requester is the platform admin, so they may decide their own
-  // request (migration 0030), also from 'changes requested'; decided_by is still server-set.
+  // request (migration 0030); decided_by is still server-set.
   await alphaRow.getByRole('button', { name: 'Approve' }).click()
   await expect(alphaRow.locator('.badge')).toHaveText('approved')
   await expect(alphaRow).not.toContainText('a different approver')

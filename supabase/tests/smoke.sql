@@ -2809,6 +2809,88 @@ end $$;
 reset role;
 set app.test_uid = '';
 
+-- ================================================================ 0033
+-- Hiring-request revisions: sending back needs jobs.approve and a reason,
+-- never on one's own; the content locks once submitted; the requester
+-- revises and resubmits (decision cleared); history records each step.
+set app.test_uid = '';
+insert into public.grant_capabilities (grant_id, capability_key) values ('40000000-0000-0000-0000-000000000002', 'jobs.request') on conflict do nothing;  -- Fiona may request hires
+insert into public.hiring_requests (id, company_id, title, status, requested_by, headcount) values
+  ('60000000-0000-0000-0000-000000000033', '10000000-0000-0000-0000-00000000000a', 'Dispatcher', 'submitted', '20000000-0000-0000-0000-000000000002', 1);  -- Fiona's request
+-- Omar (no jobs.approve) cannot send it back; Fiona cannot send back her own; Alex can, with a reason.
+set app.test_uid = '00000000-0000-0000-0000-000000000003';
+set role authenticated;
+do $$
+begin
+  begin
+    update public.hiring_requests set status = 'changes_requested', change_reason = 'x' where id = '60000000-0000-0000-0000-000000000033';
+    if found then raise exception 'FAIL: Omar sent a request back without jobs.approve'; end if;
+  exception when insufficient_privilege then null;
+  end;
+end $$;
+reset role;
+set app.test_uid = '00000000-0000-0000-0000-000000000002';
+set role authenticated;
+do $$
+begin
+  begin
+    update public.hiring_requests set status = 'changes_requested', change_reason = 'x' where id = '60000000-0000-0000-0000-000000000033';
+    if found then raise exception 'FAIL: Fiona sent her own request back'; end if;
+  exception when insufficient_privilege then null;
+  end;
+  -- Fiona cannot edit her submitted request either.
+  begin
+    update public.hiring_requests set title = 'Senior Dispatcher' where id = '60000000-0000-0000-0000-000000000033';
+    if found then raise exception 'FAIL: edited a submitted request'; end if;
+  exception when raise_exception then
+    if sqlerrm not like '%cannot be edited%' then raise; end if;
+  end;
+end $$;
+reset role;
+set app.test_uid = '00000000-0000-0000-0000-000000000001';  -- Alex, jobs.approve in A
+set role authenticated;
+do $$
+begin
+  begin
+    update public.hiring_requests set status = 'changes_requested', change_reason = '  ' where id = '60000000-0000-0000-0000-000000000033';
+    raise exception 'FAIL: sent back without a reason';
+  exception when raise_exception then
+    if sqlerrm not like '%what needs to change%' then raise; end if;
+  end;
+  update public.hiring_requests set status = 'changes_requested', change_reason = 'Add a budget range' where id = '60000000-0000-0000-0000-000000000033';
+  assert (select decided_by from public.hiring_requests where id = '60000000-0000-0000-0000-000000000033') = '20000000-0000-0000-0000-000000000001', 'who sent it back is recorded';
+  -- Alex is not the requester: he may not resubmit it.
+  begin
+    update public.hiring_requests set status = 'submitted' where id = '60000000-0000-0000-0000-000000000033';
+    raise exception 'FAIL: an approver resubmitted someone else''s request';
+  exception when insufficient_privilege then null;
+  end;
+end $$;
+reset role;
+set app.test_uid = '00000000-0000-0000-0000-000000000002';  -- Fiona revises and resubmits
+set role authenticated;
+do $$
+begin
+  update public.hiring_requests set title = 'Senior Dispatcher', headcount = 2, status = 'submitted' where id = '60000000-0000-0000-0000-000000000033';
+  assert (select status || '/' || title || '/' || headcount::text || '/' || coalesce(decided_by::text, 'none') from public.hiring_requests where id = '60000000-0000-0000-0000-000000000033')
+    = 'submitted/Senior Dispatcher/2/none', 'revised, back in the queue, decision cleared';
+end $$;
+reset role;
+set app.test_uid = '00000000-0000-0000-0000-000000000001';  -- Alex approves the revision
+set role authenticated;
+update public.hiring_requests set status = 'approved' where id = '60000000-0000-0000-0000-000000000033';
+reset role;
+set app.test_uid = '';
+do $$
+declare v_kinds text[];
+begin
+  select array_agg(kind order by at) into v_kinds from public.hiring_request_history where request_id = '60000000-0000-0000-0000-000000000033';
+  assert v_kinds = array['submitted', 'changes_requested', 'resubmitted', 'approved'], 'history in order: ' || array_to_string(v_kinds, ',');
+  assert (select reason from public.hiring_request_history where request_id = '60000000-0000-0000-0000-000000000033' and kind = 'changes_requested') = 'Add a budget range', 'the reason travels with the step';
+  assert (select snapshot->>'title' from public.hiring_request_history where request_id = '60000000-0000-0000-0000-000000000033' and kind = 'resubmitted') = 'Senior Dispatcher', 'the revision is snapshotted';
+  assert (select actor_id from public.hiring_request_history where request_id = '60000000-0000-0000-0000-000000000033' and kind = 'resubmitted') = '20000000-0000-0000-0000-000000000002', 'who resubmitted';
+end $$;
+
 -- ================================================================ 0028
 -- Field Notebook import: dry run writes nothing, commit links an existing
 -- person by email, creates the rest, keeps legacy ids, reconciles and

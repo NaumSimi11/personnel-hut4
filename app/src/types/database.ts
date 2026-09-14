@@ -1515,6 +1515,61 @@ export type Database = {
           },
         ]
       }
+      hiring_request_history: {
+        Row: {
+          actor_id: string | null
+          at: string
+          company_id: string
+          id: string
+          kind: string
+          reason: string | null
+          request_id: string
+          snapshot: Json
+        }
+        Insert: {
+          actor_id?: string | null
+          at?: string
+          company_id: string
+          id?: string
+          kind: string
+          reason?: string | null
+          request_id: string
+          snapshot: Json
+        }
+        Update: {
+          actor_id?: string | null
+          at?: string
+          company_id?: string
+          id?: string
+          kind?: string
+          reason?: string | null
+          request_id?: string
+          snapshot?: Json
+        }
+        Relationships: [
+          {
+            foreignKeyName: "hiring_request_history_actor_id_fkey"
+            columns: ["actor_id"]
+            isOneToOne: false
+            referencedRelation: "people"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "hiring_request_history_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "hiring_request_history_request_id_fkey"
+            columns: ["request_id"]
+            isOneToOne: false
+            referencedRelation: "hiring_requests"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       hiring_requests: {
         Row: {
           budget: Json | null

@@ -2,8 +2,9 @@ import { createClient } from '@supabase/supabase-js'
 import { expect, test } from '@playwright/test'
 
 /**
- * Hiring workspace part A: request a hire, see the self-approval rule
- * enforced (requesters can never decide their own request), approve a
+ * Hiring workspace part A: request a hire, approve it as the platform
+ * admin (0030: admins may decide their own; everyone else never can —
+ * covered by the smoke tests), approve a
  * service-created request, and send another back for changes. Cleans up
  * with the secret key.
  */
@@ -34,7 +35,7 @@ test.afterAll(async () => {
   await removeTestRequests()
 })
 
-test('request a hire → self-approval refused → service request approved → changes requested', async ({
+test('request a hire → changes requested → admin approves their own → service request approved', async ({
   page,
 }) => {
   await page.goto('/login')
@@ -58,14 +59,17 @@ test('request a hire → self-approval refused → service request approved → 
   await expect(alphaRow.locator('.badge')).toHaveText('submitted')
   await expect(alphaRow).toContainText('Snowball')
 
-  // The requester (the signed-in admin) cannot decide their own request —
-  // the database trigger refuses it, and the page must surface that as a
-  // friendly message rather than the raw Postgres error.
-  await alphaRow.getByRole('button', { name: 'Approve' }).click();
-  await expect(page.getByRole('alert')).toContainText(
-    'You requested this hire — a different approver must decide it.',
-  )
-  await expect(alphaRow.locator('.badge')).toHaveText('submitted')
+  // Request changes on Alpha, with a reason surfaced on the row.
+  page.once('dialog', (dialog) => dialog.accept('Need budget range'))
+  await alphaRow.getByRole('button', { name: 'Request changes' }).click()
+  await expect(alphaRow.locator('.badge')).toHaveText('changes requested')
+  await expect(alphaRow).toContainText('Need budget range')
+
+  // The requester is the platform admin, so they may decide their own
+  // request (migration 0030), also from 'changes requested'; decided_by is still server-set.
+  await alphaRow.getByRole('button', { name: 'Approve' }).click()
+  await expect(alphaRow.locator('.badge')).toHaveText('approved')
+  await expect(alphaRow).not.toContainText('a different approver')
 
   // A request with no requester (service-created) can be approved.
   const db = serviceClient()
@@ -86,9 +90,4 @@ test('request a hire → self-approval refused → service request approved → 
   await betaRow.getByRole('button', { name: 'Approve' }).click()
   await expect(betaRow.locator('.badge')).toHaveText('approved')
 
-  // Request changes on Alpha, with a reason surfaced on the row.
-  page.once('dialog', (dialog) => dialog.accept('Need budget range'))
-  await alphaRow.getByRole('button', { name: 'Request changes' }).click()
-  await expect(alphaRow.locator('.badge')).toHaveText('changes requested')
-  await expect(alphaRow).toContainText('Need budget range')
 })

@@ -130,6 +130,19 @@ begin
   end;
 end $$;
 
+-- ...unless they are a platform admin (0030): Ada raises and decides her own.
+set app.test_uid = '00000000-0000-0000-0000-000000000004';
+insert into public.hiring_requests (id, company_id, title, status, requested_by) values
+  ('60000000-0000-0000-0000-00000000000d','10000000-0000-0000-0000-00000000000a',
+   'Group Accountant','submitted','20000000-0000-0000-0000-000000000004');
+update public.hiring_requests set status = 'approved' where id = '60000000-0000-0000-0000-00000000000d';
+do $$
+begin
+  assert (select status || '/' || decided_by::text from public.hiring_requests where id = '60000000-0000-0000-0000-00000000000d')
+    = 'approved/20000000-0000-0000-0000-000000000004', 'admin decided their own request, decided_by server-set';
+end $$;
+set app.test_uid = '00000000-0000-0000-0000-000000000001';
+
 -- Director cannot write to the read-only projects mirror.
 do $$
 begin
@@ -215,7 +228,7 @@ set role authenticated;
 do $$
 begin
   assert (select count(*) from public.people) = 5, 'Admin sees everyone';
-  assert (select count(*) from public.hiring_requests) = 3, 'Admin sees both companies';
+  assert (select count(*) from public.hiring_requests) = 4, 'Admin sees both companies';
   assert (select count(*) from public.compensation_records) = 1, 'Admin sees salaries';
   assert (select count(*) from public.employment_departure_details) = 1,
     'Admin sees departure details';

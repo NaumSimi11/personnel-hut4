@@ -104,6 +104,76 @@ export const EMPTY_SNAPSHOT: DashboardSnapshot = {
   payroll: [],
 }
 
+/**
+ * What the viewer holds, anywhere in the holding — the same hint the rest of
+ * the app uses (`auth.canAnywhere`). The database limits the data; this only
+ * decides whether a panel is worth drawing at all.
+ */
+export type Viewer = { canAnywhere: (capability: string) => boolean }
+
+export type StatTile = { key: string; label: string; value: string | number; sub?: string; tone?: 'hot' | 'gold' }
+
+/**
+ * The headline tiles, each behind the capability that governs its data:
+ * the team behind people.view, who is away behind leave.view / leave.approve,
+ * applicants behind candidates.view, requests behind jobs.approve. The
+ * payroll tile appears only when the snapshot actually carried a period —
+ * `payroll.summary` is checked in the database, not here.
+ */
+export function statTiles(input: {
+  snapshot: DashboardSnapshot
+  away: ReadonlyArray<AwayRow>
+  applications: ReadonlyArray<ApplicationLite>
+  requestsToDecide: number
+  viewer: Viewer
+}): StatTile[] {
+  const { snapshot, away, applications, requestsToDecide, viewer } = input
+  const tiles: StatTile[] = []
+  if (viewer.canAnywhere('people.view')) {
+    tiles.push({
+      key: 'active',
+      label: 'Active employees',
+      value: snapshot.active,
+      sub: snapshot.starting ? `${snapshot.starting} starting soon` : undefined,
+    })
+  }
+  if (viewer.canAnywhere('leave.view') || viewer.canAnywhere('leave.approve')) {
+    tiles.push({ key: 'away', label: 'Away today', value: away.length, tone: away.length ? 'hot' : undefined })
+  }
+  if (viewer.canAnywhere('candidates.view')) {
+    tiles.push({ key: 'applicants', label: 'Applicants in progress', value: applicantsInProgress(applications) })
+  }
+  if (viewer.canAnywhere('jobs.approve')) {
+    tiles.push({ key: 'requests', label: 'Hiring requests to decide', value: requestsToDecide })
+  }
+  const pay = snapshot.payroll[0]
+  if (pay) {
+    const { value, sub } = payrollLabel(pay)
+    const more = snapshot.payroll.length - 1
+    tiles.push({ key: 'payroll', label: 'Last payroll', value, sub: more ? `${sub} · +${more} more` : sub, tone: 'gold' })
+  }
+  return tiles
+}
+
+/** Which blocks of the Home the viewer may see anything in. */
+export function dashboardSections(viewer: Viewer): {
+  team: boolean
+  pipeline: boolean
+  openings: boolean
+  recruitment: boolean
+  away: boolean
+} {
+  const pipeline = viewer.canAnywhere('candidates.view')
+  const openings = viewer.canAnywhere('jobs.view')
+  return {
+    team: viewer.canAnywhere('people.view'),
+    pipeline,
+    openings,
+    recruitment: pipeline || openings,
+    away: viewer.canAnywhere('leave.view') || viewer.canAnywhere('leave.approve'),
+  }
+}
+
 export function pipelineCounts(apps: ReadonlyArray<ApplicationLite>): Array<{ key: string; label: string; tone: string; count: number }> {
   return PIPELINE_STAGES.map((s) => ({ ...s, count: apps.filter((a) => a.stage_key === s.key).length }))
 }

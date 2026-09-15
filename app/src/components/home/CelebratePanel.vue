@@ -8,10 +8,13 @@ import { shortDate } from '@/lib/leave'
 /**
  * The prototype's "Celebrate" block (plan 044): give kudos and read the
  * wall, birthdays and work anniversaries in the next 30 days, new
- * teammates, and a fun corner. Everything here is scoped by the database
- * to the viewer's companies; birthdays arrive as day and month only.
+ * teammates, and a fun corner. The team cards need people.view (birthdays
+ * need personal.view, applied in the database, which is why they can be
+ * empty while the others are not; the year never leaves the database).
+ * Kudos stay for everyone: you thank people you may see, and you always
+ * read what you gave or received.
  */
-const props = defineProps<{ snapshot: DashboardSnapshot; loading?: boolean }>()
+const props = defineProps<{ snapshot: DashboardSnapshot; showTeam: boolean; loading?: boolean }>()
 const emit = defineEmits<{ changed: [] }>()
 
 const auth = useAuthStore()
@@ -37,7 +40,7 @@ async function postKudos(): Promise<void> {
     .insert({ from_person_id: auth.personId, to_person_id: toId.value, message: message.value.trim() })
   busy.value = false
   if (err) {
-    error.value = err.message.includes('row-level security') ? 'You can only thank a colleague from your own companies.' : 'Could not post the kudos. Try again.'
+    error.value = err.message.includes('row-level security') ? 'You can only thank colleagues whose records you may see.' : 'Could not post the kudos. Try again.'
     console.error('Kudos insert failed:', err.message)
     return
   }
@@ -72,7 +75,10 @@ function when(iso: string): string {
 
 <template>
   <section class="celebrate" aria-labelledby="celebrate-heading" data-testid="celebrate">
-    <div class="section-label"><span id="celebrate-heading">Celebrate</span> <small>Kudos, birthdays, anniversaries and new faces on your team.</small></div>
+    <div class="section-label">
+      <span id="celebrate-heading">Celebrate</span>
+      <small>{{ showTeam ? 'Kudos, birthdays, anniversaries and new faces on your team.' : 'The thanks you gave and received.' }}</small>
+    </div>
     <div class="grid">
       <div class="col">
         <div class="card">
@@ -89,6 +95,7 @@ function when(iso: string): string {
                 <option value="">— Select a colleague —</option>
                 <option v-for="c in snapshot.colleagues" :key="c.id" :value="c.id">{{ c.full_name }} · {{ c.company_name }}</option>
               </select>
+              <small v-if="!loading && !snapshot.colleagues.length" class="hint left">You can thank colleagues whose records you may see.</small>
             </div>
             <div class="field">
               <label for="kudos-message">Message</label>
@@ -105,7 +112,7 @@ function when(iso: string): string {
           <div class="card-head">
             <div>
               <h2>Kudos wall</h2>
-              <p>The latest thanks across your team.</p>
+              <p>{{ showTeam ? 'The latest thanks across your team.' : 'What you gave, and what colleagues sent you.' }}</p>
             </div>
           </div>
           <div v-if="loading" class="empty">Loading…</div>
@@ -123,7 +130,7 @@ function when(iso: string): string {
         </div>
       </div>
 
-      <div class="col">
+      <div v-if="showTeam" class="col">
         <div class="card">
           <div class="card-head"><div><h2>Birthdays</h2><p>Next 30 days.</p></div></div>
           <div v-if="loading" class="empty">Loading…</div>
@@ -161,7 +168,7 @@ function when(iso: string): string {
 
       <div class="col">
         <slot name="aside" />
-        <div class="card fun">
+        <div v-if="showTeam" class="card fun">
           <div class="card-head"><div><h2>Fun corner</h2><p>Real numbers, presented lightly.</p></div></div>
           <div class="card-body facts">
             <p class="fact">🙌 <b>{{ snapshot.top_kudos?.full_name ?? '—' }}</b> {{ snapshot.top_kudos ? `has the most kudos (${snapshot.top_kudos.count})` : 'No kudos yet — be the first!' }}</p>
@@ -186,12 +193,12 @@ function when(iso: string): string {
 .celebrate { margin-bottom: 22px; }
 .section-label { display: flex; align-items: baseline; gap: 10px; margin: 0 0 12px; font-size: 13px; font-weight: 650; letter-spacing: 0.01em; }
 .section-label small { font-size: 12px; font-weight: 400; color: var(--muted); }
-.grid { display: grid; grid-template-columns: 1.2fr 1fr 1fr; gap: 14px; align-items: start; }
-@media (max-width: 1100px) { .grid { grid-template-columns: 1fr 1fr; } }
+.grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 14px; align-items: start; }
 @media (max-width: 700px) { .grid { grid-template-columns: 1fr; } }
 .col { display: grid; gap: 14px; }
 .card { margin: 0; }
 .hint { display: block; margin-top: 4px; font-size: 11px; color: var(--muted); text-align: right; }
+.hint.left { text-align: left; }
 .notice { padding: 10px 14px; border-radius: 9px; background: #edf5ed; color: #3e744e; font-size: 12px; margin: 0 0 12px; }
 .list { list-style: none; margin: 0; padding: 0; }
 .row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 24px; border-top: 1px solid var(--line); }

@@ -6,8 +6,9 @@ import { expect, test } from '@playwright/test'
  * shows the headline tiles, the applicant pipeline and open positions, the
  * celebrate block with a new teammate, a work anniversary and a birthday
  * (day and month only), kudos posted and removed; the Hiring page lists
- * job openings and applicants across jobs. Seeds its own rows and cleans
- * them with the secret key.
+ * job openings and applicants across jobs. A plain employee — no grants —
+ * sees none of the team facts, only what was addressed to them. Seeds its
+ * own rows and cleans them with the secret key.
  */
 
 const ADMIN_EMAIL = process.env.TEST_USER_EMAIL ?? ''
@@ -20,6 +21,10 @@ const JOB_TITLE = 'E2E Dash Job'
 const CANDIDATE = 'E2E Dash Candidate'
 const CANDIDATE_EMAIL = 'e2e-dash-candidate@example.test'
 const KUDOS = 'E2E kudos: thanks for the smooth launch!'
+const EMPLOYEE = 'E2E Dash Employee'
+const EMPLOYEE_EMAIL = 'e2e-dash-employee@example.com'
+const EMPLOYEE_PASSWORD = 'DashEmployee!2026xyz'
+const EMPLOYEE_KUDOS = 'E2E kudos: welcome to the team!'
 
 function serviceClient() {
   const url = process.env.SUPABASE_URL ?? ''
@@ -38,10 +43,12 @@ function shiftDate(days: number, years = 0): string {
 let companyId = ''
 let jobId = ''
 let applicationId = ''
+let adminPersonId = ''
+let employeeId = ''
 
 async function cleanup(): Promise<void> {
   const db = serviceClient()
-  const { data: people } = await db.from('people').select('id').in('full_name', [NEWCOMER, VETERAN])
+  const { data: people } = await db.from('people').select('id').in('full_name', [NEWCOMER, VETERAN, EMPLOYEE])
   const ids = (people ?? []).map((p) => p.id)
   if (ids.length) {
     await db.from('kudos').delete().or(`from_person_id.in.(${ids.join(',')}),to_person_id.in.(${ids.join(',')})`)
@@ -49,6 +56,10 @@ async function cleanup(): Promise<void> {
     await db.from('employment_periods').delete().in('person_id', ids)
     await db.from('people').delete().in('id', ids)
   }
+  // By email, not by the people row: a seed that failed halfway would otherwise
+  // leave an account behind that no later run could remove.
+  const { data: users } = await db.auth.admin.listUsers({ page: 1, perPage: 1000 })
+  for (const u of users?.users ?? []) if (u.email?.toLowerCase() === EMPLOYEE_EMAIL) await db.auth.admin.deleteUser(u.id)
   const { data: jobs } = await db.from('jobs').select('id').eq('title', JOB_TITLE)
   for (const j of jobs ?? []) {
     await db.from('applications').delete().eq('job_id', j.id)
@@ -85,6 +96,29 @@ test.beforeAll(async () => {
     .single()
   if (!application) throw new Error('Could not seed the application')
   applicationId = application.id
+
+  // A plain employee: an account, an employment, no grants anywhere.
+  const { data: admin } = await db.from('people').select('id').ilike('work_email', ADMIN_EMAIL).single()
+  if (!admin) throw new Error('Could not find the test user\'s person row')
+  adminPersonId = admin.id
+  const { data: user, error: userErr } = await db.auth.admin.createUser({
+    email: EMPLOYEE_EMAIL,
+    password: EMPLOYEE_PASSWORD,
+    email_confirm: true,
+    app_metadata: { must_change_password: false },
+  })
+  if (userErr || !user.user) throw new Error(`Could not create the employee's account: ${userErr?.message}`)
+  const { data: employee } = await db
+    .from('people')
+    .insert({ full_name: EMPLOYEE, work_email: EMPLOYEE_EMAIL, user_id: user.user.id })
+    .select('id')
+    .single()
+  if (!employee) throw new Error('Could not seed the employee')
+  employeeId = employee.id
+  await db
+    .from('employment_periods')
+    .insert({ person_id: employeeId, company_id: companyId, job_title: 'Dash Assistant', status: 'active', start_date: shiftDate(-200) })
+  await db.from('kudos').insert({ from_person_id: adminPersonId, to_person_id: employeeId, message: EMPLOYEE_KUDOS })
 })
 
 test.afterAll(cleanup)
@@ -148,4 +182,31 @@ test('Hiring: Job openings and Applicants tabs list across jobs, with filters', 
   await page.getByLabel('Stage').selectOption('live')
   await page.getByLabel('Search applicants').fill('nobody-matches-this')
   await expect(page.getByTestId('applicants')).toContainText('No applicants match')
+})
+
+test('a plain employee sees none of the team facts — only the kudos addressed to them', async ({ page }) => {
+  await page.goto('/login')
+  await page.locator('#email').fill(EMPLOYEE_EMAIL)
+  await page.locator('#password').fill(EMPLOYEE_PASSWORD)
+  await page.getByRole('button', { name: 'Sign in' }).click()
+  await page.waitForURL(/\/overview/)
+
+  // No people.view, no candidates.view, no jobs.view, no leave.view: no tiles, no panels.
+  await expect(page.getByTestId('stat-active')).toHaveCount(0)
+  await expect(page.getByTestId('stat-away')).toHaveCount(0)
+  await expect(page.getByTestId('stat-applicants')).toHaveCount(0)
+  await expect(page.getByTestId('recruitment-snapshot')).toHaveCount(0)
+  await expect(page.getByTestId('away-today')).toHaveCount(0)
+  const celebrate = page.getByTestId('celebrate')
+  await expect(celebrate.getByRole('heading', { name: 'Birthdays' })).toHaveCount(0)
+  await expect(celebrate.getByRole('heading', { name: 'New teammates' })).toHaveCount(0)
+  await expect(celebrate.getByRole('heading', { name: 'Fun corner' })).toHaveCount(0)
+
+  // What was given to them is theirs to read — and not theirs to remove.
+  const entry = page.getByTestId('kudos-wall').locator('li.kudos', { hasText: EMPLOYEE_KUDOS })
+  await expect(entry).toContainText(`→ ${EMPLOYEE}`)
+  await expect(entry.getByRole('button', { name: 'Remove' })).toHaveCount(0)
+  // Nobody to thank: the colleague list is empty and the form says why.
+  await expect(page.getByTestId('kudos-form')).toContainText('You can thank colleagues whose records you may see')
+  await expect(page.locator('#kudos-to')).toBeDisabled()
 })

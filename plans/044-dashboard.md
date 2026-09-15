@@ -19,20 +19,31 @@
 
 ## What the prototype shows, and what we do
 
+The prototype gated its blocks by four fixed roles. We gate by the
+capability that already governs that data, so the dashboard can never show
+more than the pages it links to. Nobody is shown a zero for something they
+may not see — the tile or card is simply absent.
+
 | Prototype (role) | Personnel | Gate |
 | --- | --- | --- |
-| Active employees / Total headcount (all roles) | People employed in the viewer's companies (active; pre-start counted separately) | `app.in_company` |
-| Applicants in progress (admin, HR) | Applications not hired / rejected / withdrawn | `jobs.view` anywhere (RLS) |
+| Active employees / Total headcount (all roles) | People employed in companies whose records the viewer may read (active; pre-start counted separately) | `people.view` |
+| Applicants in progress (admin, HR) | Applications not hired / rejected / withdrawn | `candidates.view` |
 | Last payroll (net) (admin, finance) | Latest approved or exported payroll period per company: prepared total | `payroll.summary` per company (in the RPC) |
-| Applicant pipeline bars (admin, HR) | Counts per stage across visible applications | `jobs.view` anywhere |
-| Open positions / Recent applicants (admin, HR) | Open jobs with their applicant count; five newest applications | `jobs.view` anywhere |
-| Give kudos / Kudos wall (all) | `kudos` table; the wall shows kudos to colleagues | colleague = shares a company |
-| Birthdays next 30 days (all) | Colleagues' birthdays, **day and month only** — the year never leaves the database | `app.in_company` |
-| Work anniversaries next 30 days (all) | From the current employment's start date | `app.in_company` |
-| New teammates last 30 days (all) | Employment started in the window | `app.in_company` |
-| Fun corner (all) | Most kudos, biggest team, anniversaries this year, "Surprise me" shoutout | — |
-| — | Away today (approved leave covering today, what the viewer may see) | leave RLS |
+| Applicant pipeline bars (admin, HR) | Counts per stage across visible applications | `candidates.view` |
+| Open positions (admin, HR) | Roles being hired with their applicant count | `jobs.view` |
+| Recent applicants (admin, HR) | Five newest applications | `candidates.view` |
+| Give kudos / Kudos wall (all) | `kudos` table; you thank someone you may see (`app.can_view_person`), and you always read what you gave or received | the directory's own rule |
+| Birthdays next 30 days (all) | **Day and month only** — the year never leaves the database | `personal.view` |
+| Work anniversaries next 30 days (all) | From the current employment's start date | `people.view` |
+| New teammates last 30 days (all) | Employment started in the window | `people.view` |
+| Fun corner (all) | Most kudos, biggest team, anniversaries this year, "Surprise me" | `people.view` |
+| — | Away today (approved leave covering today) | `leave.view` / `leave.approve` |
 | — (kept from Overview) | Needs a decision queue, My tasks | as before |
+| — | Hiring requests to decide | `jobs.approve` |
+
+A person with no grants therefore keeps a Home worth opening — their queue,
+their tasks, their notifications and the kudos addressed to them — and
+learns nothing about colleagues they could not already look up.
 
 Recruitment tabs (prototype: Job openings, Applicants):
 
@@ -42,15 +53,15 @@ Recruitment tabs (prototype: Job openings, Applicants):
 | Applicants: flat list, stage, applied date, position; add applicant | Per job only (Applications tab) | **Applicants** tab on Hiring: every application across jobs, stage filter, search, open the candidate or the job |
 | Add applicant (name, email, phone, position, stage, date) | Add candidate + Upload CVs per job | unchanged — adding is per job (a candidate always belongs to a job) |
 
-## Migration 0035
+## Migration 0035 (and 0036, the limits)
 
-- `app.is_colleague(p)`: the viewer shares a company with `p` (an employment
-  that counts as employed in a company where `app.in_company`), or is `p`.
 - `app.days_until_next(date)`: days from today to the next yearly occurrence
-  (29 Feb → 28 Feb in common years).
-- `kudos` (from, to, message 1–280, created_at). RLS: read where the receiver
-  is a colleague or I gave it; insert only as myself to a colleague, never to
-  myself; delete my own (admins any). Audited.
+  (29 Feb → 28 Feb in common years; the anniversary's year minus the start
+  year gives the count, which `age()` would round down for such a start).
+- `kudos` (from, to, message 1–280, created_at). RLS (0036): read where I may
+  see the person thanked (`app.can_view_person`, the directory's rule), or I
+  gave or received it; insert only as myself and only to someone I may see,
+  never to myself; delete my own (admins any). Audited.
 - `dashboard_snapshot(p_days default 30, 1–90)` → jsonb, one call:
   `headcount`, `active`, `starting` (pre-start), `colleagues` (id, name,
   company — the kudos "To" list), `birthdays` (name, title, company, on_day
@@ -58,14 +69,21 @@ Recruitment tabs (prototype: Job openings, Applicants):
   (start_date), `kudos` (last 30, with names, `mine`), `top_kudos`,
   `biggest_team`, `anniversaries_this_year`, `payroll` (latest approved /
   exported period per company where the viewer holds `payroll.summary`).
-  The team is scoped by `app.in_company`; admins see the holding.
+  The team is the people of the companies where the viewer holds
+  `people.view`; birthdays need `personal.view` in that company as well;
+  payroll has its own company set (`payroll.summary` does not imply
+  `people.view`). Admins hold every capability, so they see the holding.
+- 0036 replaces 0035's membership-based scoping (`app.is_colleague`, dropped)
+  with those capabilities, after the review found the dashboard wider than
+  the directory it links to.
 
 ## App
 
 - `stores/auth.ts`: `canAnywhere(cap)` — the gate for holding-wide panels.
-- `lib/dashboard.ts` (pure, unit-tested): `pipelineCounts`, `openPositions`,
-  `recentApplicants`, `awayToday`, `inDaysLabel`, `shoutoutLine`,
-  `applicantsInProgress`, `payrollLabel`.
+- `lib/dashboard.ts` (pure, unit-tested): `statTiles` and `dashboardSections`
+  (which tile and which block each capability opens), `pipelineCounts`,
+  `openPositions`, `recentApplicants`, `awayToday`, `inDaysLabel`,
+  `shoutoutLine`, `applicantsInProgress`, `payrollLabel`.
 - `components/home/`: `DashboardStats.vue`, `RecruitmentSnapshot.vue`
   (bars + open positions + recent applicants), `CelebratePanel.vue` (kudos
   form + wall, birthdays, anniversaries, new teammates, fun corner),
@@ -76,12 +94,16 @@ Recruitment tabs (prototype: Job openings, Applicants):
 
 ## Tests
 
-- smoke: Omar (no grants) sees colleagues from A only, Fiona's birthday
-  without a year, the anniversary and the newcomer fixtures, no payroll;
-  Fiona sees the payroll of A; kudos to a colleague lands with names, to
-  someone in another company is refused, to oneself is refused; the giver
-  removes it, another cannot.
-- unit: `lib/dashboard.test.ts`.
+- smoke: Omar (no grants) gets an empty snapshot and cannot thank someone he
+  may not see; Fiona (`people.view` + `payroll.summary`, no `personal.view`)
+  gets the team, the anniversary, the newcomer and A's payroll but no
+  birthdays, and her kudos carries both names; Omar still reads the kudos he
+  received but cannot remove it; Ada (admin) gets the birthday without a
+  year; Bea (Company B) sees neither A's people nor kudos between them; the
+  giver removes it.
+- unit: `lib/dashboard.test.ts` — the gating of every tile and block.
 - E2E `home-dashboard.spec.ts`: the admin's Home shows the pipeline and the
-  celebrate block; give kudos → on the wall → remove. Hiring tabs: Job
-  openings lists a job, Applicants lists an application and filters by stage.
+  celebrate block; give kudos → on the wall → remove. A plain employee sees
+  no tiles, no recruitment, no team cards — only the kudos addressed to them,
+  which they cannot remove. Hiring tabs: Job openings lists a job, Applicants
+  lists an application and filters by stage.

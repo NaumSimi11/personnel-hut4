@@ -3005,10 +3005,11 @@ begin
 end $$;
 update public.people set work_email = 'alex@a.test' where id = '20000000-0000-0000-0000-000000000001';
 
--- ================================================================ 0035
--- Dashboard: the snapshot is scoped to the viewer's companies, birthdays
--- carry no year, payroll only for payroll.summary holders; kudos go to
--- colleagues only and are removed by the giver.
+-- ============================================================ 0035 / 0036
+-- Dashboard: the snapshot shows only what the viewer may already see —
+-- the team behind people.view, birthdays behind personal.view (day and
+-- month, never the year), payroll behind payroll.summary; kudos follow the
+-- directory's rule, and the person thanked always reads their own.
 set app.test_uid = '';
 insert into public.people (id, full_name, work_email) values
   ('20000000-0000-0000-0000-000000000031','Nia Newcomer','nia@a.test'),
@@ -3018,80 +3019,110 @@ insert into public.employment_periods (id, person_id, company_id, job_title, sta
   ('30000000-0000-0000-0000-000000000032','20000000-0000-0000-0000-000000000032','10000000-0000-0000-0000-00000000000a','Analyst','active', (current_date - interval '2 years' + interval '3 days')::date);
 insert into public.person_private_details (person_id, birth_date) values
   ('20000000-0000-0000-0000-000000000032', (current_date + 5 - interval '30 years')::date);
--- Omar (employee in A, no grants): colleagues from A only, the facts, no payroll.
+
+-- Omar (employed in A, no grants): a team he may not read is no team at all.
 set app.test_uid = '00000000-0000-0000-0000-000000000003';
 set role authenticated;
 do $$
-declare s jsonb; b jsonb; a jsonb;
+declare s jsonb;
+begin
+  s := public.dashboard_snapshot(30);
+  assert (s->>'headcount')::int = 0, 'no people.view, no team';
+  assert s->'colleagues' = '[]'::jsonb and s->'birthdays' = '[]'::jsonb
+     and s->'anniversaries' = '[]'::jsonb and s->'newcomers' = '[]'::jsonb, 'and none of its facts';
+  assert s->'payroll' = '[]'::jsonb and s->'kudos' = '[]'::jsonb, 'no payroll, no kudos';
+  assert s->'biggest_team' = 'null'::jsonb and s->'top_kudos' = 'null'::jsonb, 'nothing to be biggest or top';
+  begin
+    insert into public.kudos (from_person_id, to_person_id, message)
+    values ('20000000-0000-0000-0000-000000000003', '20000000-0000-0000-0000-000000000001', 'Thanks!');
+    raise exception 'FAIL: kudos to someone I may not see accepted';
+  exception when insufficient_privilege then null;
+  end;
+end $$;
+reset role;
+
+-- Fiona (Finance in A: people.view + payroll.summary, no personal.view).
+set app.test_uid = '00000000-0000-0000-0000-000000000002';
+set role authenticated;
+do $$
+declare s jsonb; a jsonb;
 begin
   s := public.dashboard_snapshot(30);
   assert (s->>'headcount')::int >= 6, 'the team is everyone employed in A';
-  assert exists (select 1 from jsonb_array_elements(s->'colleagues') c where c->>'full_name' = 'Alex Director'), 'Alex is a colleague';
+  assert exists (select 1 from jsonb_array_elements(s->'colleagues') c where c->>'full_name' = 'Alex Director'), 'Alex is in it';
   assert not exists (select 1 from jsonb_array_elements(s->'colleagues') c where c->>'full_name' = 'Bea HR'), 'Bea (Company B) is not';
-  assert not exists (select 1 from jsonb_array_elements(s->'colleagues') c where c->>'full_name' = 'Omar Employee'), 'I am not my own colleague';
-  select c into b from jsonb_array_elements(s->'birthdays') c where c->>'full_name' = 'Ivo Anniversary';
-  assert b is not null, 'Ivo''s birthday is coming';
-  assert (b->>'in_days')::int = 5, 'in five days';
-  assert b->>'on_day' !~ '\d{4}' and b ? 'on_day' and not (b ? 'birth_date'), 'day and month only, never the year';
+  assert s->'birthdays' = '[]'::jsonb, 'no personal.view, no birthdays';
   select c into a from jsonb_array_elements(s->'anniversaries') c where c->>'full_name' = 'Ivo Anniversary';
   assert a is not null and (a->>'years')::int = 2 and (a->>'in_days')::int = 3, 'Ivo''s second anniversary is in three days';
   assert exists (select 1 from jsonb_array_elements(s->'newcomers') c where c->>'full_name' = 'Nia Newcomer'), 'Nia started ten days ago';
   assert not exists (select 1 from jsonb_array_elements(s->'anniversaries') c where c->>'full_name' = 'Nia Newcomer'), 'a newcomer has no anniversary yet';
-  assert s->'payroll' = '[]'::jsonb, 'no payroll.summary, no payroll';
-  assert (s->'biggest_team'->>'name') = 'Company A', 'the biggest team I can see';
-  -- Kudos to a colleague lands; to someone in another company or to myself does not.
+  assert (s->'payroll'->0->>'company_name') = 'Company A' and (s->'payroll'->0->>'total')::numeric > 0, 'the last approved payroll of A, with its total';
+  assert (s->'biggest_team'->>'name') = 'Company A', 'the biggest team I can read';
+  -- Thanking someone I may see lands, in my own name only.
   insert into public.kudos (from_person_id, to_person_id, message)
-  values ('20000000-0000-0000-0000-000000000003', '20000000-0000-0000-0000-000000000001', 'Thanks for the quick approval!');
-  begin
-    insert into public.kudos (from_person_id, to_person_id, message)
-    values ('20000000-0000-0000-0000-000000000003', '20000000-0000-0000-0000-000000000005', 'Hi Bea');
-    raise exception 'FAIL: kudos to another company accepted';
-  exception when insufficient_privilege then null;
-  end;
-  begin
-    insert into public.kudos (from_person_id, to_person_id, message)
-    values ('20000000-0000-0000-0000-000000000003', '20000000-0000-0000-0000-000000000003', 'Me');
-    raise exception 'FAIL: kudos to myself accepted';
-  exception when check_violation then null;
-  end;
+  values ('20000000-0000-0000-0000-000000000002', '20000000-0000-0000-0000-000000000003', 'Thanks for the quick handover!');
   begin
     insert into public.kudos (from_person_id, to_person_id, message)
     values ('20000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000003', 'Forged');
     raise exception 'FAIL: kudos in someone else''s name accepted';
   exception when insufficient_privilege then null;
   end;
+  begin
+    insert into public.kudos (from_person_id, to_person_id, message)
+    values ('20000000-0000-0000-0000-000000000002', '20000000-0000-0000-0000-000000000002', 'Me');
+    raise exception 'FAIL: kudos to myself accepted';
+  exception when check_violation then null;
+  end;
   s := public.dashboard_snapshot(30);
-  assert (select count(*) from jsonb_array_elements(s->'kudos') k where k->>'to_name' = 'Alex Director' and k->>'from_name' = 'Omar Employee' and (k->>'mine')::boolean) = 1,
+  assert (select count(*) from jsonb_array_elements(s->'kudos') k
+          where k->>'to_name' = 'Omar Employee' and k->>'from_name' = 'Fiona Finance' and (k->>'mine')::boolean) = 1,
     'the wall shows it with names, marked mine';
-  assert (s->'top_kudos'->>'full_name') = 'Alex Director', 'Alex has the most kudos';
 end $$;
 reset role;
--- Fiona (payroll.summary in A) sees A's last payroll; Bea cannot remove Omar's kudos, Omar can.
-set app.test_uid = '00000000-0000-0000-0000-000000000002';
+
+-- Omar reads what he was given, even with nothing else; removing is the giver's.
+set app.test_uid = '00000000-0000-0000-0000-000000000003';
 set role authenticated;
 do $$
 declare s jsonb;
 begin
   s := public.dashboard_snapshot(30);
-  assert jsonb_array_length(s->'payroll') >= 1 and (s->'payroll'->0->>'company_name') = 'Company A' and (s->'payroll'->0->>'total')::numeric > 0,
-    'the last approved payroll of A, with its total';
-  assert exists (select 1 from jsonb_array_elements(s->'birthdays') c where c->>'full_name' = 'Ivo Anniversary'), 'a grant in A shows A''s team';
+  assert jsonb_array_length(s->'kudos') = 1 and (s->'kudos'->0->>'from_name') = 'Fiona Finance'
+     and not (s->'kudos'->0->>'mine')::boolean, 'the kudos I received, not mine to claim';
+  assert (s->>'headcount')::int = 0, 'still no team';
+  delete from public.kudos;
+  assert (select count(*) from public.kudos) = 1, 'the recipient does not remove it';
 end $$;
 reset role;
+
+-- Ada (platform admin) may read private details, so she gets the birthday — day and month only.
+set app.test_uid = '00000000-0000-0000-0000-000000000004';
+set role authenticated;
+do $$
+declare b jsonb;
+begin
+  select c into b from jsonb_array_elements(public.dashboard_snapshot(30)->'birthdays') c where c->>'full_name' = 'Ivo Anniversary';
+  assert b is not null and (b->>'in_days')::int = 5, 'Ivo''s birthday is in five days';
+  assert b->>'on_day' !~ '\d{4}' and not (b ? 'birth_date'), 'day and month only, never the year';
+end $$;
+reset role;
+
+-- Bea (Company B) sees neither A's team nor kudos between its people.
 set app.test_uid = '00000000-0000-0000-0000-000000000005';
 set role authenticated;
 do $$
+declare s jsonb;
 begin
-  assert (select count(*) from public.kudos) = 0, 'Bea (Company B) does not see kudos in A';
-  delete from public.kudos where message = 'Thanks for the quick approval!';
-  assert (select count(*) from public.kudos) = 0, 'and cannot delete them';
+  assert (select count(*) from public.kudos) = 0, 'kudos between people I may not see stay hidden';
+  s := public.dashboard_snapshot(30);
+  assert not exists (select 1 from jsonb_array_elements(s->'colleagues') c where c->>'full_name' = 'Alex Director'), 'A''s people are not her team';
 end $$;
 reset role;
-set app.test_uid = '';
-do $$ begin assert (select count(*) from public.kudos where message = 'Thanks for the quick approval!') = 1, 'still there'; end $$;
-set app.test_uid = '00000000-0000-0000-0000-000000000003';
+
+-- The giver removes it.
+set app.test_uid = '00000000-0000-0000-0000-000000000002';
 set role authenticated;
-delete from public.kudos where message = 'Thanks for the quick approval!';
+delete from public.kudos;
 reset role;
 set app.test_uid = '';
 do $$ begin assert (select count(*) from public.kudos) = 0, 'the giver removed it'; end $$;

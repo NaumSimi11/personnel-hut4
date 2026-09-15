@@ -1,10 +1,11 @@
 <script setup lang="ts">
-/**
- * The headline numbers of the Home (plan 044). Which tiles appear is the
- * page's call — by what the viewer may see — so this only lays them out.
- */
-export type StatTile = { key: string; label: string; value: string | number; sub?: string; tone?: 'hot' | 'gold' }
+import type { StatTile } from '@/lib/dashboard'
 
+/**
+ * The headline numbers of the Home (plan 044). Which tiles appear is
+ * `statTiles`'s call — by what the viewer may already see — so this only
+ * lays them out.
+ */
 defineProps<{ tiles: StatTile[]; loading?: boolean }>()
 </script>
 

@@ -16,7 +16,14 @@ import { shortDate } from '@/lib/leave'
  * positions with their live applicant count, the newest applicants. Each
  * row opens the job or the candidate.
  */
-const props = defineProps<{ applications: ApplicationLite[]; jobs: JobLite[]; loading?: boolean }>()
+const props = defineProps<{
+  applications: ApplicationLite[]
+  jobs: JobLite[]
+  /** Candidates are behind candidates.view, the roles behind jobs.view — the page passes what the viewer holds. */
+  showPipeline: boolean
+  showOpenings: boolean
+  loading?: boolean
+}>()
 
 const counts = computed(() => pipelineCounts(props.applications))
 const max = computed(() => Math.max(1, ...counts.value.map((c) => c.count)))
@@ -38,7 +45,7 @@ function badgeClass(stage: string): string {
   <section class="recruitment" aria-labelledby="recruitment-heading" data-testid="recruitment-snapshot">
     <div class="section-label"><span id="recruitment-heading">Recruitment</span> <small>What the pipeline holds and who just applied.</small></div>
     <div class="grid">
-      <div class="card pipeline-card">
+      <div v-if="showPipeline" class="card pipeline-card">
         <div class="card-head">
           <div>
             <h2>Applicant pipeline</h2>
@@ -56,7 +63,7 @@ function badgeClass(stage: string): string {
         </div>
       </div>
 
-      <div class="card">
+      <div v-if="showOpenings" class="card">
         <div class="card-head">
           <div>
             <h2>Open positions</h2>
@@ -76,7 +83,7 @@ function badgeClass(stage: string): string {
         </ul>
       </div>
 
-      <div class="card">
+      <div v-if="showPipeline" class="card">
         <div class="card-head">
           <div>
             <h2>Recent applicants</h2>
@@ -102,8 +109,7 @@ function badgeClass(stage: string): string {
 .recruitment { margin-bottom: 22px; }
 .section-label { display: flex; align-items: baseline; gap: 10px; margin: 0 0 12px; font-size: 13px; font-weight: 650; letter-spacing: 0.01em; }
 .section-label small { font-size: 12px; font-weight: 400; color: var(--muted); }
-.grid { display: grid; grid-template-columns: 1.4fr 1fr 1fr; gap: 14px; }
-@media (max-width: 1100px) { .grid { grid-template-columns: 1fr 1fr; } .pipeline-card { grid-column: 1 / -1; } }
+.grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 14px; }
 @media (max-width: 700px) { .grid { grid-template-columns: 1fr; } }
 .small-btn { font-size: 11px; padding: 7px 11px; text-decoration: none; }
 .bars { display: flex; align-items: flex-end; gap: 12px; height: 150px; padding: 12px 24px 18px; }

@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import {
+  EMPTY_SNAPSHOT,
   applicantsInProgress,
   awayToday,
+  dashboardSections,
   inDaysLabel,
   openPositions,
   payrollLabel,
@@ -9,9 +11,15 @@ import {
   recentApplicants,
   shoutoutLine,
   stageLabel,
+  statTiles,
   type ApplicationLite,
   type JobLite,
+  type PayrollFact,
 } from './dashboard'
+
+/** A viewer holding exactly the listed capabilities, anywhere. */
+const viewerWith = (...caps: string[]) => ({ canAnywhere: (cap: string) => caps.includes(cap) })
+const PAYROLL: PayrollFact = { company_name: 'Synami', period_start: '2026-08-01', period_end: '2026-08-31', currency: 'EUR', total: 1000, people: 2, status: 'approved' }
 
 const app = (over: Partial<ApplicationLite>): ApplicationLite => ({
   id: 'a',
@@ -103,6 +111,41 @@ describe('dashboard', () => {
   it('labels stages as the pipeline does, withdrawn included', () => {
     expect(stageLabel('new')).toBe('Applied')
     expect(stageLabel('withdrawn')).toBe('Withdrawn')
+  })
+
+  it('shows each stat only to a viewer who may already see that data', () => {
+    const snapshot = { ...EMPTY_SNAPSHOT, active: 12, starting: 1 }
+    const input = { snapshot, away: [{ id: '1', name: 'Ana', type: 'annual', until: '2026-09-16', backOn: false }], applications: [app({ id: '1' })], requestsToDecide: 3 }
+
+    expect(statTiles({ ...input, viewer: viewerWith() }).map((t) => t.key)).toEqual([])
+    expect(statTiles({ ...input, viewer: viewerWith('people.view') }).map((t) => t.key)).toEqual(['active'])
+    expect(statTiles({ ...input, viewer: viewerWith('leave.approve') }).map((t) => t.key)).toEqual(['away'])
+    expect(statTiles({ ...input, viewer: viewerWith('candidates.view') }).map((t) => t.key)).toEqual(['applicants'])
+    expect(statTiles({ ...input, viewer: viewerWith('jobs.approve') }).map((t) => t.key)).toEqual(['requests'])
+  })
+
+  it('states the headline numbers and keeps the payroll tile on what the database returned', () => {
+    const snapshot = { ...EMPTY_SNAPSHOT, active: 12, starting: 1, payroll: [PAYROLL] }
+    const all = viewerWith('people.view', 'leave.view', 'candidates.view', 'jobs.approve')
+    const tiles = statTiles({ snapshot, away: [], applications: [app({ id: '1' }), app({ id: '2', stage_key: 'hired' })], requestsToDecide: 3, viewer: all })
+    expect(tiles.map((t) => [t.key, t.value])).toEqual([
+      ['active', 12],
+      ['away', 0],
+      ['applicants', 1],
+      ['requests', 3],
+      ['payroll', '1,000 EUR'],
+    ])
+    expect(tiles[0]?.sub).toBe('1 starting soon')
+    // No payroll row came back (no payroll.summary anywhere) → no tile, whatever the viewer claims.
+    expect(statTiles({ snapshot: { ...snapshot, payroll: [] }, away: [], applications: [], requestsToDecide: 0, viewer: all }).map((t) => t.key)).not.toContain('payroll')
+  })
+
+  it('opens each dashboard section to the capability that governs its data', () => {
+    expect(dashboardSections(viewerWith())).toEqual({ team: false, pipeline: false, openings: false, recruitment: false, away: false })
+    expect(dashboardSections(viewerWith('people.view'))).toMatchObject({ team: true, recruitment: false })
+    expect(dashboardSections(viewerWith('candidates.view'))).toMatchObject({ pipeline: true, openings: false, recruitment: true })
+    expect(dashboardSections(viewerWith('jobs.view'))).toMatchObject({ pipeline: false, openings: true, recruitment: true })
+    expect(dashboardSections(viewerWith('leave.view'))).toMatchObject({ away: true })
   })
 
   it('labels days until', () => {

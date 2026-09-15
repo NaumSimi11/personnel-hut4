@@ -25,15 +25,15 @@ import {
 import { todayDb } from '@/lib/compensation'
 import {
   EMPTY_SNAPSHOT,
-  applicantsInProgress,
   awayToday,
-  payrollLabel,
+  dashboardSections,
+  statTiles,
   type ApplicationLite,
   type AwayRow,
   type DashboardSnapshot,
   type JobLite,
 } from '@/lib/dashboard'
-import DashboardStats, { type StatTile } from '@/components/home/DashboardStats.vue'
+import DashboardStats from '@/components/home/DashboardStats.vue'
 import RecruitmentSnapshot from '@/components/home/RecruitmentSnapshot.vue'
 import CelebratePanel from '@/components/home/CelebratePanel.vue'
 import AwayToday from '@/components/home/AwayToday.vue'
@@ -109,27 +109,20 @@ const viewer = {
   can: (companyId: string, cap: string) => auth.can(companyId, cap),
 }
 const queueBadgeClass = computed(() => (queueRows.value.length > 0 ? 'amber' : 'green'))
-const showRecruitment = computed(() => auth.canAnywhere('jobs.view'))
+const sections = computed(() => dashboardSections(auth))
 // The database's today (UTC), the same day the facts below are computed for.
 const todayLabel = new Date(`${todayDb()}T00:00:00Z`).toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'UTC' })
 
-/** The tiles the prototype showed per role, decided here by capability. */
-const tiles = computed<StatTile[]>(() => {
-  const s = snapshot.value
-  const list: StatTile[] = [
-    { key: 'active', label: 'Active employees', value: s.active, sub: s.starting ? `${s.starting} starting soon` : undefined },
-    { key: 'away', label: 'Away today', value: away.value.length, tone: away.value.length ? 'hot' : undefined },
-  ]
-  if (showRecruitment.value) list.push({ key: 'applicants', label: 'Applicants in progress', value: applicantsInProgress(applications.value) })
-  if (auth.canAnywhere('jobs.approve')) list.push({ key: 'requests', label: 'Hiring requests to decide', value: metrics.value.hiringRequests })
-  const pay = s.payroll[0]
-  if (pay) {
-    const { value, sub } = payrollLabel(pay)
-    const more = s.payroll.length - 1
-    list.push({ key: 'payroll', label: 'Last payroll', value, sub: more ? `${sub} · +${more} more` : sub, tone: 'gold' })
-  }
-  return list
-})
+/** The tiles the prototype showed per role, decided here by what the viewer already sees. */
+const tiles = computed(() =>
+  statTiles({
+    snapshot: snapshot.value,
+    away: away.value,
+    applications: applications.value,
+    requestsToDecide: metrics.value.hiringRequests,
+    viewer: auth,
+  }),
+)
 
 function criticalOpenCount(tasks: PlanTaskLite[]): number {
   return tasks.filter((t) => t.critical && t.status !== 'done' && t.status !== 'skipped').length
@@ -401,11 +394,18 @@ onMounted(load)
       </div>
     </div>
 
-    <RecruitmentSnapshot v-if="showRecruitment" :applications="applications" :jobs="jobs" :loading="loading" />
+    <RecruitmentSnapshot
+      v-if="sections.recruitment"
+      :applications="applications"
+      :jobs="jobs"
+      :show-pipeline="sections.pipeline"
+      :show-openings="sections.openings"
+      :loading="loading"
+    />
 
-    <CelebratePanel :snapshot="snapshot" :loading="loading" @changed="loadSnapshot">
+    <CelebratePanel :snapshot="snapshot" :show-team="sections.team" :loading="loading" @changed="loadSnapshot">
       <template #aside>
-        <AwayToday :rows="away" :loading="loading" />
+        <AwayToday v-if="sections.away" :rows="away" :loading="loading" />
       </template>
     </CelebratePanel>
 

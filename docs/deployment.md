@@ -8,11 +8,18 @@ any other platform.
 
 ## Vercel (chosen host)
 
-Vercel runs Fastify as a first-class backend: `server/server.ts` exports
-the app, `server/vercel.json` builds the Vue app into `server/public/`
-(served by Vercel's CDN), and the function answers `/api/*` plus the SPA
-fallback. Verified locally by importing `server/server.ts` and injecting
-`/api/health` (JSON) and `/leave` (index.html).
+Vercel only turns files inside an `api/` directory into functions, so the
+service lives at `server/api/[...path].ts`: a catch-all that builds the
+Fastify app once per warm container and drives it by emitting the request
+on its own http server. `server/vercel.json` builds the Vue app into
+`server/public/` and declares it as the `outputDirectory`, so Vercel's CDN
+serves the static files; a rewrite sends every non-`/api/` path to
+`index.html` for the SPA router.
+
+An earlier attempt exported the app from `server/server.ts` and named it in
+`functions`; Vercel rejects that at build time ("the pattern does not match
+any Serverless Functions inside the `api` directory") because it does not
+detect Fastify outside `api/`.
 
 Project settings (once, in the dashboard):
 

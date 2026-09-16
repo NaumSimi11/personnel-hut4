@@ -3,9 +3,9 @@
 # Keep it current: rewrite the `state` and `next` sections at each handoff.
 
 meta:
-  written: 2026-09-16 (updated after slice 046)
+  written: 2026-09-16 (updated after slice 047)
   repo: E:\personnel-hut4 (GitHub NaumSimi11/personnel-hut4, branch main)
-  head: b754634
+  head: 0b64949
   origin_main: 5f4c2a5
   unpushed_commits:
     - 630e21b feat: show / hide toggle on every password field (PasswordInput)
@@ -14,6 +14,8 @@ meta:
     - c664324 docs: plan 045 revised with the maintainer's decisions
     - 1309eac docs: session handoff
     - b754634 feat: the employee record (slice 046, migrations 0038 + 0039)
+    - 8c4857c docs: handoff after 046
+    - 0b64949 feat: checklists per person (slice 047, migration 0040)
     - (one more: docs commit recording this head)
   untracked_leave_alone:
     - "docs/files 1.zip"            # second prototype, maintainer's copy — reviewed, not ours to commit
@@ -80,7 +82,7 @@ next:
     - Naum's password option (above)
 
 pending_on_maintainer_unrelated_to_045:
-  - git push origin main (7 commits waiting)
+  - git push origin main (9 commits waiting)
   - RESEND_API_KEY + EMAIL_FROM (invites and notification emails start sending), ANTHROPIC_API_KEY (plan 020 AI assist), Zoho credentials (docs/integrations-zoho.md)
   - invite / carry over the 14 people without accounts
   - real start dates and birth dates for the celebrate block

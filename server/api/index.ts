@@ -19,8 +19,25 @@ import { createApp } from '../src/app.js'
 let instance: Promise<FastifyInstance> | null = null
 
 export default async function handler(req: IncomingMessage, res: ServerResponse): Promise<void> {
-  instance ??= createApp({})
-  const app = await instance
-  await app.ready()
-  app.server.emit('request', req, res)
+  try {
+    instance ??= createApp({})
+    const app = await instance
+    await app.ready()
+    app.server.emit('request', req, res)
+  } catch (error) {
+    // Reaching here means the service never started — a missing environment
+    // variable or an import the bundle could not resolve. The platform would
+    // otherwise answer with an opaque 500, so say what happened and let the
+    // next request rebuild once the cause is fixed.
+    instance = null
+    console.error('[api] the service failed to start:', error)
+    res.statusCode = 500
+    res.setHeader('content-type', 'application/json')
+    res.end(
+      JSON.stringify({
+        error: 'The service failed to start.',
+        detail: error instanceof Error ? error.message : String(error),
+      }),
+    )
+  }
 }

@@ -8,21 +8,25 @@ any other platform.
 
 ## Vercel (chosen host)
 
-Vercel only turns files inside an `api/` directory into functions, so the
-service lives at `server/api/index.ts` with a rewrite sending every
-`/api/*` path to it: it builds the Fastify app once per warm container and
-drives it by emitting the request on its own http server. The original
-path survives the rewrite, so Fastify still routes on it.
-`server/api/ping.ts` answers without Fastify or Supabase, as a probe that
-the directory was built into functions at all. `server/vercel.json` builds the Vue app into
-`server/public/` and declares it as the `outputDirectory`, so Vercel's CDN
-serves the static files; a rewrite sends every non-`/api/` path to
-`index.html` for the SPA router.
+The deployment is declared, not detected: `server/scripts/build-vercel.mjs`
+writes a Vercel Build Output API (v3) tree into `server/.vercel/output/` —
+the Vue build in `static/` for the CDN, one self-contained function in
+`functions/api.func/` for `/api/*`, and `config.json` routing filesystem
+first, then `/api/*` to the function, then everything else to `index.html`
+for the SPA router. This is the same shape the Hut4 leave system deploys.
 
-An earlier attempt exported the app from `server/server.ts` and named it in
-`functions`; Vercel rejects that at build time ("the pattern does not match
-any Serverless Functions inside the `api` directory") because it does not
-detect Fastify outside `api/`.
+Declaring it matters here: the service imports `../../shared`, outside the
+project's Root Directory, and esbuild inlines that at build time so the
+function depends on nothing beyond its own bundle. The bundle is ESM
+(`env.ts` reads `import.meta.url`) with a `createRequire` banner, because
+Fastify and its plugins are CommonJS and require Node built-ins at load
+time.
+
+Two earlier attempts relied on Vercel's zero-config detection and both
+failed: exporting the app from `server/server.ts` named in `functions` is
+rejected at build time ("the pattern does not match any Serverless
+Functions inside the `api` directory"), and an `api/` entry point builds but
+cannot resolve imports from outside the Root Directory.
 
 Project settings (once, in the dashboard):
 

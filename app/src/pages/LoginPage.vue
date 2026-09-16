@@ -3,6 +3,7 @@ import { ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { z } from 'zod'
 import { useAuthStore } from '@/stores/auth'
+import PasswordInput from '@/components/PasswordInput.vue'
 
 const auth = useAuthStore()
 const router = useRouter()
@@ -50,13 +51,7 @@ async function submit() {
           </div>
           <div class="field">
             <label for="password">Password</label>
-            <input
-              id="password"
-              v-model="password"
-              type="password"
-              autocomplete="current-password"
-              required
-            />
+            <PasswordInput id="password" v-model="password" autocomplete="current-password" required />
           </div>
           <p v-if="error" class="error-note" role="alert">{{ error }}</p>
           <button class="button" type="submit" :disabled="busy">

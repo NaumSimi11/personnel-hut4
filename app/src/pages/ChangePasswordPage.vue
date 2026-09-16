@@ -4,6 +4,7 @@ import { useRouter } from 'vue-router'
 import { meetsPasswordPolicy, PASSWORD_POLICY_SUMMARY, PASSWORD_RULES } from '@shared/passwordPolicy'
 import { changePassword } from '@/lib/authApi'
 import { useAuthStore } from '@/stores/auth'
+import PasswordInput from '@/components/PasswordInput.vue'
 
 /**
  * Forced first-login password change, ported from the Hut4 leave system.
@@ -67,11 +68,11 @@ async function submit() {
         <form novalidate @submit.prevent="submit">
           <div class="field">
             <label for="current">Temporary password</label>
-            <input id="current" v-model="current" type="password" autocomplete="current-password" />
+            <PasswordInput id="current" v-model="current" autocomplete="current-password" />
           </div>
           <div class="field">
             <label for="next">New password</label>
-            <input id="next" v-model="next" type="password" autocomplete="new-password" />
+            <PasswordInput id="next" v-model="next" autocomplete="new-password" />
           </div>
           <ul class="password-rules" aria-label="Password requirements">
             <li v-for="rule in PASSWORD_RULES" :key="rule.id" :class="{ met: rule.test(next) }">
@@ -87,7 +88,7 @@ async function submit() {
           </ul>
           <div class="field">
             <label for="confirm">Repeat new password</label>
-            <input id="confirm" v-model="confirm" type="password" autocomplete="new-password" />
+            <PasswordInput id="confirm" v-model="confirm" autocomplete="new-password" />
           </div>
           <p v-if="error" class="error-note" role="alert">{{ error }}</p>
           <button class="button" type="submit" :disabled="busy">

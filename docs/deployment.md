@@ -9,9 +9,12 @@ any other platform.
 ## Vercel (chosen host)
 
 Vercel only turns files inside an `api/` directory into functions, so the
-service lives at `server/api/[...path].ts`: a catch-all that builds the
-Fastify app once per warm container and drives it by emitting the request
-on its own http server. `server/vercel.json` builds the Vue app into
+service lives at `server/api/index.ts` with a rewrite sending every
+`/api/*` path to it: it builds the Fastify app once per warm container and
+drives it by emitting the request on its own http server. The original
+path survives the rewrite, so Fastify still routes on it.
+`server/api/ping.ts` answers without Fastify or Supabase, as a probe that
+the directory was built into functions at all. `server/vercel.json` builds the Vue app into
 `server/public/` and declares it as the `outputDirectory`, so Vercel's CDN
 serves the static files; a rewrite sends every non-`/api/` path to
 `index.html` for the SPA router.

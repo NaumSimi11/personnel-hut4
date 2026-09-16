@@ -4,14 +4,17 @@ import { createApp } from '../src/app.js'
 
 /**
  * Vercel entry point for /api/* (docs/deployment.md). Vercel only turns
- * files inside `api/` into functions, so this catch-all carries the whole
- * service. The built Vue app is not served from here: it lands in
- * `public/` and Vercel's CDN serves it, with the SPA fallback declared as
- * a rewrite in vercel.json.
+ * files inside `api/` into functions, and vercel.json rewrites every
+ * /api/* path here, so this one function carries the whole service. The
+ * original request path survives the rewrite, which is what lets Fastify
+ * route on it.
+ *
+ * The built Vue app is not served from here: it lands in `public/`, which
+ * Vercel's CDN serves directly.
  *
  * The instance is built once per warm container and reused; Fastify is
- * driven by emitting the request on its own http server, which is the
- * documented way to run it without listening on a port.
+ * driven by emitting the request on its own http server, the documented
+ * way to run it without listening on a port.
  */
 let instance: Promise<FastifyInstance> | null = null
 

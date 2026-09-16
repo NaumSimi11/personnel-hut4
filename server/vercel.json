@@ -3,5 +3,8 @@
   "installCommand": "npm ci && cd ../app && npm ci",
   "buildCommand": "cd ../app && npm run build && rm -rf ../server/public && cp -r dist ../server/public",
   "outputDirectory": "public",
-  "rewrites": [{ "source": "/((?!api/).*)", "destination": "/index.html" }]
+  "rewrites": [
+    { "source": "/api/(.*)", "destination": "/api" },
+    { "source": "/((?!api/).*)", "destination": "/index.html" }
+  ]
 }

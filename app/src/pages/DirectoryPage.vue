@@ -65,6 +65,7 @@ function initials(name: string): string {
 function currentEmployment(p: DirectoryRow) {
   return currentPeriod(p.employment_periods)
 }
+const adminIds = ref<Set<string>>(new Set())
 
 async function load(): Promise<void> {
   // Scheduled employment changes whose date has arrived apply on the way in.
@@ -72,6 +73,11 @@ async function load(): Promise<void> {
   if (due.error) console.error('Applying due employment changes failed:', due.error.message)
   const companiesRes = await supabase.from('companies').select('id, name').is('archived_at', null).order('name')
   companies.value = companiesRes.data ?? []
+  if (auth.isAdmin) {
+    // Who runs the platform — readable by admins only, shown as a badge so it is never a surprise.
+    const adminsRes = await supabase.from('platform_admins').select('person_id')
+    adminIds.value = new Set((adminsRes.data ?? []).map((a) => a.person_id))
+  }
   const { data, error: err } = await supabase
     .from('people')
     .select(
@@ -186,6 +192,9 @@ onMounted(load)
                   :title="`Last day ${currentEmployment(p)!.last_working_date ?? currentEmployment(p)!.end_date}`"
                 >
                   Departing
+                </span>
+                <span v-if="adminIds.has(p.id)" class="badge departing-badge" title="Platform admin: every company, every page" data-testid="admin-badge">
+                  Admin
                 </span>
               </td>
               <td>

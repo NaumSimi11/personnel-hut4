@@ -3,11 +3,14 @@ import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { supabase } from '@/lib/supabase'
 import { useAccessCatalog } from '@/stores/accessCatalog'
+import { useAuthStore } from '@/stores/auth'
 import { diffSets, withDependencies, withoutDependents } from '@/lib/permissions'
+import PlatformAdminPanel from '@/components/PlatformAdminPanel.vue'
 
 const route = useRoute()
 const router = useRouter()
 const catalog = useAccessCatalog()
+const auth = useAuthStore()
 
 const personId = route.params.personId as string
 const person = ref<{ full_name: string } | null>(null)
@@ -166,6 +169,8 @@ onMounted(async () => {
 
     <p v-if="error" class="error-note" role="alert">{{ error }}</p>
     <output v-if="notice" class="notice">{{ notice }}</output>
+
+    <PlatformAdminPanel v-if="auth.isAdmin && person" :person-id="personId" :person-name="person.full_name" />
 
     <div class="editor-grid">
       <div class="card">

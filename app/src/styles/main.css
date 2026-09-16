@@ -122,7 +122,11 @@ small { line-height: 1.45; }
 .card-head p { margin: 5px 0 0; font-size: 12px; color: var(--muted); }
 .card-body { padding: 23px 24px; }
 
-.field { display: grid; gap: 7px; margin-bottom: 17px; }
+/* align-content: start keeps the rows at their natural height. Without it a
+   field in a stretched grid column (one whose neighbour carries a hint line)
+   hands the spare height to its input, so paired inputs render different
+   sizes. */
+.field { display: grid; gap: 7px; margin-bottom: 17px; align-content: start; }
 .field label { font-size: 12px; font-weight: 600; color: #4d5e57; }
 .field input, .field select, .field textarea {
   width: 100%;

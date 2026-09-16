@@ -1200,6 +1200,83 @@ export type Database = {
           },
         ]
       }
+      employment_corrections: {
+        Row: {
+          company_id: string
+          corrected_at: string
+          corrected_by: string | null
+          id: string
+          new_employment_type_key: string | null
+          new_job_title: string
+          new_start_date: string
+          old_employment_type_key: string | null
+          old_job_title: string
+          old_start_date: string
+          period_id: string
+          person_id: string
+          reason: string | null
+        }
+        Insert: {
+          company_id: string
+          corrected_at?: string
+          corrected_by?: string | null
+          id?: string
+          new_employment_type_key?: string | null
+          new_job_title: string
+          new_start_date: string
+          old_employment_type_key?: string | null
+          old_job_title: string
+          old_start_date: string
+          period_id: string
+          person_id: string
+          reason?: string | null
+        }
+        Update: {
+          company_id?: string
+          corrected_at?: string
+          corrected_by?: string | null
+          id?: string
+          new_employment_type_key?: string | null
+          new_job_title?: string
+          new_start_date?: string
+          old_employment_type_key?: string | null
+          old_job_title?: string
+          old_start_date?: string
+          period_id?: string
+          person_id?: string
+          reason?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "employment_corrections_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "employment_corrections_corrected_by_fkey"
+            columns: ["corrected_by"]
+            isOneToOne: false
+            referencedRelation: "people"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "employment_corrections_period_id_fkey"
+            columns: ["period_id"]
+            isOneToOne: false
+            referencedRelation: "employment_periods"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "employment_corrections_person_id_fkey"
+            columns: ["person_id"]
+            isOneToOne: false
+            referencedRelation: "people"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       employment_departure_details: {
         Row: {
           employment_period_id: string
@@ -3870,6 +3947,16 @@ export type Database = {
         }
         Returns: Json
       }
+      correct_employment: {
+        Args: {
+          p_employment_type_key?: string
+          p_job_title?: string
+          p_period_id: string
+          p_reason?: string
+          p_start_date: string
+        }
+        Returns: Json
+      }
       correct_leave: {
         Args: { p_days: Json; p_note?: string; p_request_id: string }
         Returns: Json
@@ -4048,12 +4135,12 @@ export type Tables<
   DefaultSchemaTableNameOrOptions extends
     | keyof (DefaultSchema["Tables"] & DefaultSchema["Views"])
     | { schema: keyof DatabaseWithoutInternals },
-  TableName extends DefaultSchemaTableNameOrOptions extends {
+  TableName extends (DefaultSchemaTableNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof (DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"] &
         DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Views"])
-    : never = never,
+    : never) = never,
 > = DefaultSchemaTableNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
@@ -4077,11 +4164,11 @@ export type TablesInsert<
   DefaultSchemaTableNameOrOptions extends
     | keyof DefaultSchema["Tables"]
     | { schema: keyof DatabaseWithoutInternals },
-  TableName extends DefaultSchemaTableNameOrOptions extends {
+  TableName extends (DefaultSchemaTableNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"]
-    : never = never,
+    : never) = never,
 > = DefaultSchemaTableNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
@@ -4102,11 +4189,11 @@ export type TablesUpdate<
   DefaultSchemaTableNameOrOptions extends
     | keyof DefaultSchema["Tables"]
     | { schema: keyof DatabaseWithoutInternals },
-  TableName extends DefaultSchemaTableNameOrOptions extends {
+  TableName extends (DefaultSchemaTableNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"]
-    : never = never,
+    : never) = never,
 > = DefaultSchemaTableNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
@@ -4127,11 +4214,11 @@ export type Enums<
   DefaultSchemaEnumNameOrOptions extends
     | keyof DefaultSchema["Enums"]
     | { schema: keyof DatabaseWithoutInternals },
-  EnumName extends DefaultSchemaEnumNameOrOptions extends {
+  EnumName extends (DefaultSchemaEnumNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof DatabaseWithoutInternals[DefaultSchemaEnumNameOrOptions["schema"]]["Enums"]
-    : never = never,
+    : never) = never,
 > = DefaultSchemaEnumNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
@@ -4144,11 +4231,11 @@ export type CompositeTypes<
   PublicCompositeTypeNameOrOptions extends
     | keyof DefaultSchema["CompositeTypes"]
     | { schema: keyof DatabaseWithoutInternals },
-  CompositeTypeName extends PublicCompositeTypeNameOrOptions extends {
+  CompositeTypeName extends (PublicCompositeTypeNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof DatabaseWithoutInternals[PublicCompositeTypeNameOrOptions["schema"]]["CompositeTypes"]
-    : never = never,
+    : never) = never,
 > = PublicCompositeTypeNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }

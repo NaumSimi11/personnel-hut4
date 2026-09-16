@@ -13,3 +13,4 @@ playwright-report/
 .playwright-mcp/
 .fn-payload*.json
 server/public/
+supabase/.temp/

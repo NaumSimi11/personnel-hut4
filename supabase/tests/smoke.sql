@@ -3256,4 +3256,94 @@ end $$;
 reset role;
 set app.test_uid = '';
 
+
+-- ================================================================ 0037
+-- Correcting an employment: only with employment.edit, never onto dates
+-- another employment covers, never past the end; the period keeps its id and
+-- the old picture is recorded. Its own person and periods, so the section does
+-- not depend on what earlier sections did to the shared fixtures.
+insert into public.people (id, full_name, work_email)
+values ('20000000-0000-0000-0000-0000000000c1', 'Cora Correction', 'cora@a.test');
+insert into public.employment_periods (id, person_id, company_id, job_title, employment_type_key, status, start_date, end_date)
+values
+  ('30000000-0000-0000-0000-0000000000c1', '20000000-0000-0000-0000-0000000000c1',
+   '10000000-0000-0000-0000-00000000000a', 'Analyst', 'full_time', 'former', '2023-01-01', '2023-12-31'),
+  ('30000000-0000-0000-0000-0000000000c2', '20000000-0000-0000-0000-0000000000c1',
+   '10000000-0000-0000-0000-00000000000a', 'Accountant', null, 'active', '2026-01-01', null);
+
+set app.test_uid = '00000000-0000-0000-0000-000000000003';  -- Omar: no employment.edit
+set role authenticated;
+do $$
+begin
+  begin
+    perform public.correct_employment('30000000-0000-0000-0000-0000000000c2', '2024-03-01');
+    raise exception 'FAIL: corrected an employment without employment.edit';
+  exception when insufficient_privilege then null;
+  end;
+end $$;
+reset role;
+
+set app.test_uid = '00000000-0000-0000-0000-000000000001';  -- Alex: employment.edit in A
+set role authenticated;
+do $$
+declare
+  v_id uuid := '30000000-0000-0000-0000-0000000000c2';
+  r jsonb;
+  c record;
+begin
+  -- Refused: a start date inside the closed period.
+  begin
+    perform public.correct_employment(v_id, '2023-06-01');
+    raise exception 'FAIL: corrected onto dates another employment covers';
+  exception when exclusion_violation then null;
+  end;
+  -- Refused: an unknown employment type.
+  begin
+    perform public.correct_employment(v_id, '2024-03-01', null, 'freelance');
+    raise exception 'FAIL: accepted an unknown employment type';
+  exception when invalid_parameter_value then
+    if sqlerrm not like '%Unknown employment type%' then raise; end if;
+  end;
+  -- Corrected: earlier start, new title; the type was never set and stays unset.
+  r := public.correct_employment(v_id, '2024-03-01', 'Finance Lead', null, 'Contract says March 2024');
+  assert (r->>'start_date') = '2024-03-01' and (r->>'job_title') = 'Finance Lead', 'corrected: ' || r::text;
+  assert (r->>'status') = 'active', 'a past start date on a running period stays active: ' || r::text;
+  assert (select start_date from public.employment_periods where id = v_id) = '2024-03-01', 'the period itself moved';
+  assert (select employment_type_key from public.employment_periods where id = v_id) is null,
+    'null leaves the type alone — including when the period never had one';
+  -- The old picture is kept, with who and why.
+  select * into c from public.employment_corrections where period_id = v_id order by corrected_at desc limit 1;
+  assert c.old_start_date = '2026-01-01' and c.new_start_date = '2024-03-01', 'old and new start recorded';
+  assert c.old_job_title = 'Accountant' and c.new_job_title = 'Finance Lead', 'old and new title recorded';
+  assert c.reason = 'Contract says March 2024', 'the reason is kept';
+  assert c.corrected_by = '20000000-0000-0000-0000-000000000001', 'the corrector is recorded';
+  -- A start date in the future puts a running employment back to pre_start.
+  r := public.correct_employment(v_id, (current_date + 30)::date);
+  assert (r->>'status') = 'pre_start', 'a future start date is pre_start: ' || r::text;
+  r := public.correct_employment(v_id, '2024-03-01');
+  assert (r->>'status') = 'active', 'and a past one is active again';
+  -- A closed period is corrected too, but a correction never revives it.
+  r := public.correct_employment('30000000-0000-0000-0000-0000000000c1', '2022-06-01');
+  assert (r->>'status') = 'former', 'correcting a former period leaves it former: ' || r::text;
+  -- Refused: a start date after the end date.
+  begin
+    perform public.correct_employment('30000000-0000-0000-0000-0000000000c1', '2024-06-01');
+    raise exception 'FAIL: started after the end date';
+  exception when invalid_parameter_value then
+    if sqlerrm not like '%cannot be after the end date%' then raise; end if;
+  end;
+end $$;
+reset role;
+set app.test_uid = '';
+-- The audit keeps the correction but never its reason.
+do $$
+begin
+  assert (select count(*) from public.activity_log where entity_type = 'employment_corrections') >= 1,
+    'the correction is audited';
+  assert (select count(*) from public.activity_log where entity_type = 'employment_corrections' and (after ? 'reason')) = 0,
+    'the audit never carries the reason';
+end $$;
+delete from public.employment_periods where person_id = '20000000-0000-0000-0000-0000000000c1';
+delete from public.people where id = '20000000-0000-0000-0000-0000000000c1';
+
 select 'SMOKE TESTS PASSED' as result;

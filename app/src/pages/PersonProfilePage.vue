@@ -6,6 +6,7 @@ import { useAuthStore } from '@/stores/auth'
 import PrivateDetailsCard from '@/components/PrivateDetailsCard.vue'
 import ScheduleDepartureDialog from '@/components/ScheduleDepartureDialog.vue'
 import ScheduleChangeDialog, { type ChangeTarget } from '@/components/ScheduleChangeDialog.vue'
+import CorrectEmploymentDialog, { type CorrectTarget } from '@/components/CorrectEmploymentDialog.vue'
 import TransferDialog from '@/components/TransferDialog.vue'
 import CompensationCard from '@/components/CompensationCard.vue'
 import LeaveCard from '@/components/LeaveCard.vue'
@@ -90,6 +91,7 @@ function nextAvailableStart(): string {
 }
 const departureDialog = ref<InstanceType<typeof ScheduleDepartureDialog> | null>(null)
 const changeDialog = ref<InstanceType<typeof ScheduleChangeDialog> | null>(null)
+const correctDialog = ref<InstanceType<typeof CorrectEmploymentDialog> | null>(null)
 const transferDialog = ref<InstanceType<typeof TransferDialog> | null>(null)
 const lookups = ref<Lookups>({ departments: {}, locations: {}, people: {}, employmentTypes: {} })
 
@@ -120,6 +122,11 @@ function onTransferred(result: { applied: boolean; effectiveDate: string; compan
 
 function onChangeSaved(result: { applied: boolean; effectiveDate: string }): void {
   notice.value = result.applied ? 'Change applied.' : `Change scheduled for ${result.effectiveDate}.`
+  void load()
+}
+
+function onCorrected(result: { startDate: string; jobTitle: string }): void {
+  notice.value = `Record corrected — ${result.jobTitle} from ${result.startDate}.`
   void load()
 }
 
@@ -447,6 +454,15 @@ onMounted(async () => {
               {{ emp.status.replace('_', ' ') }}
             </span>
             <button
+              v-if="canEditEmployment(emp)"
+              class="button secondary small-btn"
+              type="button"
+              :disabled="busy"
+              @click="correctDialog?.open(emp as CorrectTarget, person.full_name)"
+            >
+              Correct
+            </button>
+            <button
               v-if="canEditEmployment(emp) && departureState(emp) !== 'former'"
               class="button secondary small-btn"
               type="button"
@@ -493,6 +509,7 @@ onMounted(async () => {
         </div>
         <ScheduleDepartureDialog ref="departureDialog" @scheduled="onDepartureScheduled" />
         <ScheduleChangeDialog ref="changeDialog" @saved="onChangeSaved" />
+        <CorrectEmploymentDialog ref="correctDialog" @corrected="onCorrected" />
         <TransferDialog ref="transferDialog" @transferred="onTransferred" />
 
         <div class="right-column">

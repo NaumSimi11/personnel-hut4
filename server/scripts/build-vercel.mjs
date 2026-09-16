@@ -78,8 +78,13 @@ writeFileSync(
     {
       version: 3,
       routes: [
+        // Before the filesystem lookup: every /api/* path is rewritten onto
+        // /api so the lookup resolves it to api.func. Rewriting after the
+        // lookup leaves sub-paths unresolved — only bare /api reaches the
+        // function.
+        { src: '^/api(?:/.*)?$', dest: '/api' },
         { handle: 'filesystem' },
-        { src: '^/api/.*$', dest: '/api' },
+        // Anything left is a client route: the SPA owns it.
         { src: '^/(?!api/).*$', dest: '/index.html' },
       ],
     },

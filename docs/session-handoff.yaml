@@ -1,0 +1,89 @@
+# Session handoff — Personnel (personnel-hut4). Written 2026-09-16 so a fresh
+# context can continue without the chat. Read this first, then plans/045.
+# Keep it current: rewrite the `state` and `next` sections at each handoff.
+
+meta:
+  written: 2026-09-16
+  repo: E:\personnel-hut4 (GitHub NaumSimi11/personnel-hut4, branch main)
+  head: c664324
+  origin_main: 5f4c2a5
+  unpushed_commits:
+    - 630e21b feat: show / hide toggle on every password field (PasswordInput)
+    - 0b991d4 feat: platform admins from the UI (access editor card, Admin badge)
+    - ee176f8 docs: plan 045 (first version)
+    - c664324 docs: plan 045 revised with the maintainer's decisions
+  untracked_leave_alone:
+    - "docs/files 1.zip"            # second prototype, maintainer's copy — reviewed, not ours to commit
+    - "docs/files 1/"
+
+rules_from_the_maintainer:
+  - never git push unless told in that message (the harness also blocks push; the maintainer pushes himself)
+  - never print values from .env.local or .env.hr-hut4.local (the latter is read-only Field Notebook creds)
+  - commit trailer: "Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
+  - blunt, short answers to simple questions; no hedging
+  - every company filter dropdown uses components/CompanyFilter.vue
+  - "today" in the app = todayDb() (UTC), matching Postgres current_date
+  - one shared visibility rule: app.can_view_person / capabilities — never invent a parallel scope (0036 lesson)
+  - a tile or card the viewer may not see is absent, never a zero
+
+workflow_per_slice:
+  - plans/NNN-*.md (numbered), then migration supabase/migrations/NNNN_*.sql
+  - local verify: PATH="/c/Program Files/PostgreSQL/18/bin:$PATH" bash supabase/tests/local-verify.sh  (needs Docker Desktop running; start it with Start-Process "$env:ProgramFiles\Docker\Docker\Docker Desktop.exe" and wait for `docker info`)
+  - smoke blocks: supabase/tests/smoke.sql, splice new block BEFORE the line "-- ================================================================ 0028" (current order: 0027, 0029, 0031, 0032, 0033, 0034, 0035/0036, 0028)
+  - apply live: psql "$(grep '^SUPABASE_DB_URL=' .env.local | cut -d= -f2- | tr -d '\r\"')" -v ON_ERROR_STOP=1 -q -f supabase/migrations/NNNN.sql   (use PGCLIENTENCODING=UTF8 for queries with non-ASCII)
+  - types: app/src/types/database.ts is hand-maintained — add the table block (alphabetical) and the Functions entry
+  - tests: cd app && npx vitest run ; npx vue-tsc --noEmit -p tsconfig.json ; npx playwright test e2e/<spec> --reporter=line (workers=1, live DB, specs seed and clean with SUPABASE_SECRET_KEY; base URL 5199 via webServer)
+  - review: Skill code-review medium; fix findings; commit; update plans/README.md row + docs/development-plan.md Done table
+  - file edits: write Python scripts to the scratchpad (or use the Edit tool); bash heredocs with quotes/`$$` break — do not use them for SQL/JS content
+  - run the app: cd server && npm run dev (8787) ; cd app && npm run dev (Vite picks 5173 or 5174) — check with curl before assuming the port
+  - after a pull that touches server/package.json: cd server && npm install
+
+state:
+  product: complete HR platform — companies, people, employment (transfers, changes, corrections 0037), hiring requests (revisions), jobs, candidates (journey, bulk CVs, files), onboarding/offboarding plans, documents (versions, requests), policies (acknowledge), equipment (per company), IT requests, compensation, payroll periods (gross), leave (full Field Notebook parity: calendar, requests, balances, holidays, corrections, manager desk), notifications on both sides (bell + email via Resend), dashboard by capability (044/0036), kudos wall, platform admins from the UI, password show/hide
+  live_db: migrations 0001–0037 applied (0035, 0036 dashboard; 0037 employment corrections from the maintainer's other session)
+  deployed: personnel-hut4.vercel.app serves the real app (sign-in verified 16 Sep); env vars are in Vercel already
+  accounts:
+    can_log_in: 28 (27 carried from Field Notebook with identical bcrypt hashes + Naum)
+    no_account_yet: [Dejan Grozdanovic, Dimitar Iliev, Goce Rajatoski, Igor Lestar (former), Ina Pop-Ducheva, Jordan Stefanovski, Kristina Cvetanov, Mario Angelovski, Migena Jaja, Miodrag Dimov, Mite Markov, Oliver Ignovski (former), Vedran Taneski, Vendim Polisi (former)]
+    note: 10 of them exist in Field Notebook with HT's temporary password — can be carried over with must_change_password=true, or invited from People & access (temp password shown on screen; email optional)
+    naum: his Personnel password is the .env.local one; his Field Notebook hash differs (account pre-dated the import). Options offered: copy FN hash over (then TEST_USER_PASSWORD goes stale) or change in-app. UNDECIDED.
+  admins: Naum, Ivana Frost (made platform admin 2026-09-16 13:02; her per-company grants remain underneath)
+  grants: nobody else holds any grant → they see only their own queue/tasks/notifications/leave; plain employees see no team facts on Home (by design, 0036)
+  data_facts:
+    - every imported employment has start_date 2026-01-01 → no anniversaries; no birth dates carried → no birthdays. 0037 (correct_employment) lets HR fix start dates in place
+    - "Ivana Frost · Frontend Dev · Offer" application on live is leftover manual test data (real employee's name) — delete when told
+    - three people are former (Igor Lestar, Oliver Ignovski, Vendim Polisi), imported that way, no plans
+  dev_servers: not guaranteed running; start per workflow above
+
+decisions_2026_09_16:
+  - net pay: implement the prototype's model for now (tax % + flat deductions per company → net), replace later
+  - checklists: always per person (what / who / where on every line); templates per company are only the starting list
+  - IT owner role: use existing workflow owner `it_owner`; on hire confirmed / onboarding done / departure an automatic email goes to every configured recipient with exactly their fields (handover matrix: who · where · what); per recipient green when sent, red when not / missing data, editable by hand (mark sent / resend); the accountant receives bank account (and national ID) — both fields must be added to private details
+  - equipment: holding-wide pool, assignable to any employee by anyone with it.assign anywhere; generated PDFs — handover form on issue, return form auto-generated on scheduled departure — signed scan uploaded back as evidence; PDF via pdfmake on the server; document_templates per company/language
+  - entry experience is the real gap ("100x better app, worse entry"): one Add employee form, edit where shown, replace all 14 window.prompt/confirm with dialogs, HR (employment.edit) may add departments/locations
+
+next:
+  say_to_start: "go 046"
+  plan: plans/045-simple-hr-flows.md (programme; slices 046–051 in order)
+  slice_046: one Add employee dialog (identity · employment · personal & emergency incl. national ID + bank account · pay as proposal) via create_employee RPC that also starts the onboarding plan; Confirm hire pre-fills it; Edit details for people basics; PrivateDetailsCard visible to every personal.view holder (today only admin/self — bug) + relationship field; correct_employment extended to title/department/location/manager; ReasonDialog replaces the 14 prompts; structure RLS opened to employment.edit; CSV import gains the new columns; migration 0038
+  then: 047 checklists (templates editable per company, checkbox UI, add task, cancel_departure, richer MK defaults) → 048 handover matrix → 049 equipment pool + PDFs → 050 policies + welcome note → 051 kudos values + bonuses + net pay
+  open_questions_none_blocking:
+    - accountant: internal person or external address; which fields (default seed: name, national ID, bank account, salary, start/end)
+    - PDF language: MK, EN, both
+    - starter kit defaults: per company or one holding list
+    - Naum's password option (above)
+
+pending_on_maintainer_unrelated_to_045:
+  - git push origin main (4 commits waiting)
+  - RESEND_API_KEY + EMAIL_FROM (invites and notification emails start sending), ANTHROPIC_API_KEY (plan 020 AI assist), Zoho credentials (docs/integrations-zoho.md)
+  - invite / carry over the 14 people without accounts
+  - real start dates and birth dates for the celebrate block
+  - Field Notebook redirect + read-only after go-live (plan 038 runbook)
+
+gotchas:
+  - psql is not on PATH: "/c/Program Files/PostgreSQL/18/bin/psql"
+  - Docker Desktop may be down → local-verify says "Postgres did not become ready"
+  - Playwright MCP may time out; drive the app with a small Playwright script instead (see scratchpad drive.mjs pattern: copy into app/ as .tmp.mjs, run with node, delete)
+  - E2E specs create GoTrue users; always delete by email in cleanup, not via the people row
+  - `git add -A` swept the maintainer's docs/files 1 into a commit once — add paths explicitly
+  - hand-written smoke asserts: the smoke fixtures Fiona is `former` in A by the time the 0035 block runs (earlier blocks end her employment); use Ivo/Nia fixtures for birthdays/anniversaries

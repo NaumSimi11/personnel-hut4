@@ -20,6 +20,7 @@ import PoliciesPanel from '@/components/PoliciesPanel.vue'
 import EquipmentPanel from '@/components/EquipmentPanel.vue'
 import LeaveCalendarPanel from '@/components/leave/LeaveCalendarPanel.vue'
 import NotificationSettingsPanel from '@/components/NotificationSettingsPanel.vue'
+import ChecklistTemplatePanel from '@/components/checklists/ChecklistTemplatePanel.vue'
 import ActivityPanel from '@/components/ActivityPanel.vue'
 import InviteAccessDialog from '@/components/InviteAccessDialog.vue'
 import TransferDialog, { type TransferTarget } from '@/components/TransferDialog.vue'
@@ -200,7 +201,8 @@ const notice = ref<string | null>(null)
 const visibleTabs = computed(() =>
   TABS.filter((t) => {
     if (t.id === 'payroll') return auth.can(companyId, 'payroll.summary')
-    if (t.id === 'settings') return auth.isAdmin
+    // Settings: admins, and HR who may shape the checklists (the other panels guard their own writes).
+    if (t.id === 'settings') return auth.isAdmin || auth.can(companyId, 'tasks.assign')
     if (t.id === 'equipment') return auth.can(companyId, 'it.view')
     if (t.id === 'activity') {
       return ['access.manage', 'jobs.view', 'candidates.view'].some((cap) => auth.can(companyId, cap))
@@ -763,8 +765,11 @@ onMounted(load)
         <ActivityPanel v-else-if="activeTab === 'activity'" :company-id="companyId" />
 
         <div v-else-if="activeTab === 'settings'" class="stack">
-          <WorkflowOwnersPanel :company-id="companyId" />
-          <NotificationSettingsPanel :company-id="companyId" />
+          <ChecklistTemplatePanel :company-id="companyId" :company-name="company.name" />
+          <template v-if="auth.isAdmin">
+            <WorkflowOwnersPanel :company-id="companyId" />
+            <NotificationSettingsPanel :company-id="companyId" />
+          </template>
         </div>
 
         <div v-else-if="activeTab === 'projects'" class="card">

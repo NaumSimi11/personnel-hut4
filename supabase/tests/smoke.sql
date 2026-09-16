@@ -332,8 +332,8 @@ begin
           where id = '90000000-0000-0000-0000-000000000002') = 'hired',
     'application moved to hired';
   assert (select count(*) from public.plan_tasks
-          where plan_id = (first->>'plan_id')::uuid) = 5,
-    'onboarding plan carries the 5 template tasks';
+          where plan_id = (first->>'plan_id')::uuid) = 11,
+    'onboarding plan carries the 11 template tasks (0040 defaults)';
   again := public.confirm_hire('90000000-0000-0000-0000-000000000002',
     'Hired Candidate', 'Coordinator', current_date);
   assert (again->>'already_hired')::boolean = true, 'second confirm is a no-op';
@@ -375,11 +375,11 @@ begin
           where id = '30000000-0000-0000-0000-000000000003') = 'active',
     'scheduling a departure must NOT deactivate the person';
   assert (select count(*) from public.plan_tasks
-          where plan_id = (first->>'plan_id')::uuid) = 5,
-    'offboarding plan carries the 5 template tasks';
+          where plan_id = (first->>'plan_id')::uuid) = 8,
+    'offboarding plan carries the 8 template tasks (0040 defaults)';
   assert (select count(*) from public.plan_tasks
           where plan_id = (first->>'plan_id')::uuid
-            and due_date = current_date + 28) = 2,
+            and due_date = current_date + 28) = 3,
     'last-day tasks are dated from the last working day';
 
   again := public.schedule_departure('30000000-0000-0000-0000-000000000003',
@@ -392,7 +392,7 @@ begin
 
   -- Former while work is still outstanding is legitimate, and reported.
   done := public.complete_departure('30000000-0000-0000-0000-000000000003');
-  assert (done->>'open_tasks')::int = 5, 'outstanding tasks are reported, not blocking';
+  assert (done->>'open_tasks')::int = 8, 'outstanding tasks are reported, not blocking';
   assert (select status from public.employment_periods
           where id = '30000000-0000-0000-0000-000000000003') = 'former',
     'completing a departure makes the person Former';
@@ -3407,7 +3407,7 @@ begin
       'notes', 'Vegetarian')));
   assert (r->>'person_id') is not null and (r->>'employment_period_id') is not null, 'person and period created: ' || r::text;
   assert (r->>'plan_id') is not null, 'the onboarding checklist started: ' || r::text;
-  assert (select count(*) from public.plan_tasks where plan_id = (r->>'plan_id')::uuid) = 5, 'the checklist carries the template tasks';
+  assert (select count(*) from public.plan_tasks where plan_id = (r->>'plan_id')::uuid) = 11, 'the checklist carries the template tasks';
   assert (select status from public.employment_periods where id = (r->>'employment_period_id')::uuid) = 'pre_start', 'a future start is pre_start';
   assert (select department_id from public.employment_periods where id = (r->>'employment_period_id')::uuid) = 'd0000000-0000-0000-0000-0000000000b1', 'department set';
   assert (select manager_id from public.employment_periods where id = (r->>'employment_period_id')::uuid) = '20000000-0000-0000-0000-000000000005', 'manager set';
@@ -3771,5 +3771,189 @@ delete from public.application_events where application_id = '90000000-0000-0000
 delete from public.applications where id = '90000000-0000-0000-0000-0000000000d1';
 delete from public.candidates where id = '80000000-0000-0000-0000-0000000000d1';
 delete from public.jobs where id = '70000000-0000-0000-0000-0000000000d1';
+
+-- ================================================================ 0040
+-- Checklists: the holding default is the admins'; a company's first edit
+-- copies it; checklists started after use the company list; running ones
+-- keep their copy; retire hides a line; add_plan_task; cancel_departure;
+-- the private-details line ticks itself.
+do $$
+begin
+  assert (select count(*) from public.template_tasks tt join public.task_templates t on t.id = tt.template_id
+          where t.company_id is null and t.kind = 'onboarding' and tt.archived_at is null) = 11, 'the richer onboarding default';
+  assert (select count(*) from public.template_tasks tt join public.task_templates t on t.id = tt.template_id
+          where t.company_id is null and t.kind = 'offboarding' and tt.archived_at is null) = 8, 'the richer offboarding default';
+  assert exists (select 1 from public.template_tasks where key = 'private_details'), 'keyed lines';
+end $$;
+
+-- Bea (Company HR in B, tasks.assign) may not touch the holding default.
+set app.test_uid = '00000000-0000-0000-0000-000000000005';
+set role authenticated;
+do $$
+declare v_default uuid; r jsonb; v_company uuid; v_line uuid;
+begin
+  select id into v_default from public.task_templates where company_id is null and kind = 'onboarding' and active limit 1;
+  begin
+    perform public.upsert_template_task(jsonb_build_object('template_id', v_default, 'title', 'Not mine', 'owner_role', 'hr', 'phase_key', 'day_one'));
+    raise exception 'FAIL: HR edited the holding default';
+  exception when insufficient_privilege then null;
+  end;
+  -- Her first edit for B copies the default into a company template.
+  r := public.company_template('10000000-0000-0000-0000-00000000000b', 'onboarding');
+  assert (r->>'created')::boolean, 'the company copy is created on first ask: ' || r::text;
+  v_company := (r->>'template_id')::uuid;
+  assert (select count(*) from public.template_tasks where template_id = v_company and archived_at is null) = 11, 'the copy carries every default line';
+  assert (select count(*) from public.template_tasks where template_id = v_default and archived_at is null) = 11, 'the default is untouched';
+  r := public.company_template('10000000-0000-0000-0000-00000000000b', 'onboarding');
+  assert not (r->>'created')::boolean and (r->>'template_id')::uuid = v_company, 'a second ask returns the same copy';
+  -- A new line for B, a refused phase, a refused owner.
+  r := public.upsert_template_task(jsonb_build_object('template_id', v_company, 'title', 'Parking badge issued', 'owner_role', 'it',
+    'phase_key', 'before_start', 'due_offset_days', -1, 'critical', false));
+  v_line := (r->>'id')::uuid;
+  assert (select sort_order from public.template_tasks where id = v_line) > (select max(sort_order) from public.template_tasks where template_id = v_company and id <> v_line),
+    'a new line lands at the end';
+  begin
+    perform public.upsert_template_task(jsonb_build_object('template_id', v_company, 'title', 'Wrong phase', 'owner_role', 'hr', 'phase_key', 'last_day'));
+    raise exception 'FAIL: an offboarding phase on an onboarding checklist';
+  exception when invalid_parameter_value then null;
+  end;
+  begin
+    perform public.upsert_template_task(jsonb_build_object('template_id', v_company, 'title', 'Wrong owner', 'owner_role', 'ceo', 'phase_key', 'day_one'));
+    raise exception 'FAIL: an unknown owner accepted';
+  exception when invalid_parameter_value then null;
+  end;
+  -- Edit the line; the key of a default line never changes.
+  r := public.upsert_template_task(jsonb_build_object('template_id', v_company, 'id', v_line, 'title', 'Parking badge and key issued', 'owner_role', 'it',
+    'phase_key', 'before_start', 'due_offset_days', -2, 'critical', true));
+  assert (select title from public.template_tasks where id = v_line) = 'Parking badge and key issued' and (select critical from public.template_tasks where id = v_line), 'the line is edited';
+  -- Reorder: must list every live line once.
+  begin
+    perform public.reorder_template_tasks(v_company, array[v_line]);
+    raise exception 'FAIL: a partial order accepted';
+  exception when invalid_parameter_value then null;
+  end;
+  r := public.reorder_template_tasks(v_company, array[v_line] || (select array_agg(id order by sort_order) from public.template_tasks where template_id = v_company and archived_at is null and id <> v_line));
+  assert (select sort_order from public.template_tasks where id = v_line) = 10, 'the moved line is first';
+end $$;
+reset role;
+
+-- A checklist started now in B uses the company list; one started earlier is untouched by later edits.
+set app.test_uid = '00000000-0000-0000-0000-000000000005';
+set role authenticated;
+do $$
+declare r jsonb; v_plan uuid; v_company uuid; v_line uuid; v_person uuid;
+begin
+  select id into v_company from public.task_templates where company_id = '10000000-0000-0000-0000-00000000000b' and kind = 'onboarding' and active;
+  r := public.create_employee(jsonb_build_object('full_name', 'Checked Starter', 'work_email', 'checked@b.test',
+    'company_id', '10000000-0000-0000-0000-00000000000b', 'job_title', 'Clerk', 'start_date', current_date + 5));
+  v_plan := (r->>'plan_id')::uuid;
+  v_person := (r->>'person_id')::uuid;
+  assert (select template_id from public.plans where id = v_plan) = v_company, 'the company template is used';
+  assert (select count(*) from public.plan_tasks where plan_id = v_plan) = 12, 'eleven default lines plus the parking badge';
+  assert exists (select 1 from public.plan_tasks where plan_id = v_plan and title = 'Parking badge and key issued' and critical), 'the edited line is on the checklist';
+  assert (select task_key from public.plan_tasks where plan_id = v_plan and title = 'Personal, ID and bank details collected') = 'private_details', 'keys are copied';
+  -- Retire the badge line: the running checklist keeps it, a new one does not.
+  select id into v_line from public.template_tasks where template_id = v_company and title = 'Parking badge and key issued';
+  perform public.retire_template_task(v_line);
+  assert exists (select 1 from public.plan_tasks where plan_id = v_plan and template_task_id = v_line), 'a running checklist keeps its copy';
+  r := public.create_employee(jsonb_build_object('full_name', 'Later Starter', 'work_email', 'later@b.test',
+    'company_id', '10000000-0000-0000-0000-00000000000b', 'job_title', 'Clerk', 'start_date', current_date + 5));
+  assert (select count(*) from public.plan_tasks where plan_id = (r->>'plan_id')::uuid) = 11, 'a retired line is gone from new checklists';
+  -- A keyed line retired and added back under its title regains the key.
+  select id into v_line from public.template_tasks where template_id = v_company and key = 'welcome_note' and archived_at is null;
+  perform public.retire_template_task(v_line);
+  r := public.upsert_template_task(jsonb_build_object('template_id', v_company, 'title', 'Welcome note sent with policies', 'owner_role', 'hr', 'phase_key', 'before_start', 'due_offset_days', -2));
+  assert (select key from public.template_tasks where id = (r->>'id')::uuid) = 'welcome_note', 'the re-added line regains its key';
+  -- The one-off task on one person's checklist; the phase follows the date.
+  r := public.add_plan_task(v_plan, 'Bring the signed NDA', 'employee', current_date + 5, false);
+  assert (r->>'phase_key') = 'day_one', 'a task due on the start date is day one: ' || r::text;
+  r := public.add_plan_task(v_plan, 'Desk set up', 'it', current_date + 3, true);
+  assert (r->>'phase_key') = 'before_start', 'a task due before the start is before start';
+  assert (select count(*) from public.plan_tasks where plan_id = v_plan) = 14, 'the one-off tasks are on this checklist only';
+  begin
+    perform public.add_plan_task(v_plan, 'x', 'hr');
+    raise exception 'FAIL: a one-letter task accepted';
+  exception when invalid_parameter_value then null;
+  end;
+  -- The private-details line ticks itself once both fields are on file.
+  assert (select status from public.plan_tasks where plan_id = v_plan and task_key = 'private_details') = 'open', 'open until the details land';
+  insert into public.person_private_details (person_id, national_id) values (v_person, '0101990450077');
+  assert (select status from public.plan_tasks where plan_id = v_plan and task_key = 'private_details') = 'open', 'the ID alone is not enough';
+  update public.person_private_details set bank_account = '{"bank": "NLB", "account_number": "210000000000777"}'::jsonb where person_id = v_person;
+  assert (select status from public.plan_tasks where plan_id = v_plan and task_key = 'private_details') = 'done', 'both on file → done by itself';
+  assert (select done_by from public.plan_tasks where plan_id = v_plan and task_key = 'private_details') = '20000000-0000-0000-0000-000000000005', 'done by whoever filled them';
+end $$;
+reset role;
+
+-- Omar (no tasks.assign) may not add a task or shape a checklist. He cannot
+-- even read the plan, so its id is looked up first and handed in.
+select set_config('app.smoke_plan', (select pl.id::text from public.plans pl join public.people p on p.id = pl.person_id where p.work_email = 'checked@b.test'), false);
+set app.test_uid = '00000000-0000-0000-0000-000000000003';
+set role authenticated;
+do $$
+declare v_plan uuid := current_setting('app.smoke_plan')::uuid;
+begin
+  begin
+    perform public.add_plan_task(v_plan, 'Sneaky task', 'hr');
+    raise exception 'FAIL: a task added without tasks.assign';
+  exception when insufficient_privilege then null;
+  end;
+  begin
+    perform public.company_template('10000000-0000-0000-0000-00000000000b', 'onboarding');
+    raise exception 'FAIL: a template copied without tasks.assign';
+  exception when insufficient_privilege then null;
+  end;
+end $$;
+reset role;
+
+-- cancel_departure: the dates go, the plan is cancelled, a later schedule starts afresh; refused after former.
+set app.test_uid = '00000000-0000-0000-0000-000000000005';
+set role authenticated;
+do $$
+declare r jsonb; v_period uuid; v_plan uuid; v_plan2 uuid;
+begin
+  select ep.id into v_period from public.employment_periods ep join public.people p on p.id = ep.person_id where p.work_email = 'checked@b.test';
+  begin
+    perform public.cancel_departure(v_period);
+    raise exception 'FAIL: cancelled a departure that was never scheduled';
+  exception when invalid_parameter_value then null;
+  end;
+  r := public.schedule_departure(v_period, current_date + 30, current_date + 25, 'Moving on');
+  v_plan := (r->>'plan_id')::uuid;
+  assert (select count(*) from public.plan_tasks where plan_id = v_plan) = 8, 'the richer offboarding default: ' || r::text;
+  r := public.cancel_departure(v_period, 'Changed their mind');
+  assert (r->>'status') = 'employed', 'employed again: ' || r::text;
+  assert (select end_date from public.employment_periods where id = v_period) is null
+     and (select last_working_date from public.employment_periods where id = v_period) is null, 'the dates are cleared';
+  assert (select status from public.plans where id = v_plan) = 'cancelled'
+     and (select cancelled_reason from public.plans where id = v_plan) = 'Changed their mind', 'the plan is cancelled with the reason';
+  assert (select reason from public.employment_departure_details where employment_period_id = v_period) = 'Moving on', 'the departure details stay for history';
+  -- Scheduling again starts a fresh plan; the cancelled one stays on record.
+  r := public.schedule_departure(v_period, current_date + 40, null, 'Really moving on');
+  v_plan2 := (r->>'plan_id')::uuid;
+  assert v_plan2 <> v_plan and not (r->>'already_scheduled')::boolean, 'a fresh plan after a cancel';
+  -- After former the way back is a rehire, not a cancel.
+  perform public.complete_departure(v_period);
+  begin
+    perform public.cancel_departure(v_period);
+    raise exception 'FAIL: cancelled a departure after former';
+  exception when invalid_parameter_value then null;
+  end;
+end $$;
+reset role;
+select set_config('app.smoke_period', (select ep.id::text from public.employment_periods ep join public.people p on p.id = ep.person_id where p.work_email = 'later@b.test'), false);
+set app.test_uid = '00000000-0000-0000-0000-000000000003';  -- Omar: no departure.start (and cannot read the period)
+set role authenticated;
+do $$
+declare v_period uuid := current_setting('app.smoke_period')::uuid;
+begin
+  begin
+    perform public.cancel_departure(v_period);
+    raise exception 'FAIL: cancelled without departure.start';
+  exception when insufficient_privilege then null;
+  end;
+end $$;
+reset role;
+set app.test_uid = '';
 
 select 'SMOKE TESTS PASSED' as result;

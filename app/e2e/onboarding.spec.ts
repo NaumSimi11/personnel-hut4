@@ -153,7 +153,7 @@ test('onboarding queue → plan → block/complete/finish', async ({ page }) => 
   await expect(planRow.locator('.badge')).toHaveText('2 readiness gaps')
 
   // Step 2: open the plan; three task rows and both phase headings appear.
-  await planRow.getByRole('link', { name: 'Open plan' }).click()
+  await planRow.getByRole('link', { name: 'Open', exact: true }).click()
   await expect(page.getByRole('heading', { name: PERSON_NAME })).toBeVisible()
   await expect(page.locator('.task-row', { hasText: 'E2E Documents reviewed' })).toBeVisible()
   await expect(page.locator('.task-row', { hasText: 'E2E Laptop handed over' })).toBeVisible()
@@ -161,21 +161,23 @@ test('onboarding queue → plan → block/complete/finish', async ({ page }) => 
   await expect(page.getByRole('heading', { name: 'Before start' })).toBeVisible()
   await expect(page.getByRole('heading', { name: 'Day one' })).toBeVisible()
 
-  // Step 3: block the laptop task; readiness is unaffected (still open, just blocked).
+  // Step 3: block the laptop task from the line's menu; readiness is unaffected (still open, just blocked).
   const laptopRow = page.locator('.task-row', { hasText: 'E2E Laptop handed over' })
+  await laptopRow.locator('summary').click()
   await laptopRow.getByRole('button', { name: 'Block' }).click()
   await answerReason(page, 'Supplier delay')
   await expect(laptopRow.locator('.badge', { hasText: 'blocked' })).toBeVisible()
   await expect(laptopRow).toContainText('Supplier delay')
   await expect(page.locator('.page-head .badge')).toHaveText('2 readiness gaps')
 
-  // Step 4: mark both critical tasks complete; readiness flips, the
-  // non-critical task is left open.
+  // Step 4: tick both critical lines; readiness flips, the non-critical
+  // line is left open. A blocked line ticks straight to done.
   const docsRow = page.locator('.task-row', { hasText: 'E2E Documents reviewed' })
-  await docsRow.getByRole('button', { name: 'Mark complete' }).click()
+  await docsRow.getByRole('checkbox').check()
   await expect(docsRow.locator('.badge', { hasText: 'done' })).toBeVisible()
-  await laptopRow.getByRole('button', { name: 'Mark complete' }).click()
+  await laptopRow.getByRole('checkbox').check()
   await expect(laptopRow.locator('.badge', { hasText: 'done' })).toBeVisible()
+  await expect(page.getByTestId('progress-label')).toContainText('2 of 3 done')
   await expect(page.locator('.page-head .badge')).toHaveText('Ready for day one')
   const teamRow = page.locator('.task-row', { hasText: 'E2E Team introduction' })
   await expect(teamRow.locator('.badge', { hasText: 'open' })).toBeVisible()

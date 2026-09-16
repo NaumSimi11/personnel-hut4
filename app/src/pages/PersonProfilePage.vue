@@ -216,6 +216,27 @@ function onDepartureScheduled(result: { planId: string; alreadyScheduled: boolea
   void load()
 }
 
+/** The way back from a scheduled departure (cancel_departure, migration 0040). */
+async function cancelDeparture(emp: Employment): Promise<void> {
+  const answer = await dialogs.askReason({
+    title: `Cancel ${person.value?.full_name}'s departure?`,
+    hint: 'The end date goes, the offboarding checklist is closed as cancelled, the person stays employed.',
+    required: false,
+    confirmLabel: 'Cancel departure',
+  })
+  if (!answer) return
+  busy.value = true
+  error.value = null
+  const { error: err } = await supabase.rpc('cancel_departure', { p_employment_period_id: emp.id, p_reason: answer.reason || undefined })
+  busy.value = false
+  if (err) {
+    error.value = friendlyDepartureError(err.message)
+    return
+  }
+  notice.value = 'Departure cancelled. The person stays employed; the checklist is on record as cancelled.'
+  await load()
+}
+
 /** The explicit act of becoming Former (complete_departure, migration 0010). */
 async function markAsFormer(emp: Employment): Promise<void> {
   const ok = await dialogs.confirmAction({
@@ -527,15 +548,25 @@ onMounted(async () => {
               >
                 Schedule departure
               </button>
-              <button
-                v-else-if="departureState(emp) === 'departing' && !emp.transferred_to_period_id"
-                class="button secondary small-btn"
-                type="button"
-                :disabled="busy"
-                @click="markAsFormer(emp)"
-              >
-                Mark as former
-              </button>
+              <template v-else-if="departureState(emp) === 'departing' && !emp.transferred_to_period_id">
+                <button
+                  class="button secondary small-btn"
+                  type="button"
+                  :disabled="busy"
+                  data-testid="cancel-departure"
+                  @click="cancelDeparture(emp)"
+                >
+                  Cancel departure
+                </button>
+                <button
+                  class="button secondary small-btn"
+                  type="button"
+                  :disabled="busy"
+                  @click="markAsFormer(emp)"
+                >
+                  Mark as former
+                </button>
+              </template>
             </template>
             </div>
           </div>

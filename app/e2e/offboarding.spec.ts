@@ -143,7 +143,7 @@ test('schedule departure → offboarding queue → tasks → mark as former', as
   await expect(queueRow).toContainText('Praedium')
   await expect(queueRow).toContainText(LAST_WORKING_DATE)
   await expect(queueRow.locator('.badge')).toHaveText('3 blockers')
-  await queueRow.getByRole('link', { name: 'Open plan' }).click()
+  await queueRow.getByRole('link', { name: 'Open', exact: true }).click()
 
   // Plan detail is kind-aware: last day, offboarding phases, finish wording.
   await expect(page).toHaveURL(/\/offboarding\/[0-9a-f-]{36}$/)
@@ -152,17 +152,17 @@ test('schedule departure → offboarding queue → tasks → mark as former', as
   await expect(page.getByRole('heading', { name: 'Before the last day' })).toBeVisible()
   await expect(page.getByRole('heading', { name: 'Last working day' })).toBeVisible()
 
-  // Complete one blocker; two remain. Finishing stays allowed with open tasks.
+  // Tick one blocker; two remain. Finishing stays allowed with open lines.
   const handover = page.locator('.task-row', { hasText: 'Handover documented and accepted' })
-  await handover.getByRole('button', { name: 'Complete' }).click()
+  await handover.getByRole('checkbox').check()
   await expect(handover.locator('.badge', { hasText: 'done' })).toBeVisible()
   await expect(page.locator('.readiness-badge')).toHaveText('2 blockers')
 
   await page.getByRole('button', { name: 'Finish offboarding' }).click()
   await confirmDialog(page)
   await expect(page.getByText(/now former/i)).toBeVisible()
-  // 5 template tasks, 1 done: the RPC reports every open task, not just blockers.
-  await expect(page.getByText(/4 tasks still open/i)).toBeVisible()
+  // 8 template lines (0040 defaults), 1 done: the RPC reports every open task, not just blockers.
+  await expect(page.getByText(/7 tasks still open/i)).toBeVisible()
 
   // Person is Former; the plan is completed in the queue.
   await page.getByRole('link', { name: 'Open employee profile' }).click()

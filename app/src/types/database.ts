@@ -3149,6 +3149,7 @@ export type Database = {
       plan_tasks: {
         Row: {
           asset_id: string | null
+          task_key: string | null
           blocked_reason: string | null
           critical: boolean
           description: string | null
@@ -3171,6 +3172,7 @@ export type Database = {
         }
         Insert: {
           asset_id?: string | null
+          task_key?: string | null
           blocked_reason?: string | null
           critical?: boolean
           description?: string | null
@@ -3193,6 +3195,7 @@ export type Database = {
         }
         Update: {
           asset_id?: string | null
+          task_key?: string | null
           blocked_reason?: string | null
           critical?: boolean
           description?: string | null
@@ -3787,11 +3790,13 @@ export type Database = {
       }
       template_tasks: {
         Row: {
+          archived_at: string | null
           critical: boolean
           default_owner_role: string
           description: string | null
           due_offset_days: number
           id: string
+          key: string | null
           phase_key: string
           requires_evidence: boolean
           sort_order: number
@@ -3799,11 +3804,13 @@ export type Database = {
           title: string
         }
         Insert: {
+          archived_at?: string | null
           critical?: boolean
           default_owner_role?: string
           description?: string | null
           due_offset_days?: number
           id?: string
+          key?: string | null
           phase_key: string
           requires_evidence?: boolean
           sort_order?: number
@@ -3811,11 +3818,13 @@ export type Database = {
           title: string
         }
         Update: {
+          archived_at?: string | null
           critical?: boolean
           default_owner_role?: string
           description?: string | null
           due_offset_days?: number
           id?: string
+          key?: string | null
           phase_key?: string
           requires_evidence?: boolean
           sort_order?: number
@@ -3906,6 +3915,16 @@ export type Database = {
     }
     Functions: {
       acknowledge_policy: { Args: { p_policy_id: string }; Returns: Json }
+      add_plan_task: {
+        Args: {
+          p_critical?: boolean
+          p_due_date?: string
+          p_owner_role?: string
+          p_plan_id: string
+          p_title: string
+        }
+        Returns: Json
+      }
       adjust_leave_balance: {
         Args: {
           p_company_id: string
@@ -3947,6 +3966,10 @@ export type Database = {
         Args: { p_document_id: string; p_request_id: string }
         Returns: Json
       }
+      cancel_departure: {
+        Args: { p_employment_period_id: string; p_reason?: string }
+        Returns: Json
+      }
       cancel_employment_change: {
         Args: { p_change_id: string }
         Returns: undefined
@@ -3957,6 +3980,10 @@ export type Database = {
       }
       cancel_reservation: { Args: { p_assignment_id: string }; Returns: Json }
       compensation_summary: { Args: { p_company_id: string }; Returns: Json }
+      company_template: {
+        Args: { p_company_id: string; p_kind: string }
+        Returns: Json
+      }
       complete_departure: {
         Args: { p_employment_period_id: string }
         Returns: Json
@@ -4092,6 +4119,11 @@ export type Database = {
         Returns: Json
       }
       roll_leave_year: { Args: { p_year: number }; Returns: number }
+      reorder_template_tasks: {
+        Args: { p_ids: string[]; p_template_id: string }
+        Returns: Json
+      }
+      retire_template_task: { Args: { p_id: string }; Returns: Json }
       schedule_departure: {
         Args: {
           p_employment_period_id: string
@@ -4143,6 +4175,7 @@ export type Database = {
         }
         Returns: Json
       }
+      upsert_template_task: { Args: { p: Json }; Returns: Json }
     }
     Enums: {
       [_ in never]: never

@@ -1,5 +1,6 @@
 import { createClient } from '@supabase/supabase-js'
 import { expect, test } from '@playwright/test'
+import { confirmDialog } from './support/dialogs'
 
 /**
  * Employee records foundation: add a person (record only, no account), see
@@ -54,11 +55,14 @@ test('add person → directory → profile → end employment', async ({ page })
   await page.getByRole('link', { name: 'People & access', exact: true }).click()
 
   // Create the record with its first employment at Praedium.
-  await page.getByRole('button', { name: 'Add person' }).click()
-  await page.locator('#ap-name').fill(PERSON_NAME)
-  await page.locator('#ap-company').selectOption({ label: 'Praedium' })
-  await page.locator('#ap-title').fill('Warehouse Lead')
-  await page.getByRole('button', { name: 'Create employee' }).click()
+  await page.getByRole('button', { name: 'Add employee' }).click()
+  const add = page.getByTestId('add-employee-dialog')
+  await add.locator('#ae-name').fill(PERSON_NAME)
+  await add.locator('#ae-company').selectOption({ label: 'Praedium' })
+  await add.locator('#ae-title').fill('Warehouse Lead')
+  await add.getByRole('button', { name: 'Create employee' }).click()
+  await expect(add.getByRole('heading', { name: /Added\. Employment recorded, the onboarding checklist started/ })).toBeVisible()
+  await add.getByRole('button', { name: 'Done' }).click()
 
   // Directory shows employment context; record-only people have no account.
   const row = page.locator('tr', { hasText: PERSON_NAME })
@@ -85,8 +89,8 @@ test('add person → directory → profile → end employment', async ({ page })
   await expect(empRow).toContainText(`Departing · last day ${endDate}`)
   await expect(empRow.locator('.badge', { hasText: 'active' })).toBeVisible()
 
-  page.once('dialog', (confirm) => confirm.accept())
   await empRow.getByRole('button', { name: 'Mark as former' }).click()
+  await confirmDialog(page)
   await expect(empRow.locator('.badge', { hasText: 'former' })).toBeVisible()
   await expect(empRow).toContainText(`→ ${endDate}`)
 })

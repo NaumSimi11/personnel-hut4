@@ -1,5 +1,6 @@
 import { createClient } from '@supabase/supabase-js'
 import { expect, test } from '@playwright/test'
+import { confirmDialog } from './support/dialogs'
 
 /**
  * Payroll preparation (plan 031): prepare a period on the company Payroll
@@ -122,8 +123,8 @@ test('prepare → lines → no self-approval → colleague-prepared approved →
   expect(csv.split('\n')[0]).toBe('Person,Job title,Amount,Currency,Pay basis,From,To,Days covered')
   expect(csv).toContain(`${PERSON},Payroll Clerk,2400.00,EUR,monthly,${START},${END},31`)
 
-  page.once('dialog', (d) => d.accept())
   await row.getByRole('button', { name: 'Mark exported' }).click()
+  await confirmDialog(page)
   await expect(row).toContainText('Exported')
   const { data: period } = await db
     .from('payroll_periods')

@@ -1,5 +1,6 @@
 import { createClient } from '@supabase/supabase-js'
 import { expect, test } from '@playwright/test'
+import { confirmDialog } from './support/dialogs'
 
 /**
  * Employment changes (plan 022): an immediate change applies to the record,
@@ -122,8 +123,8 @@ test('structure → immediate change → scheduled change → cycle refused → 
   const pending = page.locator('.pending-change', { hasText: 'Head of Logistics' })
   await expect(pending).toBeVisible()
   await expect(page.locator('.emp-row', { hasText: 'Logistics Lead · Praedium' })).toBeVisible()
-  page.once('dialog', (d) => d.accept())
   await pending.getByRole('button', { name: 'Cancel' }).click()
+  await confirmDialog(page)
   await expect(pending).toHaveCount(0)
 
   // Circular reporting: the manager cannot report to their own report.

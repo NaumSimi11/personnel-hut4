@@ -2,6 +2,7 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/stores/auth'
+import { useDialogStore } from '@/stores/dialogs'
 import { formatAmount, todayDb } from '@/lib/compensation'
 import {
   defaultPeriod,
@@ -39,6 +40,7 @@ type Period = {
 type Line = PayrollLine & { id: string; person_id: string }
 
 const auth = useAuthStore()
+const dialogs = useDialogStore()
 const can = (cap: string) => auth.can(props.companyId, cap)
 const canPrepare = computed(() => can('payroll.individual'))
 
@@ -161,13 +163,26 @@ async function submitPrepare(): Promise<void> {
 }
 
 async function act(p: Period, action: PayrollAction): Promise<void> {
+  const span = `${p.period_start} → ${p.period_end}`
   if (action.key === 'reprepare') {
-    if (!window.confirm('Prepare this period again from the current records? Its lines are rebuilt.')) return
+    const ok = await dialogs.confirmAction({
+      title: `Prepare ${span} again?`,
+      hint: 'Its lines are rebuilt from the compensation records as they stand now.',
+      confirmLabel: 'Prepare again',
+    })
+    if (!ok) return
     await prepare(p.period_start, p.period_end, p.currency, '')
     return
   }
   const fn = action.key === 'approve' ? 'approve_payroll_period' : action.key === 'export' ? 'mark_payroll_exported' : 'reopen_payroll_period'
-  if (action.key === 'export' && !window.confirm('Mark this period as exported? It is then closed.')) return
+  if (action.key === 'export') {
+    const ok = await dialogs.confirmAction({
+      title: `Mark ${span} as exported?`,
+      hint: 'The period is then closed; download the CSV first if you still need it.',
+      confirmLabel: 'Mark exported',
+    })
+    if (!ok) return
+  }
   busy.value = true
   error.value = null
   notice.value = null

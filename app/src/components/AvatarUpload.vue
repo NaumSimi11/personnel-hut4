@@ -2,6 +2,7 @@
 import { ref } from 'vue'
 import AvatarImage from '@/components/AvatarImage.vue'
 import { AVATAR_ACCEPT, removeAvatar, uploadAvatar, validateAvatarFile } from '@/lib/avatars'
+import { useDialogStore } from '@/stores/dialogs'
 
 /**
  * The photo on a profile with the means to change it: click the picture (or
@@ -12,6 +13,7 @@ import { AVATAR_ACCEPT, removeAvatar, uploadAvatar, validateAvatarFile } from '@
 const props = defineProps<{ personId: string; name: string; path: string | null; editable: boolean }>()
 const emit = defineEmits<{ changed: [path: string | null] }>()
 
+const dialogs = useDialogStore()
 const input = ref<HTMLInputElement | null>(null)
 const busy = ref(false)
 const error = ref<string | null>(null)
@@ -40,7 +42,13 @@ async function onPick(event: Event): Promise<void> {
 }
 
 async function remove(): Promise<void> {
-  if (!window.confirm('Remove the photo?')) return
+  const ok = await dialogs.confirmAction({
+    title: `Remove ${props.name}'s photo?`,
+    hint: 'The initials show in its place until a new one is added.',
+    confirmLabel: 'Remove photo',
+    danger: true,
+  })
+  if (!ok) return
   busy.value = true
   error.value = null
   try {

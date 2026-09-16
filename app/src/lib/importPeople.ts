@@ -1,8 +1,9 @@
 /**
- * People import (plan 032): CSV → rows the database validates
- * (import_people, migration 0024). The client only parses and maps
- * headers; every rule — duplicates, unknown departments, managers — is
- * decided by the function, and the preview is the same call as the commit.
+ * People import (plans 032, 046): CSV → rows the database validates
+ * (import_people, migrations 0024 / 0038). The client only parses and maps
+ * headers; every rule — duplicates, unknown departments, managers, the
+ * capability a private or salary column needs — is decided by the
+ * function, and the preview is the same call as the commit.
  */
 
 export const IMPORT_FIELDS = [
@@ -16,6 +17,18 @@ export const IMPORT_FIELDS = [
   'manager_email',
   'preferred_name',
   'phone',
+  'personal_email',
+  'birth_date',
+  'address',
+  'national_id',
+  'bank_name',
+  'bank_account_number',
+  'emergency_contact_name',
+  'emergency_contact_relationship',
+  'emergency_contact_phone',
+  'salary_amount',
+  'salary_currency',
+  'salary_basis',
 ] as const
 
 export type ImportField = (typeof IMPORT_FIELDS)[number]
@@ -25,7 +38,7 @@ export const REQUIRED_FIELDS: ImportField[] = ['full_name', 'work_email', 'job_t
 
 export const IMPORT_TEMPLATE = [
   IMPORT_FIELDS.join(','),
-  'Ana Ilic,ana.ilic@example.com,Operations Lead,2026-10-01,full_time,Operations,Skopje,boss@example.com,Ana,+389 70 000 000',
+  'Ana Ilic,ana.ilic@example.com,Operations Lead,2026-10-01,full_time,Operations,Skopje,boss@example.com,Ana,+389 70 000 000,ana@gmail.com,1990-05-17,Partizanska 1 Skopje,1705990450001,NLB,210000000000123,Petar Ilic,brother,+389 70 000 001,1500,EUR,monthly',
 ].join('\n')
 
 const HEADER_ALIASES: Record<string, ImportField> = {
@@ -58,7 +71,52 @@ const HEADER_ALIASES: Record<string, ImportField> = {
   nickname: 'preferred_name',
   phone: 'phone',
   mobile: 'phone',
+  personalemail: 'personal_email',
+  personal_email: 'personal_email',
+  privateemail: 'personal_email',
+  birthdate: 'birth_date',
+  birth_date: 'birth_date',
+  dateofbirth: 'birth_date',
+  dob: 'birth_date',
+  address: 'address',
+  homeaddress: 'address',
+  nationalid: 'national_id',
+  national_id: 'national_id',
+  embg: 'national_id',
+  idnumber: 'national_id',
+  bank: 'bank_name',
+  bankname: 'bank_name',
+  bank_name: 'bank_name',
+  bankaccount: 'bank_account_number',
+  bank_account: 'bank_account_number',
+  bankaccountnumber: 'bank_account_number',
+  bank_account_number: 'bank_account_number',
+  iban: 'bank_account_number',
+  accountnumber: 'bank_account_number',
+  emergencycontact: 'emergency_contact_name',
+  emergencycontactname: 'emergency_contact_name',
+  emergency_contact_name: 'emergency_contact_name',
+  emergencyname: 'emergency_contact_name',
+  relationship: 'emergency_contact_relationship',
+  emergencyrelationship: 'emergency_contact_relationship',
+  emergencycontactrelationship: 'emergency_contact_relationship',
+  emergency_contact_relationship: 'emergency_contact_relationship',
+  emergencyphone: 'emergency_contact_phone',
+  emergencycontactphone: 'emergency_contact_phone',
+  emergency_contact_phone: 'emergency_contact_phone',
+  salary: 'salary_amount',
+  salaryamount: 'salary_amount',
+  salary_amount: 'salary_amount',
+  currency: 'salary_currency',
+  salarycurrency: 'salary_currency',
+  salary_currency: 'salary_currency',
+  basis: 'salary_basis',
+  paybasis: 'salary_basis',
+  salarybasis: 'salary_basis',
+  salary_basis: 'salary_basis',
 }
+
+const DATE_FIELDS: ReadonlySet<ImportField> = new Set(['start_date', 'birth_date'])
 
 /** The delimiter is whichever of , ; or tab the header line uses most (EU Excel saves ;). */
 function detectDelimiter(text: string): string {
@@ -139,7 +197,7 @@ export function shapeRows(table: string[][]): { rows: ImportRow[]; missing: Impo
       if (!field) return
       const value = (cells[i] ?? '').trim()
       if (!value) return
-      row[field] = field === 'start_date' ? isoDate(value) : value
+      row[field] = DATE_FIELDS.has(field) ? isoDate(value) : value
     })
     return row
   })

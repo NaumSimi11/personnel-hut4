@@ -2,6 +2,7 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/stores/auth'
+import { useDialogStore } from '@/stores/dialogs'
 import { signedDocumentUrl } from '@/lib/documents'
 import {
   OPEN_REQUEST,
@@ -22,6 +23,7 @@ type Company = { id: string; name: string }
 const props = defineProps<{ personId: string; companies: Company[] }>()
 
 const auth = useAuthStore()
+const dialogs = useDialogStore()
 const canRequestIn = computed(() => props.companies.filter((c) => auth.can(c.id, 'documents.request')))
 const visible = computed(
   () =>
@@ -114,10 +116,26 @@ async function submitRequest(): Promise<void> {
 async function review(request: DocumentRequestRow, decision: 'accepted' | 'needs_correction' | 'cancelled'): Promise<void> {
   let note: string | null = null
   if (decision === 'needs_correction') {
-    note = window.prompt('What needs to change?')
-    if (note === null) return
+    const answer = await dialogs.askReason({
+      title: 'What needs to change?',
+      hint: `The ${categoryLabel(request.category_key).toLowerCase()} goes back to the person with this note.`,
+      label: 'Note',
+      required: false,
+      confirmLabel: 'Send back',
+    })
+    if (!answer) return
+    note = answer.reason
   }
-  if (decision === 'cancelled' && !window.confirm('Cancel this request?')) return
+  if (decision === 'cancelled') {
+    const ok = await dialogs.confirmAction({
+      title: `Cancel the request for ${categoryLabel(request.category_key).toLowerCase()}?`,
+      hint: 'It leaves the person\'s workspace; nothing already submitted is deleted.',
+      confirmLabel: 'Cancel request',
+      cancelLabel: 'Keep it',
+      danger: true,
+    })
+    if (!ok) return
+  }
   busy.value = true
   error.value = null
   notice.value = null

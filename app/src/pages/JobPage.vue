@@ -6,7 +6,8 @@ import { useAuthStore } from '@/stores/auth'
 import { candidateQueue, candidateNextStep } from '@/lib/hiringJourney'
 import AddCandidateDialog from '@/components/AddCandidateDialog.vue'
 import UploadCvsDialog from '@/components/UploadCvsDialog.vue'
-import ConfirmHireDialog from '@/components/ConfirmHireDialog.vue'
+import AddEmployeeDialog from '@/components/AddEmployeeDialog.vue'
+import { useDialogStore } from '@/stores/dialogs'
 import JobStepper from '@/components/JobStepper.vue'
 import ScreeningQuestionsEditor from '@/components/ScreeningQuestionsEditor.vue'
 import JobChannelsPanel from '@/components/JobChannelsPanel.vue'
@@ -69,7 +70,7 @@ type ApplicationRow = {
   employment_period_id: string | null
   next_action: string | null
   next_action_due: string | null
-  candidate: { id: string; full_name: string; email: string | null } | null
+  candidate: { id: string; full_name: string; email: string | null; phone: string | null } | null
   owner: { full_name: string } | null
   employment_period: { person_id: string } | null
 }
@@ -101,7 +102,8 @@ const questionsUnreadable = ref(false)
 
 const addCandidateDialog = ref<InstanceType<typeof AddCandidateDialog> | null>(null)
 const uploadCvsDialog = ref<InstanceType<typeof UploadCvsDialog> | null>(null)
-const confirmHireDialog = ref<InstanceType<typeof ConfirmHireDialog> | null>(null)
+const confirmHireDialog = ref<InstanceType<typeof AddEmployeeDialog> | null>(null)
+const dialogs = useDialogStore()
 const channelsPanel = ref<InstanceType<typeof JobChannelsPanel> | null>(null)
 const activityPanel = ref<InstanceType<typeof JobActivityPanel> | null>(null)
 
@@ -205,7 +207,7 @@ async function loadApplications(): Promise<void> {
     .from('applications')
     .select(
       `id, stage_key, employment_period_id, next_action, next_action_due,
-       candidate:candidates(id, full_name, email),
+       candidate:candidates(id, full_name, email, phone),
        owner:people!applications_owner_id_fkey(full_name),
        employment_period:employment_periods!applications_employment_period_id_fkey(person_id)`,
     )
@@ -335,17 +337,27 @@ function moveToInterview(app: ApplicationRow): void {
 function prepareOffer(app: ApplicationRow): void {
   void updateStage(app, 'offer')
 }
-function reject(app: ApplicationRow): void {
-  const reason = window.prompt('Why is this application being rejected?')
-  if (!reason || !reason.trim()) return
-  void updateStage(app, 'rejected', reason.trim())
+async function reject(app: ApplicationRow): Promise<void> {
+  const answer = await dialogs.askReason({
+    eyebrow: 'Decision',
+    title: `Reject ${app.candidate?.full_name || 'this application'}.`,
+    hint: 'The reason stays on the application and in its timeline. Write it as you would want it read back to you.',
+    confirmLabel: 'Reject application',
+    danger: true,
+  })
+  if (!answer) return
+  void updateStage(app, 'rejected', answer.reason)
 }
 
 function openConfirmHire(app: ApplicationRow): void {
-  confirmHireDialog.value?.open({
+  if (!job.value) return
+  void confirmHireDialog.value?.open({
     applicationId: app.id,
     candidateName: app.candidate?.full_name ?? '',
-    jobTitle: job.value?.title ?? '',
+    candidateEmail: app.candidate?.email ?? null,
+    candidatePhone: app.candidate?.phone ?? null,
+    jobTitle: job.value.title,
+    companyId: job.value.company_id,
   })
 }
 
@@ -688,7 +700,7 @@ onMounted(async () => {
       :company-id="job.company_id"
       @created="loadApplications"
     />
-    <ConfirmHireDialog ref="confirmHireDialog" @hired="onHired" />
+    <AddEmployeeDialog ref="confirmHireDialog" @created="onHired" />
   </div>
 </template>
 

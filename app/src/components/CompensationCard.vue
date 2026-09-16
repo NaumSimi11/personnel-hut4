@@ -2,6 +2,7 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/stores/auth'
+import { useDialogStore } from '@/stores/dialogs'
 import {
   STATUS_LABELS,
   compensationActions,
@@ -50,6 +51,7 @@ const props = withDefaults(defineProps<{ personId: string; periods: Period[]; ti
 })
 
 const auth = useAuthStore()
+const dialogs = useDialogStore()
 const visible = computed(
   () =>
     auth.isAdmin ||
@@ -175,7 +177,15 @@ async function submitProposal(): Promise<void> {
 }
 
 async function decide(record: Record_, decision: CompensationAction['to']): Promise<void> {
-  if (decision === 'rejected' && !window.confirm('Reject this proposal?')) return
+  if (decision === 'rejected') {
+    const ok = await dialogs.confirmAction({
+      title: 'Reject this proposal?',
+      hint: `${describe(record)} from ${record.effective_date} is turned down; the current pay stays as it is.`,
+      confirmLabel: 'Reject',
+      danger: true,
+    })
+    if (!ok) return
+  }
   busy.value = true
   error.value = null
   notice.value = null

@@ -1,17 +1,21 @@
 import { z } from 'zod'
 
 /**
- * Correcting an employment period (migration 0037) — the form's rules.
+ * Correcting an employment period (migrations 0037, 0038) — the form's rules.
  *
  * A correction says the record never described reality, so unlike a change
  * (lib/employmentChanges.ts) it carries no effective date: the new facts are
- * simply what the period should have said all along.
+ * simply what the period should have said all along. Since 0038 the
+ * department, location and manager are corrected the same way.
  */
 
 export const correctionInput = z.object({
   startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Choose a start date.'),
   jobTitle: z.string().trim().min(1, 'A job title is required.').max(120),
   employmentTypeKey: z.string(),
+  departmentId: z.string(),
+  locationId: z.string(),
+  managerId: z.string(),
   reason: z.string().trim().max(500),
 })
 
@@ -22,6 +26,9 @@ export type CorrectablePeriod = {
   job_title: string
   employment_type_key: string | null
   end_date: string | null
+  department_id: string | null
+  location_id: string | null
+  manager_id: string | null
 }
 
 export function formFor(period: CorrectablePeriod): CorrectionForm {
@@ -29,6 +36,9 @@ export function formFor(period: CorrectablePeriod): CorrectionForm {
     startDate: period.start_date,
     jobTitle: period.job_title,
     employmentTypeKey: period.employment_type_key ?? '',
+    departmentId: period.department_id ?? '',
+    locationId: period.location_id ?? '',
+    managerId: period.manager_id ?? '',
     reason: '',
   }
 }
@@ -38,8 +48,25 @@ export function unchanged(period: CorrectablePeriod, form: CorrectionForm): bool
   return (
     form.startDate === period.start_date &&
     form.jobTitle.trim() === period.job_title &&
-    form.employmentTypeKey === (period.employment_type_key ?? '')
+    form.employmentTypeKey === (period.employment_type_key ?? '') &&
+    Object.keys(fieldsFor(period, form)).length === 0
   )
+}
+
+/**
+ * The structure fields that moved, as correct_employment's p_fields: a key
+ * present with null clears the value, an absent key keeps it.
+ */
+export function fieldsFor(period: CorrectablePeriod, form: CorrectionForm): Record<string, string | null> {
+  const pairs: [string, string | null, string][] = [
+    ['department_id', period.department_id, form.departmentId],
+    ['location_id', period.location_id, form.locationId],
+    ['manager_id', period.manager_id, form.managerId],
+  ]
+  return pairs.reduce<Record<string, string | null>>((acc, [key, was, now]) => {
+    const next = now || null
+    return next === was ? acc : { ...acc, [key]: next }
+  }, {})
 }
 
 /**

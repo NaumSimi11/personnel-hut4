@@ -2,6 +2,7 @@
 import { onMounted, ref } from 'vue'
 import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/stores/auth'
+import { useDialogStore } from '@/stores/dialogs'
 import {
   FILE_ACCEPT,
   FILE_KINDS,
@@ -33,6 +34,7 @@ type FileRow = {
 const props = defineProps<{ applicationId: string; companyId: string; canReview: boolean }>()
 
 const auth = useAuthStore()
+const dialogs = useDialogStore()
 const files = ref<FileRow[]>([])
 const loading = ref(true)
 const error = ref<string | null>(null)
@@ -127,7 +129,13 @@ async function download(row: FileRow): Promise<void> {
 }
 
 async function remove(row: FileRow): Promise<void> {
-  if (!window.confirm(`Remove ${row.original_name}? This cannot be undone.`)) return
+  const ok = await dialogs.confirmAction({
+    title: `Remove ${row.original_name}?`,
+    hint: `The ${kindLabel(row.kind).toLowerCase()} is deleted from the candidate's file. This cannot be undone.`,
+    confirmLabel: 'Remove file',
+    danger: true,
+  })
+  if (!ok) return
   error.value = null
   busy.value = true
   try {

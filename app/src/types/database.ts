@@ -1206,6 +1206,12 @@ export type Database = {
           corrected_at: string
           corrected_by: string | null
           id: string
+          new_department_id: string | null
+          new_location_id: string | null
+          new_manager_id: string | null
+          old_department_id: string | null
+          old_location_id: string | null
+          old_manager_id: string | null
           new_employment_type_key: string | null
           new_job_title: string
           new_start_date: string
@@ -1221,6 +1227,12 @@ export type Database = {
           corrected_at?: string
           corrected_by?: string | null
           id?: string
+          new_department_id?: string | null
+          new_location_id?: string | null
+          new_manager_id?: string | null
+          old_department_id?: string | null
+          old_location_id?: string | null
+          old_manager_id?: string | null
           new_employment_type_key?: string | null
           new_job_title: string
           new_start_date: string
@@ -1236,6 +1248,12 @@ export type Database = {
           corrected_at?: string
           corrected_by?: string | null
           id?: string
+          new_department_id?: string | null
+          new_location_id?: string | null
+          new_manager_id?: string | null
+          old_department_id?: string | null
+          old_location_id?: string | null
+          old_manager_id?: string | null
           new_employment_type_key?: string | null
           new_job_title?: string
           new_start_date?: string
@@ -3066,9 +3084,11 @@ export type Database = {
       person_private_details: {
         Row: {
           address: Json | null
+          bank_account: Json | null
           birth_date: string | null
           custom: Json
           emergency_contacts: Json
+          national_id: string | null
           national_id_hint: string | null
           notes: string | null
           person_id: string
@@ -3076,9 +3096,11 @@ export type Database = {
         }
         Insert: {
           address?: Json | null
+          bank_account?: Json | null
           birth_date?: string | null
           custom?: Json
           emergency_contacts?: Json
+          national_id?: string | null
           national_id_hint?: string | null
           notes?: string | null
           person_id: string
@@ -3086,9 +3108,11 @@ export type Database = {
         }
         Update: {
           address?: Json | null
+          bank_account?: Json | null
           birth_date?: string | null
           custom?: Json
           emergency_contacts?: Json
+          national_id?: string | null
           national_id_hint?: string | null
           notes?: string | null
           person_id?: string
@@ -3950,6 +3974,7 @@ export type Database = {
       correct_employment: {
         Args: {
           p_employment_type_key?: string
+          p_fields?: Json
           p_job_title?: string
           p_period_id: string
           p_reason?: string
@@ -3961,6 +3986,7 @@ export type Database = {
         Args: { p_days: Json; p_note?: string; p_request_id: string }
         Returns: Json
       }
+      create_employee: { Args: { p: Json }; Returns: Json }
       dashboard_snapshot: { Args: { p_days?: number }; Returns: Json }
       decide_compensation: {
         Args: { p_decision: string; p_note?: string; p_record_id: string }

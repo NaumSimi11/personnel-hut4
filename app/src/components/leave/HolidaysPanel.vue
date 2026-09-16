@@ -2,6 +2,7 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/stores/auth'
+import { useDialogStore } from '@/stores/dialogs'
 import { todayDb } from '@/lib/compensation'
 import CompanyFilter from '@/components/CompanyFilter.vue'
 import { expandForImport, parseHolidayProgramme, restrictToYear, rollForwardYear, type ParseResult } from '@/lib/holidayImport'
@@ -20,6 +21,7 @@ type Company = { id: string; name: string; country_code: string | null }
 const props = defineProps<{ companies: Company[] }>()
 
 const auth = useAuthStore()
+const dialogs = useDialogStore()
 const thisYear = Number(todayDb().slice(0, 4))
 const year = ref(thisYear)
 const country = ref('MK')
@@ -88,9 +90,15 @@ function addHoliday(): void {
   ).then(() => (newHoliday.value = { date: '', name: '' }))
 }
 
-function removeHoliday(h: Holiday): void {
-  if (!window.confirm(`Remove ${h.name} (${h.date})?`)) return
-  void write(supabase.from('public_holidays').delete().eq('id', h.id), 'Holiday removed.')
+async function removeHoliday(h: Holiday): Promise<void> {
+  const ok = await dialogs.confirmAction({
+    title: `Remove ${h.name} (${h.date})?`,
+    hint: `It leaves the ${h.country_code} statutory calendar; leave requests count it as a working day from now on.`,
+    confirmLabel: 'Remove holiday',
+    danger: true,
+  })
+  if (!ok) return
+  await write(supabase.from('public_holidays').delete().eq('id', h.id), 'Holiday removed.')
 }
 
 function preview(): void {
@@ -127,9 +135,16 @@ function addClosure(): void {
   ).then(() => (newClosure.value = { date: '', name: '' }))
 }
 
-function removeClosure(c: Closure): void {
-  if (!window.confirm(`Remove ${c.name} (${c.date})?`)) return
-  void write(supabase.from('company_closures').delete().eq('id', c.id), 'Closure removed.')
+async function removeClosure(c: Closure): Promise<void> {
+  const company = props.companies.find((x) => x.id === c.company_id)?.name ?? 'the company'
+  const ok = await dialogs.confirmAction({
+    title: `Remove ${c.name} (${c.date})?`,
+    hint: `${company} is open that day again; leave requests count it as a working day from now on.`,
+    confirmLabel: 'Remove closure',
+    danger: true,
+  })
+  if (!ok) return
+  await write(supabase.from('company_closures').delete().eq('id', c.id), 'Closure removed.')
 }
 
 watch([year, country], () => (parsed.value = null))

@@ -3,6 +3,7 @@ import { computed, onMounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/stores/auth'
+import { useDialogStore } from '@/stores/dialogs'
 import { friendlyDepartureError } from '@/lib/departure'
 import type { Database } from '@/types/database'
 
@@ -47,6 +48,7 @@ type Phase = { key: string; label: string; sort_order: number }
 
 const route = useRoute()
 const auth = useAuthStore()
+const dialogs = useDialogStore()
 const planId = route.params.planId as string
 
 const plan = ref<PlanDetail | null>(null)
@@ -207,16 +209,24 @@ function reopen(task: PlanTaskRow): void {
   void updateTask(task, { status: 'open', done_by: null, done_at: null })
 }
 
-function block(task: PlanTaskRow): void {
-  const reason = window.prompt('Why is this blocked?')
-  if (!reason || !reason.trim()) return
-  void updateTask(task, { status: 'blocked', blocked_reason: reason.trim() })
+async function block(task: PlanTaskRow): Promise<void> {
+  const answer = await dialogs.askReason({
+    title: `Why is "${task.title}" blocked?`,
+    hint: 'The reason shows on the task until it is reopened or done.',
+    confirmLabel: 'Mark blocked',
+  })
+  if (!answer) return
+  await updateTask(task, { status: 'blocked', blocked_reason: answer.reason })
 }
 
-function skip(task: PlanTaskRow): void {
-  const reason = window.prompt('Why is this task being skipped?')
-  if (!reason || !reason.trim()) return
-  void updateTask(task, { status: 'skipped', skip_reason: reason.trim() })
+async function skip(task: PlanTaskRow): Promise<void> {
+  const answer = await dialogs.askReason({
+    title: `Why is "${task.title}" being skipped?`,
+    hint: 'The task closes without being done; the reason stays on the plan.',
+    confirmLabel: 'Skip task',
+  })
+  if (!answer) return
+  await updateTask(task, { status: 'skipped', skip_reason: answer.reason })
 }
 
 async function finishPlan(): Promise<void> {
@@ -245,10 +255,15 @@ async function finishOffboarding(): Promise<void> {
     return
   }
   const open = criticalOpen.value
-  const warning = open
-    ? ` ${open} critical ${open === 1 ? 'task is' : 'tasks are'} still open; they stay on the plan.`
-    : ''
-  if (!window.confirm(`Mark ${plan.value.person?.full_name ?? 'this person'} as former?${warning}`)) return
+  const ok = await dialogs.confirmAction({
+    title: `Mark ${plan.value.person?.full_name ?? 'this person'} as former?`,
+    hint: open
+      ? `${open} critical ${open === 1 ? 'task is' : 'tasks are'} still open; they stay on the plan.`
+      : 'The employment ends and the plan is completed with it.',
+    confirmLabel: 'Mark as former',
+    danger: true,
+  })
+  if (!ok) return
   finishError.value = null
   finishBusy.value = true
   const { data, error: err } = await supabase.rpc('complete_departure', { p_employment_period_id: periodId })

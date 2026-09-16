@@ -2,6 +2,7 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/stores/auth'
+import { useDialogStore } from '@/stores/dialogs'
 import {
   POLICY_ACCEPT,
   createPolicy,
@@ -24,6 +25,7 @@ import {
 const props = defineProps<{ companyId: string | null }>()
 
 const auth = useAuthStore()
+const dialogs = useDialogStore()
 const canPublish = computed(() => (props.companyId ? auth.can(props.companyId, 'policies.publish') : auth.isAdmin))
 
 const loading = ref(true)
@@ -136,7 +138,13 @@ async function publishDraft(policy: PolicyRow): Promise<void> {
 }
 
 async function archive(policy: PolicyRow): Promise<void> {
-  if (!window.confirm(`Archive "${policy.title}"? It disappears from everyone's list; acknowledgements are kept.`)) return
+  const ok = await dialogs.confirmAction({
+    title: `Archive "${policy.title}"?`,
+    hint: "It disappears from everyone's list; acknowledgements are kept.",
+    confirmLabel: 'Archive',
+    danger: true,
+  })
+  if (!ok) return
   busy.value = true
   error.value = null
   notice.value = null
@@ -160,9 +168,16 @@ async function fileChosen(policy: PolicyRow): Promise<void> {
     error.value = fileProblem
     return
   }
-  if (policy.status === 'published' && !window.confirm('Publish this file as a new version? Everyone will need to acknowledge it again.')) {
-    if (input) input.value = ''
-    return
+  if (policy.status === 'published') {
+    const ok = await dialogs.confirmAction({
+      title: `Publish this file as version ${policy.version + 1} of "${policy.title}"?`,
+      hint: 'Everyone will need to acknowledge it again.',
+      confirmLabel: 'Publish new version',
+    })
+    if (!ok) {
+      if (input) input.value = ''
+      return
+    }
   }
   busy.value = true
   error.value = null

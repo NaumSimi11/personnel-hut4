@@ -27,6 +27,11 @@ async function removeTestPerson(): Promise<void> {
     .select('id')
     .or(`full_name.eq.${PERSON_NAME},work_email.eq.${PERSON_EMAIL}`)
   for (const person of people ?? []) {
+    // Add employee starts the onboarding checklist (plan 046).
+    const { data: plans } = await db.from('plans').select('id').eq('person_id', person.id)
+    const planIds = (plans ?? []).map((p) => p.id)
+    if (planIds.length) await db.from('plan_tasks').delete().in('plan_id', planIds)
+    await db.from('plans').delete().eq('person_id', person.id)
     await db.from('employment_periods').delete().eq('person_id', person.id)
     await db.from('person_private_details').delete().eq('person_id', person.id)
     await db.from('people').delete().eq('id', person.id)
@@ -63,12 +68,14 @@ test('add person → invite attaches (no duplicate) → private details persist 
   await page.getByRole('link', { name: 'People & access', exact: true }).click()
 
   // 1. Add a record-only person (no account yet).
-  await page.getByRole('button', { name: 'Add person' }).click()
-  await page.locator('#ap-name').fill(PERSON_NAME)
-  await page.locator('#ap-email').fill(PERSON_EMAIL)
-  await page.locator('#ap-company').selectOption({ label: 'Praedium' })
-  await page.locator('#ap-title').fill('Attach Probe')
-  await page.getByRole('button', { name: 'Create employee' }).click()
+  await page.getByRole('button', { name: 'Add employee' }).click()
+  const add = page.getByTestId('add-employee-dialog')
+  await add.locator('#ae-name').fill(PERSON_NAME)
+  await add.locator('#ae-work-email').fill(PERSON_EMAIL)
+  await add.locator('#ae-company').selectOption({ label: 'Praedium' })
+  await add.locator('#ae-title').fill('Attach Probe')
+  await add.getByRole('button', { name: 'Create employee' }).click()
+  await add.getByRole('button', { name: 'Done' }).click()
   const row = page.locator('tr', { hasText: PERSON_NAME })
   await expect(row).toBeVisible()
 
@@ -97,10 +104,10 @@ test('add person → invite attaches (no duplicate) → private details persist 
 
   // 5. Private details: fill in, save, reload, confirm persistence.
   await page.getByRole('button', { name: 'Add details' }).click()
-  await page.locator('#pd-birth-date').fill('1990-05-04')
+  await page.locator('#pd-birth').fill('1990-05-04')
   await page.locator('#pd-address').fill('Test Street 1')
-  await page.locator('#pd-contact-name').fill('Jane Doe')
-  await page.locator('#pd-contact-phone').fill('555-0100')
+  await page.locator('#pd-emergency-name').fill('Jane Doe')
+  await page.locator('#pd-emergency-phone').fill('555-0100')
   await page.getByRole('button', { name: 'Save' }).click()
   await expect(page.getByText('Private details saved.')).toBeVisible()
 

@@ -1,5 +1,6 @@
 import { createClient } from '@supabase/supabase-js'
 import { expect, test } from '@playwright/test'
+import { confirmDialog } from './support/dialogs'
 
 /**
  * Company management: a platform admin creates a company with its full
@@ -152,19 +153,17 @@ test('admin creates a full company profile, edits it, then archives it', async (
   await expect(page.getByRole('heading', { name: RENAMED })).toBeVisible()
   await expect(page.locator('.company-banner img.logo')).toBeVisible()
 
-  // Archive — confirm dialog names the company, then back to the list.
-  page.once('dialog', async (confirm) => {
-    expect(confirm.message()).toContain(RENAMED)
-    await confirm.accept()
-  })
+  // Archive — the in-app dialog names the company, then back to the list.
   await page.getByRole('button', { name: 'Archive this company' }).click()
+  await expect(page.getByTestId('reason-dialog')).toContainText(RENAMED)
+  await confirmDialog(page)
   await expect(page.getByRole('heading', { level: 1 })).toContainText('One workspace')
   await expect(page.locator('.company-card', { hasText: RENAMED })).toHaveCount(0)
 
-  // …and from pickers elsewhere: the employing-company select on Add person.
+  // …and from pickers elsewhere: the employing-company select on Add employee.
   await page.getByRole('link', { name: 'People & access' }).click()
-  await page.getByRole('button', { name: 'Add person' }).click()
-  const companyOptions = page.locator('#ap-company option')
+  await page.getByRole('button', { name: 'Add employee' }).click()
+  const companyOptions = page.locator('#ae-company option')
   await expect(companyOptions.first()).toBeAttached()
   await expect(companyOptions.filter({ hasText: RENAMED })).toHaveCount(0)
 

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   correctionInput,
+  fieldsFor,
   formFor,
   localProblem,
   messageFor,
@@ -13,6 +14,9 @@ const period: CorrectablePeriod = {
   job_title: 'Software Developer',
   employment_type_key: 'full_time',
   end_date: null,
+  department_id: 'd1',
+  location_id: null,
+  manager_id: 'm1',
 }
 
 describe('employment correction', () => {
@@ -21,6 +25,9 @@ describe('employment correction', () => {
       startDate: '2026-01-01',
       jobTitle: 'Software Developer',
       employmentTypeKey: 'full_time',
+      departmentId: 'd1',
+      locationId: '',
+      managerId: 'm1',
       reason: '',
     })
   })
@@ -39,6 +46,14 @@ describe('employment correction', () => {
     expect(unchanged(period, { ...formFor(period), reason: 'typo' })).toBe(true)
     expect(unchanged(period, { ...formFor(period), startDate: '2024-11-01' })).toBe(false)
     expect(unchanged(period, { ...formFor(period), jobTitle: 'Senior Developer' })).toBe(false)
+    expect(unchanged(period, { ...formFor(period), departmentId: '' })).toBe(false)
+    expect(unchanged(period, { ...formFor(period), managerId: 'm2' })).toBe(false)
+  })
+
+  it('sends only the structure fields that moved, null to clear', () => {
+    expect(fieldsFor(period, formFor(period))).toEqual({})
+    expect(fieldsFor(period, { ...formFor(period), departmentId: '' })).toEqual({ department_id: null })
+    expect(fieldsFor(period, { ...formFor(period), locationId: 'l1', managerId: 'm2' })).toEqual({ location_id: 'l1', manager_id: 'm2' })
   })
 
   it('catches a start date after the end date before asking the database', () => {

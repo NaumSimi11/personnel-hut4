@@ -2,6 +2,7 @@
 import { computed, ref, watch } from 'vue'
 import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/stores/auth'
+import { useDialogStore } from '@/stores/dialogs'
 import { todayDb } from '@/lib/compensation'
 import { cancellationState, friendlyLeaveError, leaveActions, leaveStatusLabel, type LeaveAction } from '@/lib/leave'
 import { deliverNotifications } from '@/lib/notificationsApi'
@@ -43,6 +44,7 @@ const props = withDefaults(
 const emit = defineEmits<{ changed: []; error: [message: string] }>()
 
 const auth = useAuthStore()
+const dialogs = useDialogStore()
 const today = computed(() => todayDb())
 
 // Certificates (ported from Field Notebook): a sick-leave request shows its
@@ -170,30 +172,58 @@ function detail(r: LeaveRequestRow): string | null {
   return r.note
 }
 
+/** "Winter break · 2026-02-02 → 2026-02-06 · 5 working days" — what the question is about. */
+function describeRequest(r: LeaveRequestRow): string {
+  const whose = r.person?.full_name ? `${r.person.full_name} · ` : ''
+  return `${whose}${r.leave_type?.label ?? 'Leave'} · ${meta(r)}`
+}
+
 async function run(r: LeaveRequestRow, key: LeaveAction['key'] | 'decline-ask'): Promise<void> {
   const call = async () => {
     switch (key) {
       case 'approve':
         return supabase.rpc('decide_leave', { p_request_id: r.id, p_decision: 'approved' })
       case 'reject': {
-        const note = window.prompt('Why is this request rejected?')
-        if (note === null) return null
-        return supabase.rpc('decide_leave', { p_request_id: r.id, p_decision: 'rejected', p_note: note })
+        const answer = await dialogs.askReason({
+          title: 'Why is this request rejected?',
+          hint: `${describeRequest(r)}. The note is shown with the request.`,
+          label: 'Note',
+          required: false,
+          confirmLabel: 'Reject',
+          danger: true,
+        })
+        if (!answer) return null
+        return supabase.rpc('decide_leave', { p_request_id: r.id, p_decision: 'rejected', p_note: answer.reason })
       }
       case 'cancel': {
-        const reason = window.prompt('Why is this leave cancelled?')
-        if (reason === null) return null
-        return supabase.rpc('cancel_leave', { p_request_id: r.id, p_reason: reason })
+        const answer = await dialogs.askReason({
+          title: 'Why is this leave cancelled?',
+          hint: `${describeRequest(r)}. The days go back to the balance; the reason is kept on the request.`,
+          confirmLabel: 'Cancel leave',
+          danger: true,
+        })
+        if (!answer) return null
+        return supabase.rpc('cancel_leave', { p_request_id: r.id, p_reason: answer.reason })
       }
       case 'ask': {
-        const reason = window.prompt('Why should this leave be cancelled? HR will decide.')
-        if (reason === null) return null
-        return supabase.rpc('request_leave_cancellation', { p_request_id: r.id, p_reason: reason })
+        const answer = await dialogs.askReason({
+          title: 'Why should this leave be cancelled?',
+          hint: `${describeRequest(r)}. HR decides; the leave stands until they do.`,
+          confirmLabel: 'Ask to cancel',
+        })
+        if (!answer) return null
+        return supabase.rpc('request_leave_cancellation', { p_request_id: r.id, p_reason: answer.reason })
       }
       case 'decline-ask': {
-        const note = window.prompt('Why does the leave stand?')
-        if (note === null) return null
-        return supabase.rpc('decline_leave_cancellation', { p_request_id: r.id, p_note: note })
+        const answer = await dialogs.askReason({
+          title: 'Why does the leave stand?',
+          hint: `${describeRequest(r)}. The person sees this note with the answer.`,
+          label: 'Note',
+          required: false,
+          confirmLabel: 'Decline the ask',
+        })
+        if (!answer) return null
+        return supabase.rpc('decline_leave_cancellation', { p_request_id: r.id, p_note: answer.reason })
       }
     }
   }

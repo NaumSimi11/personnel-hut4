@@ -1,5 +1,6 @@
 import { createClient } from '@supabase/supabase-js'
 import { expect, test, type Page } from '@playwright/test'
+import { answerReason } from './support/dialogs'
 
 /**
  * Leave (plan 036): HR imports a holiday, sets an entitlement, an employee
@@ -143,12 +144,6 @@ async function signIn(page: Page, email: string, password: string): Promise<void
   await page.waitForURL(/\/overview/)
 }
 
-/** Answer the next window.prompt / confirm calls in order. */
-function answerDialogs(page: Page, answers: string[]): void {
-  const queue = [...answers]
-  page.on('dialog', (d) => void d.accept(queue.shift() ?? ''))
-}
-
 test.beforeAll(async () => {
   test.skip(!ADMIN_EMAIL || !ADMIN_PASSWORD, 'Set TEST_USER_EMAIL / TEST_USER_PASSWORD')
   await cleanup()
@@ -177,11 +172,10 @@ test('holiday import → entitlement → request (holiday excluded) → queue �
   await page.goto(`/leave?tab=balances&company=${companyId}`)
   const row = page.getByTestId(`balance-row-${personId}`)
   await expect(row).toContainText('No')
-  answerDialogs(page, ['20', 'Yearly entitlement'])
   await row.getByRole('button', { name: 'Entitlement' }).click()
+  await answerReason(page, 'Yearly entitlement', 20)
   await expect(page.getByText(`Entitlement set for ${PERSON}.`)).toBeVisible()
   await expect(row.locator('td').nth(1)).toHaveText('20')
-  page.removeAllListeners('dialog')
 
   // The employee requests Monday–Friday: 5 weekdays minus every MK holiday in the window
   // (ours plus whatever the real calendar holds there).
@@ -288,8 +282,8 @@ test('holiday import → entitlement → request (holiday excluded) → queue �
   await employee.goto('/me')
   await expect(rail.locator('.stat', { hasText: 'taken' })).toContainText(String(TAKEN))
   await expect(rail.locator('.stat', { hasText: 'days left' })).toContainText(String(20 - TAKEN))
-  answerDialogs(employee, ['Plans changed'])
   await employee.locator('.req-row', { hasText: 'Winter break' }).getByRole('button', { name: 'Cancel' }).click()
+  await answerReason(employee, 'Plans changed')
   await expect(employee.locator('.req-row', { hasText: 'Cancelled: Plans changed' })).toBeVisible()
   await expect(rail.locator('.stat', { hasText: 'days left' })).toContainText('20')
 

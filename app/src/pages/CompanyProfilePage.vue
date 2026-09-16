@@ -3,6 +3,7 @@ import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/stores/auth'
+import { useDialogStore } from '@/stores/dialogs'
 import {
   COMPANY_PROFILE_SELECT,
   brandOf,
@@ -123,6 +124,7 @@ const notFound = ref(false)
 const error = ref<string | null>(null)
 
 const auth = useAuthStore()
+const dialogs = useDialogStore()
 const archiving = ref(false)
 const archiveError = ref<string | null>(null)
 
@@ -154,9 +156,12 @@ function personFallback(personId: string | null): string {
 
 async function archiveCompany(): Promise<void> {
   if (!company.value || !canArchive.value) return
-  const ok = window.confirm(
-    `Archive ${company.value.name}? It leaves every list and picker; its people, access and history are kept.`,
-  )
+  const ok = await dialogs.confirmAction({
+    title: `Archive ${company.value.name}?`,
+    hint: 'It leaves every list and picker; its people, access and history are kept.',
+    confirmLabel: 'Archive company',
+    danger: true,
+  })
   if (!ok) return
 
   archiving.value = true

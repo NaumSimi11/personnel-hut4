@@ -35,7 +35,30 @@ describe('shapeRows', () => {
     expect(shaped.rows[0]?.start_date).toBe('2026-01-25')
   })
   it('ships a template with the accepted headers', () => {
-    expect(IMPORT_TEMPLATE.split('\n')[0]).toBe('full_name,work_email,job_title,start_date,employment_type_key,department,location,manager_email,preferred_name,phone')
+    expect(IMPORT_TEMPLATE.split('\n')[0]).toBe(
+      'full_name,work_email,job_title,start_date,employment_type_key,department,location,manager_email,preferred_name,phone,personal_email,birth_date,address,national_id,bank_name,bank_account_number,emergency_contact_name,emergency_contact_relationship,emergency_contact_phone,salary_amount,salary_currency,salary_basis',
+    )
+  })
+  it('maps the personal, bank and salary columns and converts the birth date', () => {
+    const shaped = shapeRows([
+      ['full_name', 'work_email', 'job_title', 'start_date', 'Date of birth', 'EMBG', 'IBAN', 'Bank', 'Emergency contact', 'Relationship', 'Emergency phone', 'Salary', 'Currency', 'Pay basis', 'Personal email', 'Address'],
+      ['Ana Ilic', 'ana@x.test', 'Clerk', '2026-01-10', '17.05.1990', '1705990450001', 'MK07300', 'NLB', 'Petar', 'brother', '070', '1500', 'EUR', 'monthly', 'ana@gmail.com', 'Partizanska 1'],
+    ])
+    expect(shaped.ignored).toEqual([])
+    expect(shaped.rows[0]).toMatchObject({
+      birth_date: '1990-05-17',
+      national_id: '1705990450001',
+      bank_account_number: 'MK07300',
+      bank_name: 'NLB',
+      emergency_contact_name: 'Petar',
+      emergency_contact_relationship: 'brother',
+      emergency_contact_phone: '070',
+      salary_amount: '1500',
+      salary_currency: 'EUR',
+      salary_basis: 'monthly',
+      personal_email: 'ana@gmail.com',
+      address: 'Partizanska 1',
+    })
   })
 })
 

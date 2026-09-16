@@ -26,12 +26,12 @@ async function cleanup(): Promise<void> {
   const db = serviceClient()
 
   // 1. plan_tasks + plans for the employment period this test's hire creates.
-  const { data: person } = await db
+  // The hire puts the candidate's email on the record as personal (plan 046).
+  const { data: matches } = await db
     .from('people')
     .select('id')
-    .eq('work_email', CANDIDATE_EMAIL)
-    .maybeSingle()
-  if (person) {
+    .or(`work_email.eq.${CANDIDATE_EMAIL},personal_email.eq.${CANDIDATE_EMAIL}`)
+  for (const person of matches ?? []) {
     const { data: periods } = await db
       .from('employment_periods')
       .select('id')
@@ -57,8 +57,8 @@ async function cleanup(): Promise<void> {
     await db.from('candidates').delete().in('id', candidateIds)
   }
 
-  // 3. employment_periods + people by work_email/full name.
-  if (person) {
+  // 3. employment_periods + people by either email.
+  for (const person of matches ?? []) {
     await db.from('employment_periods').delete().eq('person_id', person.id)
     await db.from('people').delete().eq('id', person.id)
   }
@@ -137,11 +137,11 @@ test('approved request → prepare job → candidate pipeline → confirm hire',
 
   // Step 5: confirm hire, keeping the prefilled name/position/start date.
   await appRow.getByRole('button', { name: 'Confirm hire' }).click()
-  await page.getByRole('button', { name: 'Complete hire' }).click()
-  await expect(
-    page.getByText('Hired. Employment and the onboarding plan were created.'),
-  ).toBeVisible()
-  await page.getByRole('button', { name: 'Done' }).click()
+  const hire = page.getByTestId('add-employee-dialog')
+  await expect(hire.locator('#ae-title')).toHaveValue(REQUEST_TITLE)
+  await hire.getByRole('button', { name: 'Complete hire' }).click()
+  await expect(hire.getByRole('heading', { name: /Hired\. Employment recorded, the onboarding checklist started/ })).toBeVisible()
+  await hire.getByRole('button', { name: 'Done' }).click()
 
   await expect(appRow.locator('.badge')).toHaveText('hired')
   await expect(appRow.getByRole('link', { name: 'Open employee profile' })).toBeVisible()
@@ -161,10 +161,11 @@ test('approved request → prepare job → candidate pipeline → confirm hire',
   await expect(page.getByRole('heading', { name: CANDIDATE_NAME })).toBeVisible()
   await expect(page.locator('.emp-row', { hasText: REQUEST_TITLE })).toBeVisible()
 
+  // The candidate applied from a personal address; it stays personal on the record.
   const { data: hiredPerson, error: personErr } = await db
     .from('people')
     .select('id')
-    .eq('work_email', CANDIDATE_EMAIL)
+    .eq('personal_email', CANDIDATE_EMAIL)
     .single()
   expect(personErr).toBeNull()
   expect(hiredPerson?.id).toBeTruthy()

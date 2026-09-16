@@ -33,6 +33,12 @@ async function cleanup(): Promise<void> {
   const ids = (people ?? []).map((p) => p.id)
   if (ids.length) {
     await db.from('employment_periods').update({ manager_id: null }).in('person_id', ids)
+    // A future starter gets the onboarding checklist on import (plan 046).
+    const { data: plans } = await db.from('plans').select('id').in('person_id', ids)
+    const planIds = (plans ?? []).map((p) => p.id)
+    if (planIds.length) await db.from('plan_tasks').delete().in('plan_id', planIds)
+    if (planIds.length) await db.from('plans').delete().in('id', planIds)
+    await db.from('person_private_details').delete().in('person_id', ids)
     await db.from('employment_periods').delete().in('person_id', ids)
     await db.from('people').delete().in('id', ids)
   }

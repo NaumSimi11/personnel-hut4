@@ -1,5 +1,6 @@
 import { createClient } from '@supabase/supabase-js'
 import { expect, test } from '@playwright/test'
+import { confirmDialog } from './support/dialogs'
 
 /**
  * Profile photos (plan 040): a person adds their own photo from My
@@ -65,8 +66,8 @@ test('add a photo from My workspace â†’ shown in the sidebar and on the record â
 
   // Remove: the record clears and the file is gone.
   await page.goto('/me')
-  page.once('dialog', (d) => d.accept())
   await page.getByRole('button', { name: 'Remove photo' }).click()
+  await confirmDialog(page)
   await expect(page.locator('.me-head .avatar.photo')).toHaveCount(0)
   const { data: after } = await db.from('people').select('avatar_url').eq('id', personId).single()
   expect(after?.avatar_url).toBeNull()

@@ -2,6 +2,7 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/stores/auth'
+import { useDialogStore } from '@/stores/dialogs'
 import { formatBytes } from '@/lib/applicationFiles'
 import {
   DOCUMENT_ACCEPT,
@@ -36,6 +37,7 @@ const props = withDefaults(
 )
 
 const auth = useAuthStore()
+const dialogs = useDialogStore()
 const scope = computed(() => (props.personId ? 'person' : 'company'))
 const visible = computed(
   () =>
@@ -201,7 +203,13 @@ async function open(doc: DocumentRow): Promise<void> {
 }
 
 async function archive(doc: DocumentRow): Promise<void> {
-  if (!window.confirm(`Archive "${doc.title}"? It stays on record but leaves the live list.`)) return
+  const ok = await dialogs.confirmAction({
+    title: `Archive "${doc.title}"?`,
+    hint: 'It stays on record but leaves the live list.',
+    confirmLabel: 'Archive',
+    danger: true,
+  })
+  if (!ok) return
   busy.value = true
   error.value = null
   try {

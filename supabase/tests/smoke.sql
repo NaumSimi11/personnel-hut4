@@ -339,9 +339,10 @@ begin
   assert (again->>'already_hired')::boolean = true, 'second confirm is a no-op';
   assert again->>'employment_period_id' = first->>'employment_period_id',
     'retry returns the same employment period';
+  -- The address they applied from stays personal on the record (plan 046).
   assert (select count(*) from public.employment_periods ep
           join public.people p on p.id = ep.person_id
-          where p.work_email = 'hired-candidate@example.test') = 1,
+          where p.personal_email = 'hired-candidate@example.test') = 1,
     'exactly one employee results from one application';
 end $$;
 reset role;
@@ -3345,5 +3346,430 @@ begin
 end $$;
 delete from public.employment_periods where person_id = '20000000-0000-0000-0000-0000000000c1';
 delete from public.people where id = '20000000-0000-0000-0000-0000000000c1';
+
+-- ================================================================ 0038
+-- The employee record in one call (create_employee), structure open to HR,
+-- the private row audited by field name only, corrections of department /
+-- location / manager, and the import through the same call.
+insert into public.departments (id, company_id, name) values
+  ('d0000000-0000-0000-0000-0000000000a1', '10000000-0000-0000-0000-00000000000a', 'Finance A');
+
+-- Structure: Bea (Company HR in B) adds a department in B, is refused in A
+-- and for the holding; Omar (leave.approve only) is refused.
+set app.test_uid = '00000000-0000-0000-0000-000000000005';
+set role authenticated;
+insert into public.departments (id, company_id, name) values
+  ('d0000000-0000-0000-0000-0000000000b1', '10000000-0000-0000-0000-00000000000b', 'Operations B');
+do $$
+begin
+  begin
+    insert into public.departments (company_id, name) values ('10000000-0000-0000-0000-00000000000a', 'Not mine');
+    raise exception 'FAIL: HR of B added a department in A';
+  exception when insufficient_privilege then null;
+  end;
+  begin
+    insert into public.locations (company_id, name) values (null, 'Holding wide');
+    raise exception 'FAIL: HR added a holding-wide location';
+  exception when insufficient_privilege then null;
+  end;
+end $$;
+reset role;
+set app.test_uid = '00000000-0000-0000-0000-000000000003';
+set role authenticated;
+do $$
+begin
+  begin
+    insert into public.departments (company_id, name) values ('10000000-0000-0000-0000-00000000000a', 'Omar dept');
+    raise exception 'FAIL: a person without grants added a department';
+  exception when insufficient_privilege then null;
+  end;
+end $$;
+reset role;
+
+-- create_employee by Bea: everything but pay (she holds no salary.propose).
+set app.test_uid = '00000000-0000-0000-0000-000000000005';
+set role authenticated;
+do $$
+declare
+  r jsonb;
+  pd record;
+begin
+  r := public.create_employee(jsonb_build_object(
+    'full_name', 'Nora Newhire', 'preferred_name', 'Nori',
+    'work_email', 'nora@b.test', 'personal_email', 'nora.home@example.test', 'phone', '+389 70 111 222',
+    'company_id', '10000000-0000-0000-0000-00000000000b', 'job_title', 'Operations Analyst',
+    'department_id', 'd0000000-0000-0000-0000-0000000000b1', 'employment_type_key', 'full_time',
+    'manager_id', '20000000-0000-0000-0000-000000000005', 'start_date', (current_date + 7),
+    'private', jsonb_build_object(
+      'birth_date', '1990-05-17', 'address_line', 'Partizanska 1, Skopje',
+      'national_id', '1705990450001', 'bank_name', 'Komercijalna', 'bank_account_number', '300000000012345',
+      'emergency_name', 'Petar Newhire', 'emergency_relationship', 'brother', 'emergency_phone', '+389 70 333 444',
+      'notes', 'Vegetarian')));
+  assert (r->>'person_id') is not null and (r->>'employment_period_id') is not null, 'person and period created: ' || r::text;
+  assert (r->>'plan_id') is not null, 'the onboarding checklist started: ' || r::text;
+  assert (select count(*) from public.plan_tasks where plan_id = (r->>'plan_id')::uuid) = 5, 'the checklist carries the template tasks';
+  assert (select status from public.employment_periods where id = (r->>'employment_period_id')::uuid) = 'pre_start', 'a future start is pre_start';
+  assert (select department_id from public.employment_periods where id = (r->>'employment_period_id')::uuid) = 'd0000000-0000-0000-0000-0000000000b1', 'department set';
+  assert (select manager_id from public.employment_periods where id = (r->>'employment_period_id')::uuid) = '20000000-0000-0000-0000-000000000005', 'manager set';
+  assert (select personal_email::text from public.people where id = (r->>'person_id')::uuid) = 'nora.home@example.test', 'personal email on the person';
+  select * into pd from public.person_private_details where person_id = (r->>'person_id')::uuid;
+  assert pd.national_id = '1705990450001' and pd.national_id_hint = '0001', 'national id kept, hint derived';
+  assert pd.bank_account->>'account_number' = '300000000012345' and pd.bank_account->>'bank' = 'Komercijalna', 'bank account kept';
+  assert pd.emergency_contacts->0->>'relationship' = 'brother' and pd.emergency_contacts->0->>'name' = 'Petar Newhire', 'the emergency contact carries a relationship';
+  assert pd.birth_date = '1990-05-17' and pd.address->>'line' = 'Partizanska 1, Skopje' and pd.notes = 'Vegetarian', 'the rest of the private row';
+
+  -- No salary.propose: the pay part is refused before anything is written.
+  begin
+    perform public.create_employee(jsonb_build_object(
+      'full_name', 'Paid Person', 'company_id', '10000000-0000-0000-0000-00000000000b',
+      'job_title', 'Clerk', 'start_date', current_date,
+      'pay', jsonb_build_object('amount', 1000, 'currency', 'EUR', 'pay_basis_key', 'monthly')));
+    raise exception 'FAIL: pay proposed without salary.propose';
+  exception when insufficient_privilege then null;
+  end;
+  assert not exists (select 1 from public.people where full_name = 'Paid Person'), 'a refused call writes nothing';
+
+  -- The same work email twice is refused, never merged.
+  begin
+    perform public.create_employee(jsonb_build_object(
+      'full_name', 'Nora Again', 'work_email', 'NORA@b.test',
+      'company_id', '10000000-0000-0000-0000-00000000000b', 'job_title', 'Clerk', 'start_date', current_date));
+    raise exception 'FAIL: duplicate work email accepted';
+  exception when unique_violation then null;
+  end;
+
+  -- A department of another company is refused by the shared validator.
+  begin
+    perform public.create_employee(jsonb_build_object(
+      'full_name', 'Wrong Dept', 'company_id', '10000000-0000-0000-0000-00000000000b',
+      'job_title', 'Clerk', 'start_date', current_date,
+      'department_id', 'd0000000-0000-0000-0000-0000000000a1'));
+    raise exception 'FAIL: a department of another company accepted';
+  exception when invalid_parameter_value then
+    if sqlerrm not like '%another company%' then raise; end if;
+  end;
+
+  -- Not asked for: no checklist; a past start is active.
+  r := public.create_employee(jsonb_build_object(
+    'full_name', 'Old Timer', 'company_id', '10000000-0000-0000-0000-00000000000b',
+    'job_title', 'Clerk', 'start_date', '2020-01-01', 'start_onboarding', false));
+  assert (r->>'plan_id') is null, 'no checklist when not asked';
+  assert (select status from public.employment_periods where id = (r->>'employment_period_id')::uuid) = 'active', 'a past start is active';
+end $$;
+reset role;
+
+-- Omar with employment.edit only in A: the private part is refused, a plain
+-- add goes through and starts the checklist, B stays closed to him.
+-- Omar already holds a grant in A (leave.approve, from the 0028 block): add to
+-- it, and take exactly these two away again at the end.
+create temp table omar_added as
+  select g.id as grant_id, v.cap as capability_key
+  from public.access_grants g, (values ('people.view'), ('employment.edit')) v(cap)
+  where g.person_id = '20000000-0000-0000-0000-000000000003'
+    and g.company_id = '10000000-0000-0000-0000-00000000000a'
+    and not exists (select 1 from public.grant_capabilities gc where gc.grant_id = g.id and gc.capability_key = v.cap);
+insert into public.grant_capabilities (grant_id, capability_key) select grant_id, capability_key from omar_added;
+set app.test_uid = '00000000-0000-0000-0000-000000000003';
+set role authenticated;
+do $$
+declare r jsonb;
+begin
+  begin
+    perform public.create_employee(jsonb_build_object(
+      'full_name', 'Secret Person', 'company_id', '10000000-0000-0000-0000-00000000000a',
+      'job_title', 'Clerk', 'start_date', current_date,
+      'private', jsonb_build_object('national_id', '9999999999999')));
+    raise exception 'FAIL: private details written without personal.view';
+  exception when insufficient_privilege then null;
+  end;
+  assert not exists (select 1 from public.people where full_name = 'Secret Person'), 'refused before the person was written';
+  -- Blank private values are not a private part.
+  r := public.create_employee(jsonb_build_object(
+    'full_name', 'Plain Add', 'company_id', '10000000-0000-0000-0000-00000000000a',
+    'job_title', 'Clerk', 'start_date', current_date,
+    'private', jsonb_build_object('national_id', '  ', 'notes', '')));
+  assert (r->>'plan_id') is not null, 'HR without personal.view still starts the checklist';
+  assert not exists (select 1 from public.person_private_details where person_id = (r->>'person_id')::uuid), 'no private row from blanks';
+  begin
+    perform public.create_employee(jsonb_build_object(
+      'full_name', 'Elsewhere', 'company_id', '10000000-0000-0000-0000-00000000000b',
+      'job_title', 'Clerk', 'start_date', current_date));
+    raise exception 'FAIL: added an employee without employment.edit';
+  exception when insufficient_privilege then null;
+  end;
+end $$;
+reset role;
+
+-- Ada (admin) with pay: a proposal from the start date, decided by someone else later.
+set app.test_uid = '00000000-0000-0000-0000-000000000004';
+set role authenticated;
+do $$
+declare
+  r jsonb;
+  c record;
+begin
+  r := public.create_employee(jsonb_build_object(
+    'full_name', 'Paid Person', 'work_email', 'paid@b.test',
+    'company_id', '10000000-0000-0000-0000-00000000000b', 'job_title', 'Clerk', 'start_date', current_date,
+    'pay', jsonb_build_object('amount', '1500.50', 'currency', 'eur', 'pay_basis_key', 'monthly', 'note', 'Offer letter')));
+  assert (r->>'compensation_record_id') is not null, 'a pay proposal was recorded: ' || r::text;
+  select * into c from public.compensation_records where id = (r->>'compensation_record_id')::uuid;
+  assert c.status = 'proposed' and c.amount = 1500.50 and c.currency = 'EUR' and c.effective_date = current_date
+     and c.proposed_by = '20000000-0000-0000-0000-000000000004', 'proposed, not approved, from the start date';
+  begin
+    perform public.create_employee(jsonb_build_object(
+      'full_name', 'Bad Pay', 'company_id', '10000000-0000-0000-0000-00000000000b', 'job_title', 'Clerk', 'start_date', current_date,
+      'pay', jsonb_build_object('amount', 'lots', 'currency', 'EUR', 'pay_basis_key', 'monthly')));
+    raise exception 'FAIL: a non-numeric amount accepted';
+  exception when invalid_parameter_value then null;
+  end;
+end $$;
+reset role;
+
+-- The private row is audited by field name only.
+set app.test_uid = '00000000-0000-0000-0000-000000000005';
+set role authenticated;
+update public.person_private_details
+   set bank_account = '{"bank": "NLB", "account_number": "210000000099"}'::jsonb
+ where person_id = (select id from public.people where work_email = 'nora@b.test');
+reset role;
+set app.test_uid = '';
+do $$
+begin
+  assert exists (select 1 from public.activity_log
+                 where entity_type = 'person_private_details' and action = 'INSERT'
+                   and after->'fields' ? 'bank_account' and after->'fields' ? 'national_id'),
+    'the insert is audited with its field names';
+  assert (select after->'fields' from public.activity_log
+          where entity_type = 'person_private_details' and action = 'UPDATE'
+          order by at desc limit 1) = '["bank_account"]'::jsonb,
+    'the update names only the column that changed';
+  assert (select actor_person_id from public.activity_log
+          where entity_type = 'person_private_details' and action = 'UPDATE'
+          order by at desc limit 1) = '20000000-0000-0000-0000-000000000005',
+    'and who changed it';
+  assert not exists (select 1 from public.activity_log
+                     where before::text like '%1705990450001%' or after::text like '%1705990450001%'
+                        or before::text like '%300000000012345%' or after::text like '%210000000099%'
+                        or before::text like '%Partizanska%' or after::text like '%Partizanska%'),
+    'the audit never carries a value from the private row';
+end $$;
+
+-- correct_employment with p_fields: department / location / manager.
+set app.test_uid = '00000000-0000-0000-0000-000000000005';
+set role authenticated;
+do $$
+declare
+  v_id uuid;
+  r jsonb;
+  c record;
+begin
+  select ep.id into v_id from public.employment_periods ep
+    join public.people p on p.id = ep.person_id where p.work_email = 'nora@b.test';
+  begin
+    perform public.correct_employment(v_id, current_date + 7, null, null, 'wrong',
+      jsonb_build_object('department_id', 'd0000000-0000-0000-0000-0000000000a1'));
+    raise exception 'FAIL: corrected onto another company''s department';
+  exception when raise_exception then
+    if sqlerrm not like '%another company%' then raise; end if;
+  end;
+  begin
+    perform public.correct_employment(v_id, current_date + 7, null, null, null, '{"status": "former"}'::jsonb);
+    raise exception 'FAIL: an unknown field accepted';
+  exception when invalid_parameter_value then null;
+  end;
+  begin
+    perform public.correct_employment(v_id, current_date + 7, null, null, null,
+      jsonb_build_object('manager_id', (select person_id from public.employment_periods where id = v_id)));
+    raise exception 'FAIL: own manager accepted';
+  exception when raise_exception then
+    if sqlerrm not like '%own manager%' then raise; end if;
+  end;
+  -- Clear the department; the manager (absent key) stays; old and new kept.
+  r := public.correct_employment(v_id, current_date + 7, null, null, 'No department yet', '{"department_id": null}'::jsonb);
+  assert (r->>'department_id') is null and (r->>'manager_id') = '20000000-0000-0000-0000-000000000005',
+    'department cleared, manager kept: ' || r::text;
+  select * into c from public.employment_corrections where period_id = v_id order by corrected_at desc limit 1;
+  assert c.old_department_id = 'd0000000-0000-0000-0000-0000000000b1' and c.new_department_id is null
+     and c.old_manager_id = c.new_manager_id and c.reason = 'No department yet', 'old and new department kept';
+  r := public.correct_employment(v_id, current_date + 7, 'Senior Operations Analyst', null, null,
+    jsonb_build_object('department_id', 'd0000000-0000-0000-0000-0000000000b1', 'manager_id', null));
+  assert (r->>'department_id') = 'd0000000-0000-0000-0000-0000000000b1' and (r->>'manager_id') is null
+     and (r->>'job_title') = 'Senior Operations Analyst', 'set the department, cleared the manager: ' || r::text;
+  -- Without p_fields the call is 0037's: everything else stays.
+  r := public.correct_employment(v_id, current_date + 8);
+  assert (r->>'department_id') = 'd0000000-0000-0000-0000-0000000000b1' and (r->>'start_date') = (current_date + 8)::text,
+    'absent fields keep everything: ' || r::text;
+end $$;
+reset role;
+
+-- Import: a private column without personal.view is refused before a row is
+-- judged; Bea imports private details, a future starter gets the checklist,
+-- a backfilled one does not; Ada imports a salary as a proposal.
+set app.test_uid = '00000000-0000-0000-0000-000000000003';
+set role authenticated;
+do $$
+begin
+  begin
+    perform public.import_people('10000000-0000-0000-0000-00000000000a', jsonb_build_array(jsonb_build_object(
+      'full_name', 'Imp One', 'work_email', 'imp1@a.test', 'job_title', 'Clerk', 'start_date', current_date::text,
+      'bank_account_number', '123456789')), false);
+    raise exception 'FAIL: previewed a file with bank details without personal.view';
+  exception when insufficient_privilege then null;
+  end;
+end $$;
+reset role;
+set app.test_uid = '00000000-0000-0000-0000-000000000005';
+set role authenticated;
+do $$
+declare r jsonb;
+begin
+  r := public.import_people('10000000-0000-0000-0000-00000000000b', jsonb_build_array(
+    jsonb_build_object('full_name', 'Imp Future', 'work_email', 'imp-future@b.test', 'job_title', 'Clerk',
+      'start_date', (current_date + 10)::text, 'national_id', '0101990450002',
+      'emergency_contact_name', 'Ana', 'emergency_contact_relationship', 'wife', 'emergency_contact_phone', '070',
+      'personal_email', 'future.home@example.test'),
+    jsonb_build_object('full_name', 'Imp Past', 'work_email', 'imp-past@b.test', 'job_title', 'Clerk',
+      'start_date', '2021-03-01', 'birth_date', '1985-02-03', 'manager_email', 'imp-future@b.test')), true);
+  assert (r->>'committed')::boolean, 'imported: ' || r::text;
+  assert exists (select 1 from public.plans pl join public.people p on p.id = pl.person_id
+                 where p.work_email = 'imp-future@b.test' and pl.kind = 'onboarding'), 'a future starter gets the checklist';
+  assert not exists (select 1 from public.plans pl join public.people p on p.id = pl.person_id
+                     where p.work_email = 'imp-past@b.test'), 'a backfilled employee gets none';
+  assert (select pd.national_id_hint from public.person_private_details pd join public.people p on p.id = pd.person_id
+          where p.work_email = 'imp-future@b.test') = '0002', 'private row imported';
+  assert (select pd.emergency_contacts->0->>'relationship' from public.person_private_details pd join public.people p on p.id = pd.person_id
+          where p.work_email = 'imp-future@b.test') = 'wife', 'relationship imported';
+  assert (select p.personal_email::text from public.people p where p.work_email = 'imp-future@b.test') = 'future.home@example.test', 'personal email imported';
+  assert (select pd.birth_date from public.person_private_details pd join public.people p on p.id = pd.person_id
+          where p.work_email = 'imp-past@b.test') = '1985-02-03', 'birth date imported';
+  assert (select ep.manager_id from public.employment_periods ep join public.people p on p.id = ep.person_id
+          where p.work_email = 'imp-past@b.test') = (select id from public.people where work_email = 'imp-future@b.test'),
+    'manager linked from the file';
+  -- A bad birth date is a row problem, said in the preview.
+  r := public.import_people('10000000-0000-0000-0000-00000000000b', jsonb_build_array(jsonb_build_object(
+    'full_name', 'Imp Bad', 'work_email', 'imp-bad@b.test', 'job_title', 'Clerk', 'start_date', current_date::text,
+    'birth_date', '03.02.85x')), false);
+  assert (r->>'refused')::int = 1 and (r->'rows'->0->'problems')::text like '%birth date is not a date%', 'a bad birth date is a row problem: ' || r::text;
+end $$;
+reset role;
+set app.test_uid = '00000000-0000-0000-0000-000000000004';
+set role authenticated;
+do $$
+declare r jsonb;
+begin
+  r := public.import_people('10000000-0000-0000-0000-00000000000b', jsonb_build_array(jsonb_build_object(
+    'full_name', 'Imp Bad Pay', 'work_email', 'imp-badpay@b.test', 'job_title', 'Clerk', 'start_date', current_date::text,
+    'salary_amount', 'lots', 'salary_currency', 'EUR', 'salary_basis', 'monthly')), false);
+  assert (r->>'refused')::int = 1 and (r->'rows'->0->'problems')::text like '%not a number%', 'a bad salary is a row problem: ' || r::text;
+  r := public.import_people('10000000-0000-0000-0000-00000000000b', jsonb_build_array(jsonb_build_object(
+    'full_name', 'Imp Paid', 'work_email', 'imp-paid@b.test', 'job_title', 'Clerk', 'start_date', current_date::text,
+    'salary_amount', '900', 'salary_currency', 'eur', 'salary_basis', 'monthly')), true);
+  assert exists (select 1 from public.compensation_records cr
+                 join public.employment_periods ep on ep.id = cr.employment_period_id
+                 join public.people p on p.id = ep.person_id
+                 where p.work_email = 'imp-paid@b.test' and cr.status = 'proposed' and cr.amount = 900 and cr.currency = 'EUR'),
+    'salary imported as a proposal';
+end $$;
+reset role;
+set app.test_uid = '';
+-- Omar is back to what he held before this block.
+delete from public.grant_capabilities gc using omar_added a
+  where gc.grant_id = a.grant_id and gc.capability_key = a.capability_key;
+drop table omar_added;
+
+-- ================================================================ 0039
+-- Review of 0038: one person per work email is a constraint; the hint
+-- follows a cleared national ID; a hire attaches only to a person with no
+-- open employment; a hire always gets its checklist; the preview and the
+-- write share one rule set.
+set app.test_uid = '00000000-0000-0000-0000-000000000005';  -- Bea, Company HR in B
+set role authenticated;
+do $$
+declare r jsonb; v_person uuid;
+begin
+  -- Same work email, different case: the constraint refuses, in words.
+  begin
+    perform public.create_employee(jsonb_build_object(
+      'full_name', 'Nora Twice', 'work_email', 'Nora@B.test',
+      'company_id', '10000000-0000-0000-0000-00000000000b', 'job_title', 'Clerk', 'start_date', current_date));
+    raise exception 'FAIL: duplicate work email accepted by the constraint';
+  exception when unique_violation then
+    if sqlerrm not like '%already exists%' then raise; end if;
+  end;
+  -- Edit details cannot make two people share a work email either.
+  select id into v_person from public.people where work_email = 'paid@b.test';
+  begin
+    update public.people set work_email = 'nora@b.test' where id = v_person;
+    raise exception 'FAIL: an update made two people share a work email';
+  exception when unique_violation then null;
+  end;
+  -- Clearing the national ID clears the hint.
+  update public.person_private_details set national_id = null
+    where person_id = (select id from public.people where work_email = 'nora@b.test');
+  assert (select national_id_hint from public.person_private_details
+          where person_id = (select id from public.people where work_email = 'nora@b.test')) is null,
+    'the hint follows a cleared national ID';
+  -- The shared checker speaks for both routes: the same sentence from the
+  -- preview and from the call.
+  r := public.import_people('10000000-0000-0000-0000-00000000000b', jsonb_build_array(jsonb_build_object(
+    'full_name', 'Imp Rules', 'work_email', 'imp-rules@b.test', 'job_title', 'Clerk', 'start_date', current_date::text,
+    'national_id', '12')), false);
+  assert (r->'rows'->0->'problems')::text like '%between 4 and 32%', 'the preview names the rule: ' || r::text;
+  begin
+    perform public.create_employee(jsonb_build_object(
+      'full_name', 'Short Id', 'company_id', '10000000-0000-0000-0000-00000000000b',
+      'job_title', 'Clerk', 'start_date', current_date, 'private', jsonb_build_object('national_id', '12')));
+    raise exception 'FAIL: a short national ID accepted';
+  exception when invalid_parameter_value then
+    if sqlerrm not like '%between 4 and 32%' then raise; end if;
+  end;
+end $$;
+reset role;
+
+-- A hire from an application: the candidate's address stays personal, the
+-- checklist always starts (a late confirmation included), and a colleague
+-- who shares the address is never merged into.
+insert into public.people (id, full_name, work_email, personal_email) values
+  ('20000000-0000-0000-0000-0000000000d1', 'Petar Spouse', 'petar@b.test', 'family@example.test');
+insert into public.employment_periods (person_id, company_id, job_title, status, start_date) values
+  ('20000000-0000-0000-0000-0000000000d1', '10000000-0000-0000-0000-00000000000b', 'Clerk', 'active', '2024-01-01');
+insert into public.jobs (id, company_id, title, status) values
+  ('70000000-0000-0000-0000-0000000000d1', '10000000-0000-0000-0000-00000000000b', 'Family Role', 'open');
+insert into public.candidates (id, full_name, email) values
+  ('80000000-0000-0000-0000-0000000000d1', 'Ana Spouse', 'family@example.test');
+insert into public.applications (id, job_id, company_id, candidate_id, stage_key) values
+  ('90000000-0000-0000-0000-0000000000d1', '70000000-0000-0000-0000-0000000000d1',
+   '10000000-0000-0000-0000-00000000000b', '80000000-0000-0000-0000-0000000000d1', 'offer');
+set app.test_uid = '00000000-0000-0000-0000-000000000005';
+set role authenticated;
+do $$
+declare r jsonb;
+begin
+  r := public.create_employee(jsonb_build_object(
+    'application_id', '90000000-0000-0000-0000-0000000000d1',
+    'full_name', 'Ana Spouse', 'job_title', 'Family Role', 'start_date', (current_date - 60),
+    'start_onboarding', false));
+  assert (r->>'person_id') <> '20000000-0000-0000-0000-0000000000d1', 'a new hire is not merged into a colleague sharing the address';
+  assert (select personal_email::text from public.people where id = (r->>'person_id')::uuid) = 'family@example.test'
+     and (select work_email from public.people where id = (r->>'person_id')::uuid) is null,
+    'the address they applied from stays personal';
+  assert (r->>'plan_id') is not null, 'a hire always gets its checklist, even confirmed late: ' || r::text;
+  assert (select stage_key from public.applications where id = '90000000-0000-0000-0000-0000000000d1') = 'hired', 'application hired';
+  -- A hire that types a colleague's work email is refused like a plain add.
+  begin
+    perform public.create_employee(jsonb_build_object(
+      'application_id', '90000000-0000-0000-0000-0000000000d1', 'work_email', 'petar@b.test',
+      'full_name', 'X', 'job_title', 'Y', 'start_date', current_date));
+    -- (idempotent: the application is already hired, so this returns instead of inserting)
+  exception when unique_violation then null;
+  end;
+end $$;
+reset role;
+set app.test_uid = '';
+delete from public.application_events where application_id = '90000000-0000-0000-0000-0000000000d1';
+delete from public.applications where id = '90000000-0000-0000-0000-0000000000d1';
+delete from public.candidates where id = '80000000-0000-0000-0000-0000000000d1';
+delete from public.jobs where id = '70000000-0000-0000-0000-0000000000d1';
 
 select 'SMOKE TESTS PASSED' as result;

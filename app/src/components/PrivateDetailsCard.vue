@@ -1,23 +1,27 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/stores/auth'
+import PrivateDetailsFields, { type PrivateDetailsForm } from '@/components/PrivateDetailsFields.vue'
 
 /**
- * Restricted personal details (birth date, address, emergency contact,
- * notes) — gated by RLS on `person_private_details` (self, or a viewer
- * holding `personal.view` in a company where the person has employment).
- * This card only decides whether to attempt the load/render; RLS remains
- * the actual gate, so a null row for a permitted viewer just means
- * "nothing recorded yet".
+ * Restricted personal details — birth date, address, national ID, bank
+ * account, emergency contact, notes — gated by RLS on
+ * `person_private_details` (self, or personal.view in a company where the
+ * person has employment). The card renders for exactly those viewers
+ * (plan 046: it used to hide from Company HR); RLS remains the gate, so a
+ * null row for a permitted viewer just means "nothing recorded yet".
  */
-const props = defineProps<{ personId: string }>()
+const props = defineProps<{ personId: string; companyIds: string[] }>()
 
 type Address = { line: string }
-type EmergencyContact = { name: string; phone: string }
+type EmergencyContact = { name?: string; relationship?: string; phone?: string }
+type BankAccount = { bank?: string; account_number?: string }
 
 const auth = useAuthStore()
-const visible = computed(() => auth.isAdmin || auth.personId === props.personId)
+const visible = computed(
+  () => auth.personId === props.personId || props.companyIds.some((c) => auth.can(c, 'personal.view')),
+)
 
 const loading = ref(true)
 const editing = ref(false)
@@ -26,24 +30,25 @@ const error = ref<string | null>(null)
 const notice = ref<string | null>(null)
 const hasRecord = ref(false)
 
-const form = ref({
+const EMPTY: PrivateDetailsForm = {
   birthDate: '',
   addressLine: '',
-  contactName: '',
-  contactPhone: '',
+  nationalId: '',
+  bankName: '',
+  bankAccountNumber: '',
+  emergencyName: '',
+  emergencyRelationship: '',
+  emergencyPhone: '',
   notes: '',
-})
-
-function resetForm(): void {
-  form.value = { birthDate: '', addressLine: '', contactName: '', contactPhone: '', notes: '' }
 }
+const form = ref<PrivateDetailsForm>({ ...EMPTY })
 
 async function load(): Promise<void> {
   loading.value = true
   error.value = null
   const { data, error: err } = await supabase
     .from('person_private_details')
-    .select('birth_date, address, emergency_contacts, notes')
+    .select('birth_date, address, national_id, bank_account, emergency_contacts, notes')
     .eq('person_id', props.personId)
     .maybeSingle()
   if (err) {
@@ -54,13 +59,18 @@ async function load(): Promise<void> {
   }
   hasRecord.value = data !== null
   const address = (data?.address ?? null) as Address | null
+  const bank = (data?.bank_account ?? null) as BankAccount | null
   const contacts = (data?.emergency_contacts ?? []) as EmergencyContact[]
-  const firstContact = contacts[0] ?? { name: '', phone: '' }
+  const first = contacts[0] ?? {}
   form.value = {
     birthDate: data?.birth_date ?? '',
     addressLine: address?.line ?? '',
-    contactName: firstContact.name ?? '',
-    contactPhone: firstContact.phone ?? '',
+    nationalId: data?.national_id ?? '',
+    bankName: bank?.bank ?? '',
+    bankAccountNumber: bank?.account_number ?? '',
+    emergencyName: first.name ?? '',
+    emergencyRelationship: first.relationship ?? '',
+    emergencyPhone: first.phone ?? '',
     notes: data?.notes ?? '',
   }
   loading.value = false
@@ -78,24 +88,31 @@ function cancelEdit(): void {
   void load()
 }
 
+/** The filled keys of a small object, trimmed; nothing when all are blank. */
+function filled<T extends Record<string, string>>(source: T): Partial<T> | null {
+  const entries = Object.entries(source).flatMap(([k, v]) => (v.trim() ? [[k, v.trim()] as const] : []))
+  return entries.length ? (Object.fromEntries(entries) as Partial<T>) : null
+}
+
 async function save(): Promise<void> {
   busy.value = true
   error.value = null
   notice.value = null
-  const emergencyContacts: EmergencyContact[] =
-    form.value.contactName.trim() || form.value.contactPhone.trim()
-      ? [{ name: form.value.contactName.trim(), phone: form.value.contactPhone.trim() }]
-      : []
+  const f = form.value
+  const contact = filled({ name: f.emergencyName, relationship: f.emergencyRelationship, phone: f.emergencyPhone })
+  const bank = filled({ bank: f.bankName, account_number: f.bankAccountNumber })
   const { error: err } = await supabase.from('person_private_details').upsert({
     person_id: props.personId,
-    birth_date: form.value.birthDate || null,
-    address: form.value.addressLine.trim() ? { line: form.value.addressLine.trim() } : null,
-    emergency_contacts: emergencyContacts,
-    notes: form.value.notes.trim() || null,
+    birth_date: f.birthDate || null,
+    address: f.addressLine.trim() ? { line: f.addressLine.trim() } : null,
+    national_id: f.nationalId.trim() || null,
+    bank_account: bank,
+    emergency_contacts: contact ? [contact] : [],
+    notes: f.notes.trim() || null,
   })
   busy.value = false
   if (err) {
-    error.value = 'Could not save private details.'
+    error.value = friendly(err.message)
     console.error('Private details save failed:', err.message)
     return
   }
@@ -104,6 +121,19 @@ async function save(): Promise<void> {
   notice.value = 'Private details saved.'
 }
 
+function friendly(message: string): string {
+  if (/national_id/.test(message)) return 'The national ID must be between 4 and 32 characters.'
+  if (/row-level security/.test(message)) return 'Saving private details needs personal.view in this company.'
+  return 'Could not save private details.'
+}
+
+const bankLine = computed(() => [form.value.bankName, form.value.bankAccountNumber].filter(Boolean).join(' · '))
+const contactLine = computed(() => [form.value.emergencyName, form.value.emergencyRelationship, form.value.emergencyPhone].filter(Boolean).join(' · '))
+
+watch(visible, (v) => {
+  if (v && loading.value) void load()
+})
+
 onMounted(async () => {
   if (visible.value) await load()
   else loading.value = false
@@ -111,16 +141,17 @@ onMounted(async () => {
 </script>
 
 <template>
-  <div v-if="visible" class="card">
+  <div v-if="visible" class="card" data-testid="private-details-card">
     <div class="card-head">
       <div>
         <h2>Private details <span class="badge amber">Sensitive</span></h2>
-        <p>Visible only to the person and permitted HR access.</p>
+        <p>Visible to the person and to HR with private access. The national ID and bank account are what payroll needs.</p>
       </div>
       <button
         v-if="!loading && !editing"
         class="button secondary"
         type="button"
+        data-testid="private-details-edit"
         @click="startEdit"
       >
         {{ hasRecord ? 'Edit' : 'Add details' }}
@@ -131,26 +162,7 @@ onMounted(async () => {
       <div v-if="loading" class="empty">Loading private details…</div>
 
       <form v-else-if="editing" novalidate @submit.prevent="save">
-        <div class="field">
-          <label for="pd-birth-date">Birth date</label>
-          <input id="pd-birth-date" v-model="form.birthDate" type="date" />
-        </div>
-        <div class="field">
-          <label for="pd-address">Address</label>
-          <input id="pd-address" v-model="form.addressLine" maxlength="200" />
-        </div>
-        <div class="field">
-          <label for="pd-contact-name">Emergency contact name</label>
-          <input id="pd-contact-name" v-model="form.contactName" maxlength="120" />
-        </div>
-        <div class="field">
-          <label for="pd-contact-phone">Emergency contact phone</label>
-          <input id="pd-contact-phone" v-model="form.contactPhone" maxlength="40" />
-        </div>
-        <div class="field">
-          <label for="pd-notes">Notes</label>
-          <textarea id="pd-notes" v-model="form.notes" rows="4" maxlength="2000"></textarea>
-        </div>
+        <PrivateDetailsFields v-model="form" prefix="pd" />
         <p v-if="error" class="error-note" role="alert">{{ error }}</p>
         <div class="actions">
           <button class="button secondary" type="button" :disabled="busy" @click="cancelEdit">
@@ -176,13 +188,16 @@ onMounted(async () => {
             <dd>{{ form.addressLine || '—' }}</dd>
           </div>
           <div class="row">
+            <dt>National ID</dt>
+            <dd data-testid="pd-national-id-value">{{ form.nationalId || '—' }}</dd>
+          </div>
+          <div class="row">
+            <dt>Bank account</dt>
+            <dd data-testid="pd-bank-value">{{ bankLine || '—' }}</dd>
+          </div>
+          <div class="row">
             <dt>Emergency contact</dt>
-            <dd>
-              <template v-if="form.contactName || form.contactPhone">
-                {{ form.contactName || '—' }} · {{ form.contactPhone || '—' }}
-              </template>
-              <template v-else>—</template>
-            </dd>
+            <dd data-testid="pd-contact-value">{{ contactLine || '—' }}</dd>
           </div>
           <div class="row">
             <dt>Notes</dt>
@@ -196,16 +211,6 @@ onMounted(async () => {
 
 <style scoped>
 h2 { display: flex; align-items: center; gap: 9px; }
-.field textarea {
-  width: 100%;
-  border: 1px solid #dce3d7;
-  padding: 11px 12px;
-  background: #fff;
-  color: var(--ink);
-  font-size: 12px;
-  font-family: inherit;
-  resize: vertical;
-}
 .actions { display: flex; gap: 9px; justify-content: flex-end; margin-top: 4px; }
 .notice {
   display: block;
@@ -225,6 +230,6 @@ h2 { display: flex; align-items: center; gap: 9px; }
 }
 .details .row:first-child { border-top: 0; padding-top: 0; }
 .details dt { flex: 0 0 140px; font-size: 11px; color: var(--muted); }
-.details dd { margin: 0; flex: 1; font-size: 12px; min-width: 0; }
+.details dd { margin: 0; flex: 1; font-size: 12px; min-width: 0; overflow-wrap: anywhere; }
 .details dd.notes { white-space: pre-wrap; }
 </style>

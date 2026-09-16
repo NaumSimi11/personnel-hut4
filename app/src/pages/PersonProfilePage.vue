@@ -3,7 +3,9 @@ import { computed, onMounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/stores/auth'
+import { useDialogStore } from '@/stores/dialogs'
 import PrivateDetailsCard from '@/components/PrivateDetailsCard.vue'
+import EditPersonDialog, { type PersonBasics } from '@/components/EditPersonDialog.vue'
 import ScheduleDepartureDialog from '@/components/ScheduleDepartureDialog.vue'
 import ScheduleChangeDialog, { type ChangeTarget } from '@/components/ScheduleChangeDialog.vue'
 import CorrectEmploymentDialog, { type CorrectTarget } from '@/components/CorrectEmploymentDialog.vue'
@@ -51,9 +53,23 @@ type Grant = {
 
 const route = useRoute()
 const auth = useAuthStore()
+const dialogs = useDialogStore()
 const personId = route.params.personId as string
 
-const person = ref<{ full_name: string; work_email: string | null; user_id: string | null; avatar_url: string | null } | null>(null)
+type Person = PersonBasics & { user_id: string | null; avatar_url: string | null }
+const person = ref<Person | null>(null)
+const editDialog = ref<InstanceType<typeof EditPersonDialog> | null>(null)
+// Mirrors can_edit_person (RLS): admins, employment.edit where they are employed,
+// or anywhere when the record has no employment yet.
+const canEditBasics = computed(() =>
+  employments.value.length
+    ? employments.value.some((e) => auth.can(e.company_id, 'employment.edit'))
+    : auth.canAnywhere('employment.edit'),
+)
+function onBasicsSaved(saved: PersonBasics): void {
+  if (person.value) person.value = { ...person.value, ...saved }
+  notice.value = 'Details saved.'
+}
 const employments = ref<Employment[]>([])
 const grants = ref<Grant[]>([])
 // Companies the person has (had) employment with — where their documents may live.
@@ -62,6 +78,10 @@ const personCompanies = computed(() => {
   for (const e of employments.value) if (!seen.has(e.company_id)) seen.set(e.company_id, { id: e.company_id, name: e.company?.name ?? '' })
   return [...seen.values()]
 })
+const personCompanyIds = computed(() => personCompanies.value.map((c) => c.id))
+// The pickers the correction dialog offers, already loaded for the facts strip.
+const peopleOptions = ref<{ id: string; name: string }[]>([])
+const typeOptions = ref<{ key: string; label: string }[]>([])
 const companies = ref<{ id: string; name: string }[]>([])
 const employmentTypes = ref<{ key: string; label: string }[]>([])
 const loading = ref(true)
@@ -131,7 +151,13 @@ function onCorrected(result: { startDate: string; jobTitle: string }): void {
 }
 
 async function cancelChange(changeId: string): Promise<void> {
-  if (!window.confirm('Cancel this scheduled change?')) return
+  const ok = await dialogs.confirmAction({
+    title: 'Cancel this scheduled change?',
+    hint: 'The employment stays as it is today; the change is kept in history as cancelled.',
+    confirmLabel: 'Cancel the change',
+    cancelLabel: 'Keep it',
+  })
+  if (!ok) return
   busy.value = true
   error.value = null
   const { error: err } = await supabase.rpc('cancel_employment_change', { p_change_id: changeId })
@@ -192,9 +218,12 @@ function onDepartureScheduled(result: { planId: string; alreadyScheduled: boolea
 
 /** The explicit act of becoming Former (complete_departure, migration 0010). */
 async function markAsFormer(emp: Employment): Promise<void> {
-  const ok = window.confirm(
-    `Mark ${person.value?.full_name} as former at ${emp.company?.name}? Open offboarding tasks stay visible and can still be completed.`,
-  )
+  const ok = await dialogs.confirmAction({
+    title: `Mark ${person.value?.full_name} as former at ${emp.company?.name}?`,
+    hint: 'Open offboarding tasks stay visible and can still be completed.',
+    confirmLabel: 'Mark as former',
+    danger: true,
+  })
   if (!ok) return
   busy.value = true
   error.value = null
@@ -223,7 +252,7 @@ async function load(): Promise<void> {
   const due = await supabase.rpc('apply_due_employment_changes')
   if (due.error) console.error('Applying due employment changes failed:', due.error.message)
   const [personRes, empRes, grantRes, deptRes, locRes, peopleRes, typesRes] = await Promise.all([
-    supabase.from('people').select('full_name, work_email, user_id, avatar_url').eq('id', personId).maybeSingle(),
+    supabase.from('people').select('id, full_name, preferred_name, work_email, personal_email, phone, user_id, avatar_url').eq('id', personId).maybeSingle(),
     supabase
       .from('employment_periods')
       .select(
@@ -253,6 +282,8 @@ async function load(): Promise<void> {
     people: Object.fromEntries((peopleRes.data ?? []).map((p) => [p.id, p.full_name])),
     employmentTypes: Object.fromEntries((typesRes.data ?? []).map((t) => [t.key, t.label])),
   }
+  peopleOptions.value = (peopleRes.data ?? []).map((p) => ({ id: p.id, name: p.full_name }))
+  typeOptions.value = typesRes.data ?? []
   if (personRes.error || !personRes.data) {
     error.value = 'Person not found or not visible with your access.'
     loading.value = false
@@ -349,6 +380,8 @@ onMounted(async () => {
               <template v-if="current?.company"> · {{ current.company.name }}</template>
               <template v-if="!current">No current employment</template>
               <a v-if="person.work_email" :href="`mailto:${person.work_email}`" class="mail">{{ person.work_email }}</a>
+              <span v-if="person.personal_email" class="contact" data-testid="personal-email">{{ person.personal_email }}</span>
+              <span v-if="person.phone" class="contact" data-testid="personal-phone">{{ person.phone }}</span>
               <span v-if="current" class="badge" :class="current.status === 'active' ? 'green' : current.status === 'former' ? '' : 'blue'">{{ current.status.replace('_', ' ') }}</span>
               <span class="badge" :class="person.user_id ? 'green' : ''">
                 {{ person.user_id ? 'has sign-in account' : 'no account — record only' }}
@@ -356,6 +389,9 @@ onMounted(async () => {
             </p>
           </div>
           <div class="hero-actions">
+            <button v-if="canEditBasics" class="button secondary" type="button" data-testid="edit-details" @click="editDialog?.open(person)">
+              Edit details
+            </button>
             <router-link class="button secondary" :to="{ name: 'access-editor', params: { personId } }">Manage access</router-link>
           </div>
         </div>
@@ -450,6 +486,7 @@ onMounted(async () => {
                 </template>
               </small>
             </div>
+            <div class="row-actions">
             <span class="badge" :class="emp.status === 'active' ? 'green' : emp.status === 'former' ? '' : 'blue'">
               {{ emp.status.replace('_', ' ') }}
             </span>
@@ -500,6 +537,7 @@ onMounted(async () => {
                 Mark as former
               </button>
             </template>
+            </div>
           </div>
         </div>
 
@@ -509,8 +547,9 @@ onMounted(async () => {
         </div>
         <ScheduleDepartureDialog ref="departureDialog" @scheduled="onDepartureScheduled" />
         <ScheduleChangeDialog ref="changeDialog" @saved="onChangeSaved" />
-        <CorrectEmploymentDialog ref="correctDialog" @corrected="onCorrected" />
+        <CorrectEmploymentDialog ref="correctDialog" :employment-types="typeOptions" :people="peopleOptions" @corrected="onCorrected" />
         <TransferDialog ref="transferDialog" @transferred="onTransferred" />
+        <EditPersonDialog ref="editDialog" @saved="onBasicsSaved" />
 
         <div class="right-column">
           <div class="card">
@@ -537,7 +576,7 @@ onMounted(async () => {
 
           <DocumentsCard :person-id="personId" :companies="personCompanies" />
           <DocumentRequestsCard :person-id="personId" :companies="personCompanies" />
-          <PrivateDetailsCard :person-id="personId" />
+          <PrivateDetailsCard :person-id="personId" :company-ids="personCompanyIds" />
         </div>
       </div>
     </template>
@@ -553,6 +592,7 @@ onMounted(async () => {
 .profile-head .meta strong { color: var(--ink); font-weight: 600; }
 .profile-head .mail { color: var(--green); text-decoration: none; }
 .profile-head .mail:hover { text-decoration: underline; }
+.profile-head .contact { color: var(--muted); }
 .hero-actions { display: flex; gap: 8px; flex-wrap: wrap; }
 .avatar.big { width: 76px; height: 76px; font-size: 24px; background: linear-gradient(145deg, #dbe8d2, #b9d3c1); box-shadow: 0 10px 24px -12px rgba(22, 36, 31, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.8); }
 .facts-strip { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 0; margin: 0; border-top: 1px solid var(--line); background: #fff; }
@@ -564,14 +604,15 @@ onMounted(async () => {
 .grid-two { display: grid; grid-template-columns: minmax(0, 1.45fr) minmax(300px, 1fr); gap: 22px; align-items: start; }
 @media (max-width: 900px) { .grid-two { grid-template-columns: 1fr; } }
 .main-column, .right-column { display: grid; gap: 22px; align-content: start; min-width: 0; }
-.emp-row { display: flex; align-items: center; gap: 13px; padding: 15px 24px; border-top: 1px solid #edf0eb; }
+.emp-row { display: flex; align-items: center; gap: 13px; padding: 15px 24px; border-top: 1px solid #edf0eb; flex-wrap: wrap; }
+.row-actions { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; justify-content: flex-end; margin-left: auto; }
 .emp-row.timeline { position: relative; padding-left: 46px; }
 .emp-row.timeline::before { content: ''; position: absolute; left: 27px; top: 0; bottom: 0; width: 2px; background: var(--line); }
 .emp-row.timeline:first-of-type::before { top: 50%; }
 .emp-row.timeline:last-of-type::before { bottom: 50%; }
 .emp-row.timeline .dot { position: absolute; left: 22px; top: 50%; width: 12px; height: 12px; border-radius: 50%; transform: translateY(-50%); background: #fff; border: 2px solid var(--line-strong); box-shadow: 0 0 0 3px #fff; }
 .emp-row.timeline.current .dot { border-color: var(--green-bright); background: var(--green-bright); box-shadow: 0 0 0 3px #fff, 0 0 0 6px rgba(47, 122, 99, 0.18); }
-.row-text { flex: 1; min-width: 0; }
+.row-text { flex: 1 1 240px; min-width: 0; }
 .row-text strong { display: block; font-size: 12px; font-weight: 550; }
 .row-text small { display: block; font-size: 11px; color: var(--muted); margin-top: 4px; }
 .row-text .departing { color: var(--amber); font-weight: 550; }

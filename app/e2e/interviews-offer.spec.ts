@@ -1,5 +1,6 @@
 import { createClient } from '@supabase/supabase-js'
 import { expect, test } from '@playwright/test'
+import { answerReason } from './support/dialogs'
 
 /**
  * Candidate review, part two (plan 018b): schedule an interview with a
@@ -177,8 +178,8 @@ test('interview → blind scorecards → offer approved by someone else → acce
 
   // Authorship is immutable (server-set), so hand-off means: withdraw mine,
   // then the colleague drafts theirs (seeded as them, already in approval).
-  page.once('dialog', (d) => d.accept('Colleague will own this offer'))
   await offer.getByRole('button', { name: 'Withdraw offer' }).click()
+  await answerReason(page, 'Colleague will own this offer')
   await expect(offer.getByText('Previous offers (1)')).toBeVisible()
   const { data: appRow } = await db.from('applications').select('company_id').eq('id', applicationId).single()
   await db.from('offers').insert({
@@ -198,10 +199,11 @@ test('interview → blind scorecards → offer approved by someone else → acce
 
   // Confirm hire is prefilled with the agreed start date.
   await page.locator('.decision-panel').getByRole('button', { name: 'Confirm hire' }).click()
-  await expect(page.locator('#ch-start')).toHaveValue(START_DATE)
-  await page.getByRole('button', { name: 'Complete hire' }).click()
-  await expect(page.getByText('Hired. Employment and the onboarding plan were created.')).toBeVisible()
-  await page.getByRole('button', { name: 'Done' }).click()
+  const hire = page.getByTestId('add-employee-dialog')
+  await expect(hire.locator('#ae-start')).toHaveValue(START_DATE)
+  await hire.getByRole('button', { name: 'Complete hire' }).click()
+  await expect(hire.getByRole('heading', { name: /Hired\. Employment recorded, the onboarding checklist started/ })).toBeVisible()
+  await hire.getByRole('button', { name: 'Done' }).click()
   await expect(page.locator('.stage-badge')).toHaveText('hired')
 
   const { data: period } = await db

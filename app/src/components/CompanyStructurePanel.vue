@@ -1,13 +1,16 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/stores/auth'
+import { useDialogStore } from '@/stores/dialogs'
+import { addDepartment as addDepartmentRow, friendlyStructureError as friendly } from '@/lib/companyStructure'
 
 /**
- * Departments and locations for one company (plan 022). Rows with no
- * company are shared holding defaults and show as such. Both tables are
- * reference data: everyone signed in reads them, platform admins write.
- * Archiving is the only removal — employment history keeps its references.
+ * Departments and locations for one company (plans 022, 046). Rows with no
+ * company are shared holding defaults and show as such. Everyone signed in
+ * reads them; platform admins and employment.edit holders in this company
+ * write (migration 0038). Archiving is the only removal — employment
+ * history keeps its references.
  */
 
 type Row = { id: string; name: string; company_id: string | null; archived_at: string | null; country_code?: string | null }
@@ -15,6 +18,8 @@ type Row = { id: string; name: string; company_id: string | null; archived_at: s
 const props = defineProps<{ companyId: string }>()
 
 const auth = useAuthStore()
+const dialogs = useDialogStore()
+const canManage = computed(() => auth.can(props.companyId, 'employment.edit'))
 const departments = ref<Row[]>([])
 const locations = ref<Row[]>([])
 const loading = ref(true)
@@ -50,28 +55,18 @@ async function load(): Promise<void> {
   loading.value = false
 }
 
-function friendly(message: string): string {
-  if (/row-level security/.test(message)) return 'Only platform admins can change the structure.'
-  if (/unique|duplicate/i.test(message)) return 'That name already exists here.'
-  return message
-}
-
 async function addDepartment(): Promise<void> {
-  const name = newDepartment.value.trim()
-  if (name.length < 2) {
-    error.value = 'Enter the department name.'
-    return
-  }
   busy.value = true
   error.value = null
-  const { error: err } = await supabase.from('departments').insert({ company_id: props.companyId, name })
-  busy.value = false
-  if (err) {
-    error.value = friendly(err.message)
-    return
+  try {
+    await addDepartmentRow(props.companyId, newDepartment.value)
+    newDepartment.value = ''
+    await load()
+  } catch (e) {
+    error.value = e instanceof Error ? e.message : 'Could not add the department.'
+  } finally {
+    busy.value = false
   }
-  newDepartment.value = ''
-  await load()
 }
 
 async function addLocation(): Promise<void> {
@@ -105,7 +100,13 @@ async function archive(table: 'departments' | 'locations', row: Row): Promise<vo
     error.value = 'Shared holding defaults are managed by an admin at the holding level.'
     return
   }
-  if (!window.confirm(`Archive ${row.name}? Existing records keep it; it disappears from pickers.`)) return
+  const ok = await dialogs.confirmAction({
+    title: `Archive ${row.name}?`,
+    hint: 'Existing records keep it; it disappears from pickers.',
+    confirmLabel: 'Archive',
+    danger: true,
+  })
+  if (!ok) return
   busy.value = true
   error.value = null
   const { data, error: err } = await supabase
@@ -145,7 +146,7 @@ onMounted(load)
               <small>{{ d.company_id ? 'This company' : 'Shared across the holding' }}</small>
             </div>
             <button
-              v-if="auth.isAdmin && d.company_id"
+              v-if="canManage && d.company_id"
               class="button secondary small-btn"
               type="button"
               :disabled="busy"
@@ -155,7 +156,7 @@ onMounted(load)
             </button>
           </div>
         </div>
-        <form v-if="auth.isAdmin" class="add-form" @submit.prevent="addDepartment">
+        <form v-if="canManage" class="add-form" @submit.prevent="addDepartment">
           <input id="new-department" v-model="newDepartment" maxlength="80" placeholder="New department" aria-label="New department" />
           <button class="button small-btn" type="submit" :disabled="busy">Add department</button>
         </form>
@@ -176,7 +177,7 @@ onMounted(load)
               <small>{{ l.company_id ? 'This company' : 'Shared across the holding' }}</small>
             </div>
             <button
-              v-if="auth.isAdmin && l.company_id"
+              v-if="canManage && l.company_id"
               class="button secondary small-btn"
               type="button"
               :disabled="busy"
@@ -186,7 +187,7 @@ onMounted(load)
             </button>
           </div>
         </div>
-        <form v-if="auth.isAdmin" class="add-form" @submit.prevent="addLocation">
+        <form v-if="canManage" class="add-form" @submit.prevent="addLocation">
           <input id="new-location" v-model="newLocation" maxlength="80" placeholder="New location" aria-label="New location" />
           <input id="new-location-country" v-model="newCountry" maxlength="2" class="country" placeholder="MK" aria-label="Country code" />
           <button class="button small-btn" type="submit" :disabled="busy">Add location</button>

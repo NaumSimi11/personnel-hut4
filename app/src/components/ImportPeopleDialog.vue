@@ -120,8 +120,11 @@ function close(): void {
       <h2 id="import-title">Bring a list of people in at once.</h2>
       <p class="hint">
         Columns: full_name, work_email, job_title, start_date (YYYY-MM-DD), and optionally employment_type_key,
-        department, location, manager_email (someone in the file or already employed here), preferred_name, phone.
-        Existing emails are refused, never merged.
+        department, location, manager_email (someone in the file or already employed here), preferred_name, phone,
+        personal_email, birth_date, address, national_id, bank_name, bank_account_number, emergency_contact_name /
+        _relationship / _phone (these need personal.view here), salary_amount, salary_currency, salary_basis (saved as
+        proposals; need salary.propose). Existing emails are refused, never merged. People starting today or later get
+        the onboarding checklist; a backfill does not.
         <button class="link" type="button" @click="downloadTemplate">Download a template</button>
       </p>
 

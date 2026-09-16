@@ -1,5 +1,6 @@
 import { createClient } from '@supabase/supabase-js'
 import { expect, test } from '@playwright/test'
+import { answerReason } from './support/dialogs'
 
 /**
  * Onboarding workspace: every confirmed hire already gets an onboarding plan
@@ -162,8 +163,8 @@ test('onboarding queue → plan → block/complete/finish', async ({ page }) => 
 
   // Step 3: block the laptop task; readiness is unaffected (still open, just blocked).
   const laptopRow = page.locator('.task-row', { hasText: 'E2E Laptop handed over' })
-  page.once('dialog', (dialog) => dialog.accept('Supplier delay'))
   await laptopRow.getByRole('button', { name: 'Block' }).click()
+  await answerReason(page, 'Supplier delay')
   await expect(laptopRow.locator('.badge', { hasText: 'blocked' })).toBeVisible()
   await expect(laptopRow).toContainText('Supplier delay')
   await expect(page.locator('.page-head .badge')).toHaveText('2 readiness gaps')

@@ -1,5 +1,6 @@
 import { createClient } from '@supabase/supabase-js'
 import { expect, test } from '@playwright/test'
+import { confirmDialog } from './support/dialogs'
 
 /**
  * Offboarding (plan 016): a departure is scheduled from the person's
@@ -157,8 +158,8 @@ test('schedule departure → offboarding queue → tasks → mark as former', as
   await expect(handover.locator('.badge', { hasText: 'done' })).toBeVisible()
   await expect(page.locator('.readiness-badge')).toHaveText('2 blockers')
 
-  page.once('dialog', (confirm) => confirm.accept())
   await page.getByRole('button', { name: 'Finish offboarding' }).click()
+  await confirmDialog(page)
   await expect(page.getByText(/now former/i)).toBeVisible()
   // 5 template tasks, 1 done: the RPC reports every open task, not just blockers.
   await expect(page.getByText(/4 tasks still open/i)).toBeVisible()

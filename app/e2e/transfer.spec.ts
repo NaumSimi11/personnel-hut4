@@ -1,5 +1,6 @@
 import { createClient } from '@supabase/supabase-js'
 import { expect, test } from '@playwright/test'
+import { confirmDialog } from './support/dialogs'
 
 /**
  * Company structure (plan 035a): the holding employs people, a transfer
@@ -93,8 +94,8 @@ test('holding employs → archive refused while employed → transfer to the hol
 
   // Archiving a company with someone employed is refused and shows who.
   await page.goto(`/companies/${closingId}`)
-  page.once('dialog', (d) => d.accept())
   await page.getByRole('button', { name: 'Archive this company' }).click()
+  await confirmDialog(page)
   await expect(page.locator('.archive-error')).toContainText('1 person is still employed here')
   const blocked = page.locator('.still-employed .row', { hasText: PERSON })
   await expect(blocked).toBeVisible()
@@ -127,8 +128,8 @@ test('holding employs → archive refused while employed → transfer to the hol
 
   // Now the company can close; nothing was deleted.
   await page.goto(`/companies/${closingId}`)
-  page.once('dialog', (d) => d.accept())
   await page.getByRole('button', { name: 'Archive this company' }).click()
+  await confirmDialog(page)
   await expect(page).toHaveURL(/\/companies$/)
   const { data: company } = await db.from('companies').select('archived_at').eq('id', closingId).single()
   expect(company?.archived_at).not.toBeNull()

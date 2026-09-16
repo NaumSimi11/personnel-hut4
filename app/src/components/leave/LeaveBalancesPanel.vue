@@ -2,6 +2,7 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/stores/auth'
+import { useDialogStore } from '@/stores/dialogs'
 import { todayDb } from '@/lib/compensation'
 import { friendlyLeaveError } from '@/lib/leave'
 import type { Balance } from '@/components/LeaveCard.vue'
@@ -20,6 +21,7 @@ type PersonRow = { person_id: string; full_name: string; company: Company; balan
 const props = defineProps<{ companies: Company[] }>()
 
 const auth = useAuthStore()
+const dialogs = useDialogStore()
 const thisYear = Number(todayDb().slice(0, 4))
 const year = ref(thisYear)
 const rows = ref<PersonRow[]>([])
@@ -66,38 +68,51 @@ async function load(): Promise<void> {
 
 async function setEntitlement(row: PersonRow): Promise<void> {
   const current = row.balance?.exists ? row.balance.entitlement : row.company.leave_entitlement_days
-  const raw = window.prompt(`Yearly entitlement for ${row.full_name} in ${year.value} (days)`, String(current))
-  if (raw === null) return
-  const reason = window.prompt('Why?')
-  if (reason === null) return
+  const answer = await dialogs.askReason({
+    title: `Yearly entitlement for ${row.full_name} in ${year.value}`,
+    hint: `${row.company.name} gives ${row.company.leave_entitlement_days} days by default. The change and its reason are recorded.`,
+    value: { label: 'Days', initial: current, min: 0 },
+    confirmLabel: 'Set entitlement',
+  })
+  if (!answer || answer.value === null) return
   await call(supabase.rpc('set_leave_entitlement', {
     p_person_id: row.person_id,
     p_company_id: row.company.id,
     p_year: year.value,
-    p_entitlement: Number(raw),
-    p_reason: reason,
+    p_entitlement: answer.value,
+    p_reason: answer.reason,
   }), `Entitlement set for ${row.full_name}.`)
 }
 
 async function adjust(row: PersonRow): Promise<void> {
-  const raw = window.prompt(`Adjust ${row.full_name}'s ${year.value} balance by how many days? (negative to remove)`, '1')
-  if (raw === null) return
-  const reason = window.prompt('Why?')
-  if (reason === null) return
+  const answer = await dialogs.askReason({
+    title: `Adjust ${row.full_name}'s ${year.value} balance`,
+    hint: 'Days are added to (or taken from) what is left this year; the change and its reason are recorded.',
+    value: { label: 'Days to add (negative to remove)', initial: 1 },
+    confirmLabel: 'Adjust balance',
+  })
+  if (!answer || answer.value === null) return
   await call(supabase.rpc('adjust_leave_balance', {
     p_person_id: row.person_id,
     p_company_id: row.company.id,
     p_year: year.value,
-    p_days: Number(raw),
-    p_reason: reason,
+    p_days: answer.value,
+    p_reason: answer.reason,
   }), `Balance adjusted for ${row.full_name}.`)
 }
 
 async function setAllMissing(): Promise<void> {
-  const reason = window.prompt(`Give everyone without a ${year.value} balance their company's default entitlement. Why?`, 'Yearly entitlement')
-  if (reason === null) return
+  const targets = missing.value.filter((r) => canAdjustIn(r.company))
+  const answer = await dialogs.askReason({
+    title: `Give everyone without a ${year.value} balance their company's default entitlement?`,
+    hint: `${targets.length} ${targets.length === 1 ? 'person gets' : 'people get'} their company's default days; the reason is recorded on each balance.`,
+    initial: 'Yearly entitlement',
+    confirmLabel: 'Create balances',
+  })
+  if (!answer) return
+  const reason = answer.reason
   let failed = false
-  for (const row of missing.value.filter((r) => canAdjustIn(r.company))) {
+  for (const row of targets) {
     const res = await supabase.rpc('set_leave_entitlement', {
       p_person_id: row.person_id,
       p_company_id: row.company.id,

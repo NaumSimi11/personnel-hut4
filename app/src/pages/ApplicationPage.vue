@@ -7,7 +7,7 @@ import { useAuthStore } from '@/stores/auth'
 import ApplicationFilesCard from '@/components/ApplicationFilesCard.vue'
 import ApplicationInterviewsCard from '@/components/ApplicationInterviewsCard.vue'
 import ApplicationOfferCard from '@/components/ApplicationOfferCard.vue'
-import ConfirmHireDialog from '@/components/ConfirmHireDialog.vue'
+import AddEmployeeDialog from '@/components/AddEmployeeDialog.vue'
 import RejectApplicationDialog from '@/components/RejectApplicationDialog.vue'
 import { friendlyRecruitmentError, salvageQuestions } from '@/lib/jobWorkspace'
 import { answersFromRows, mergeAnswers, type AnswerRow } from '@/lib/screeningAnswers'
@@ -156,7 +156,7 @@ const stageBusy = ref(false)
 const stageError = ref<string | null>(null)
 
 const rejectDialog = ref<InstanceType<typeof RejectApplicationDialog> | null>(null)
-const confirmHireDialog = ref<InstanceType<typeof ConfirmHireDialog> | null>(null)
+const confirmHireDialog = ref<InstanceType<typeof AddEmployeeDialog> | null>(null)
 const offerCard = ref<InstanceType<typeof ApplicationOfferCard> | null>(null)
 
 const guidance = computed(() => candidateNextStep(application.value?.stage_key ?? ''))
@@ -386,10 +386,13 @@ function openConfirmHire(): void {
   if (!application.value) return
   // An accepted offer carries the agreed start date into the hire.
   const accepted: OfferTerms | null = offerCard.value?.liveStatus() === 'accepted' ? offerCard.value.liveTerms() : null
-  confirmHireDialog.value?.open({
+  void confirmHireDialog.value?.open({
     applicationId: application.value.id,
     candidateName: application.value.candidate?.full_name ?? '',
+    candidateEmail: application.value.candidate?.email ?? null,
+    candidatePhone: application.value.candidate?.phone ?? null,
     jobTitle: application.value.job?.title ?? '',
+    companyId: application.value.company_id,
     startDate: accepted?.start_date,
   })
 }
@@ -665,7 +668,7 @@ onMounted(load)
 
     <CandidateHandoffDialog ref="handoffDialog" :people="people" :save="saveHandoff" />
     <RejectApplicationDialog ref="rejectDialog" @confirmed="onDecided" />
-    <ConfirmHireDialog ref="confirmHireDialog" @hired="load" />
+    <AddEmployeeDialog ref="confirmHireDialog" @created="load" />
   </div>
 </template>
 

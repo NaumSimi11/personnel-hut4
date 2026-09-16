@@ -1,5 +1,6 @@
 import { createClient } from '@supabase/supabase-js'
 import { expect, test } from '@playwright/test'
+import { confirmDialog } from './support/dialogs'
 
 /**
  * Equipment on the offboarding checklist and rehire (plan 033): a leaver
@@ -133,8 +134,8 @@ test('departure adds a return task → return completes it → former → rehire
 
   // Mark former, then rehire from the profile.
   await page.goto(`/people/${personId}`)
-  page.once('dialog', (d) => d.accept())
   await empRow.getByRole('button', { name: 'Mark as former' }).click()
+  await confirmDialog(page)
   await expect(page.getByText(/now former/i)).toBeVisible()
   await page.getByRole('button', { name: 'Rehire' }).click()
   await expect(page.locator('#emp-title')).toHaveValue('Field Engineer')

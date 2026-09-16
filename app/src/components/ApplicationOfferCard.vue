@@ -2,6 +2,7 @@
 import { computed, onMounted, ref } from 'vue'
 import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/stores/auth'
+import { useDialogStore } from '@/stores/dialogs'
 import { friendlyRecruitmentError } from '@/lib/jobWorkspace'
 import {
   offerActions,
@@ -38,6 +39,7 @@ const props = defineProps<{ applicationId: string; companyId: string; canReview:
 const emit = defineEmits<{ accepted: [terms: OfferTerms] }>()
 
 const auth = useAuthStore()
+const dialogs = useDialogStore()
 const offers = ref<Offer[]>([])
 const payBases = ref<{ key: string; label: string }[]>([])
 const employmentTypes = ref<{ key: string; label: string }[]>([])
@@ -150,13 +152,24 @@ async function saveTerms(): Promise<void> {
 async function advance(o: Offer, to: string): Promise<void> {
   error.value = null
   let reason: string | null = null
-  if (to === 'declined' || to === 'withdrawn') {
-    reason = window.prompt(to === 'declined' ? 'Why did the candidate decline?' : 'Why is the offer being withdrawn?')
-    if (reason === null) return
-    if (to === 'declined' && !reason.trim()) {
-      error.value = 'Record why the candidate declined.'
-      return
-    }
+  if (to === 'declined') {
+    const answer = await dialogs.askReason({
+      title: 'Why did the candidate decline?',
+      hint: 'The reason stays with the offer in its history.',
+      confirmLabel: 'Record decline',
+    })
+    if (!answer) return
+    reason = answer.reason
+  } else if (to === 'withdrawn') {
+    const answer = await dialogs.askReason({
+      title: 'Why is the offer being withdrawn?',
+      hint: 'The offer moves to history; a new one can be drafted afterwards.',
+      required: false,
+      confirmLabel: 'Withdraw offer',
+      danger: true,
+    })
+    if (!answer) return
+    reason = answer.reason
   }
   busy.value = true
   const { error: err } = await supabase.rpc('advance_offer', {

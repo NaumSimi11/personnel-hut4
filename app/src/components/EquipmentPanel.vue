@@ -2,6 +2,7 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/stores/auth'
+import { useDialogStore } from '@/stores/dialogs'
 import {
   RETURN_STATUSES,
   assetInput,
@@ -59,6 +60,7 @@ type ItRequest = {
 type Person = { id: string; full_name: string }
 
 const auth = useAuthStore()
+const dialogs = useDialogStore()
 const can = (cap: string) => auth.can(props.companyId, cap)
 const canAssign = computed(() => can('it.assign'))
 
@@ -267,10 +269,25 @@ async function createRequest(): Promise<void> {
 async function advance(request: ItRequest, action: ItRequestAction): Promise<void> {
   let reason: string | null = null
   if (action.to === 'blocked') {
-    reason = window.prompt('What blocks it?')
-    if (!reason) return
+    const answer = await dialogs.askReason({
+      title: `What blocks "${request.title}"?`,
+      hint: `For ${request.person?.full_name ?? 'the person'} — the reason shows on the request until it moves on.`,
+      label: 'What blocks it',
+      confirmLabel: 'Mark blocked',
+    })
+    if (!answer) return
+    reason = answer.reason
   }
-  if (action.to === 'cancelled' && !window.confirm('Cancel this request?')) return
+  if (action.to === 'cancelled') {
+    const ok = await dialogs.confirmAction({
+      title: `Cancel the request "${request.title}"?`,
+      hint: 'It moves to the closed list; nothing is deleted.',
+      confirmLabel: 'Cancel request',
+      cancelLabel: 'Keep it',
+      danger: true,
+    })
+    if (!ok) return
+  }
   await run('IT request transition', () =>
     supabase.rpc('advance_it_request', { p_request_id: request.id, p_status: action.to, p_blocked_reason: reason ?? undefined }),
   )

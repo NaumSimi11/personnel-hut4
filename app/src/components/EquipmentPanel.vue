@@ -4,6 +4,7 @@ import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/stores/auth'
 import { useDialogStore } from '@/stores/dialogs'
 import { deliverNotifications } from '@/lib/notificationsApi'
+import AssetRow, { type RowEdit } from '@/components/equipment/AssetRow.vue'
 import {
   RETURN_STATUSES,
   assetInput,
@@ -36,8 +37,13 @@ type Assignment = {
 }
 type Asset = {
   id: string
+  ordinal: number | null
   asset_tag: string
+  inventory_number: string | null
   type_key: string
+  type_note: string | null
+  company_id: string | null
+  holder_note: string | null
   model: string | null
   serial_number: string | null
   condition: string | null
@@ -85,6 +91,46 @@ const addingRequest = ref(false)
 const requestForm = ref({ personId: '', title: '', systems: '', dueDate: '' })
 
 const typeLabel = (key: string) => types.value.find((t) => t.key === key)?.label ?? key
+const savedId = ref<string | null>(null)
+// This panel shows one company, so the register line needs only its own name
+// and the people who might hold its assets.
+const companyNames = computed(() => ({ [props.companyId]: '' }))
+const holderNames = computed(() => Object.fromEntries(people.value.map((p) => [p.id, p.full_name])))
+
+async function saveRow(a: Asset, fields: RowEdit): Promise<void> {
+  error.value = null
+  const parsed = assetInput.safeParse({ ...fields, locationId: '' })
+  if (!parsed.success) {
+    error.value = parsed.error.issues[0]?.message ?? 'Check the fields.'
+    return
+  }
+  const ok = await run('Save asset', () =>
+    supabase.from('assets').update({
+      ordinal: parsed.data.ordinal,
+      asset_tag: parsed.data.assetTag,
+      inventory_number: parsed.data.inventoryNumber,
+      type_key: parsed.data.typeKey,
+      type_note: parsed.data.typeKey === 'other' ? fields.typeNote.trim() || null : null,
+      model: parsed.data.model || null,
+      serial_number: parsed.data.serialNumber || null,
+      note: parsed.data.note || null,
+    }).eq('id', a.id),
+  )
+  if (!ok) return
+  savedId.value = a.id
+  setTimeout(() => { if (savedId.value === a.id) savedId.value = null }, 1400)
+}
+
+async function removeAsset(a: Asset): Promise<void> {
+  const sure = await dialogs.confirmAction({
+    title: `Delete ${a.asset_tag}?`,
+    hint: `${a.model ?? 'This asset'} and its whole history go with it. This cannot be undone.`,
+    confirmLabel: 'Delete asset',
+    cancelLabel: 'Keep it',
+  })
+  if (!sure) return
+  await run('Delete asset', () => supabase.from('assets').delete().eq('id', a.id))
+}
 const locationName = (id: string | null) => locations.value.find((l) => l.id === id)?.name ?? ''
 const openAssignment = (a: Asset) => a.asset_assignments.find((x) => x.returned_at === null) ?? null
 const actionsFor = (a: Asset): AssignmentAction[] => assignmentActions(a, openAssignment(a), can)
@@ -366,31 +412,23 @@ watch(() => props.companyId, load)
         </form>
 
         <div v-if="!sortedAssets.length" class="empty">No assets registered.</div>
-        <div v-for="a in sortedAssets" :key="a.id" class="asset-row" :class="a.status">
-          <div class="row-text">
-            <strong>{{ a.asset_tag }} <span class="muted">· {{ typeLabel(a.type_key) }}<template v-if="a.model"> · {{ a.model }}</template></span></strong>
-            <small>
-              {{ assetStatusLabel(a.status) }}
-              <template v-if="openAssignment(a)"> · {{ openAssignment(a)!.person?.full_name ?? 'someone' }}<template v-if="openAssignment(a)!.issued_at"> (issued {{ openAssignment(a)!.issued_at!.slice(0, 10) }})</template></template>
-              <template v-if="a.serial_number"> · S/N {{ a.serial_number }}</template>
-              <template v-if="a.location_id"> · {{ locationName(a.location_id) }}</template>
-              <template v-if="a.condition"> · {{ a.condition }}</template>
-            </small>
-          </div>
-          <div class="actions">
-            <button
-              v-for="action in actionsFor(a)"
-              :key="action.key"
-              class="button small-btn"
-              :class="{ secondary: action.key === 'cancel' }"
-              type="button"
-              :disabled="busy"
-              @click="act(a, action)"
-            >
-              {{ action.label }}
-            </button>
-          </div>
-        </div>
+        <AssetRow
+          v-for="a in sortedAssets"
+          :key="a.id"
+          :asset="a"
+          :types="types"
+          :company-names="companyNames"
+          :holder-names="holderNames"
+          :holder-id="openAssignment(a)?.person_id ?? null"
+          :issued-at="openAssignment(a)?.issued_at ?? null"
+          :actions="actionsFor(a)"
+          :can-edit="can('it.assign')"
+          :busy="busy"
+          :just-saved="savedId === a.id"
+          @save="(fields) => saveRow(a, fields)"
+          @remove="removeAsset(a)"
+          @act="(action) => act(a, action)"
+        />
       </template>
     </div>
 

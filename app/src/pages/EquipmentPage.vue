@@ -13,7 +13,8 @@ import {
   ownerLabel,
   type AssignmentAction,
 } from '@/lib/equipment'
-import { assetLine, assetNumbers, holderChoice, NOBODY, OTHER_HOLDER } from '@/lib/assetRegister'
+import { holderChoice, NOBODY, OTHER_HOLDER } from '@/lib/assetRegister'
+import AssetRow, { type RowEdit } from '@/components/equipment/AssetRow.vue'
 import { nextAssetTag, nextInventoryNumber } from '@/lib/assetNumbering'
 
 /**
@@ -59,7 +60,7 @@ const types = ref<{ key: string; label: string }[]>([])
 const filter = ref('')
 const addingAsset = ref(false)
 const assetForm = ref({ ownerId: POOL, ordinal: '', assetTag: '', inventoryNumber: '', typeKey: '', typeNote: '', holderId: NOBODY, holderOther: '', model: '', serialNumber: '', note: '' })
-const editingAsset = ref<Asset | null>(null)
+const savedId = ref<string | null>(null)
 const reserving = ref<Asset | null>(null)
 const reservePersonId = ref('')
 const returning = ref<Asset | null>(null)
@@ -97,12 +98,6 @@ const holderNames = computed(() =>
     }),
   ),
 )
-/** The holding-wide register line: category · company · model · holder, "magacin" when unheld. */
-const registerLine = (a: Asset) =>
-  assetLine(
-    { type_key: a.type_key, company_id: a.company_id, holder_id: openAssignment(a)?.person_id ?? null, model: a.model, holder_note: a.holder_note, type_note: a.type_note },
-    { types: typeNames.value, companies: companyNames.value, holders: holderNames.value },
-  )
 function canFor(a: Asset): (cap: string) => boolean {
   return (cap) => (a.company_id === null ? auth.canAnywhere(cap) : auth.can(a.company_id, cap))
 }
@@ -120,25 +115,29 @@ const suggestedOrdinal = (ownerId: string) => {
   return used.length ? Math.max(...used) + 1 : null
 }
 
-/** Opens the same form on an existing asset, so adding and editing stay one thing. */
-function editAsset(a: Asset): void {
+async function saveRow(a: Asset, fields: RowEdit): Promise<void> {
   error.value = null
-  notice.value = null
-  editingAsset.value = a
-  addingAsset.value = true
-  assetForm.value = {
-    ownerId: a.company_id ?? POOL,
-    ordinal: a.ordinal === null ? '' : String(a.ordinal),
-    assetTag: a.asset_tag,
-    inventoryNumber: a.inventory_number ?? '',
-    typeKey: a.type_key,
-    typeNote: a.type_note ?? '',
-    holderId: NOBODY,
-    holderOther: '',
-    model: a.model ?? '',
-    serialNumber: a.serial_number ?? '',
-    note: a.note ?? '',
+  const parsed = assetInput.safeParse({ ...fields, locationId: '' })
+  if (!parsed.success) {
+    error.value = parsed.error.issues[0]?.message ?? 'Check the fields.'
+    return
   }
+  const ok = await run('Save asset', () =>
+    supabase.from('assets').update({
+      ordinal: parsed.data.ordinal,
+      asset_tag: parsed.data.assetTag,
+      inventory_number: parsed.data.inventoryNumber,
+      type_key: parsed.data.typeKey,
+      type_note: parsed.data.typeKey === 'other' ? fields.typeNote.trim() || null : null,
+      model: parsed.data.model || null,
+      serial_number: parsed.data.serialNumber || null,
+      note: parsed.data.note || null,
+    }).eq('id', a.id),
+  )
+  if (!ok) return
+  // The row flashes rather than a banner appearing somewhere else on the page.
+  savedId.value = a.id
+  setTimeout(() => { if (savedId.value === a.id) savedId.value = null }, 1400)
 }
 
 async function removeAsset(a: Asset): Promise<void> {
@@ -242,31 +241,25 @@ async function saveAsset(): Promise<void> {
     inventory_number: parsed.data.inventoryNumber,
     type_key: parsed.data.typeKey,
     type_note: assetForm.value.typeKey === 'other' ? assetForm.value.typeNote.trim() || null : null,
-    ...(editingAsset.value ? {} : { holder_note: assetForm.value.holderId === OTHER_HOLDER ? assetForm.value.holderOther.trim() || null : null }),
+    ...({ holder_note: assetForm.value.holderId === OTHER_HOLDER ? assetForm.value.holderOther.trim() || null : null }),
     model: parsed.data.model || null,
     serial_number: parsed.data.serialNumber || null,
     note: parsed.data.note || null,
   }
-  const target = editingAsset.value
 
-  const ok = await run(target ? 'Save asset' : 'Asset insert', async () => {
-    if (target) {
-      const { error: err } = await supabase.from('assets').update(fields).eq('id', target.id)
-      return { error: err }
-    }
+  const ok = await run('Asset insert', async () => {
     const { data, error: err } = await supabase.from('assets').insert(fields).select('id').maybeSingle()
     return { error: err ?? (data ? null : { message: 'row-level security' }) }
   })
   if (!ok) return
-  notice.value = target ? `${fields.asset_tag} saved.` : `${fields.asset_tag} added.`
+  notice.value = `${fields.asset_tag} added.`
   addingAsset.value = false
-  editingAsset.value = null
 
   // Registering something someone already has should not take three screens.
   // Only on create: an existing asset's holder changes through the row, where
   // the reserve / issue / return rules and the handover form live.
   const choice = holderChoice(assetForm.value.holderId, assetForm.value.holderOther)
-  if (target || choice.kind !== 'person') return
+  if (choice.kind !== 'person') return
 
   const lookup = supabase.from('assets').select('id').eq('asset_tag', fields.asset_tag)
   const created = await (fields.company_id === null
@@ -401,7 +394,7 @@ onMounted(load)
             <span>What is it</span>
             <input id="asset-type-note" v-model="assetForm.typeNote" maxlength="60" placeholder="Docking station, projector, printer…" />
           </label>
-          <label v-if="!editingAsset">
+          <label v-if="true">
             <span>Assign to</span>
             <select id="asset-holder" v-model="assetForm.holderId">
               <option :value="NOBODY">Nobody yet — it goes to magacin</option>
@@ -409,7 +402,7 @@ onMounted(load)
               <option :value="OTHER_HOLDER">Other — not a person here…</option>
             </select>
           </label>
-          <label v-if="!editingAsset && assetForm.holderId === OTHER_HOLDER">
+          <label v-if="assetForm.holderId === OTHER_HOLDER">
             <span>Who or what has it</span>
             <input id="asset-holder-other" v-model="assetForm.holderOther" maxlength="120" placeholder="office Struga, sluzbeno vozilo…" />
           </label>
@@ -417,8 +410,8 @@ onMounted(load)
           <label><span>Serial number</span><input id="asset-serial" v-model="assetForm.serialNumber" maxlength="120" /></label>
           <label><span>Note</span><input id="asset-note" v-model="assetForm.note" /></label>
           <div class="form-actions">
-            <button type="button" class="button secondary small-btn" :disabled="busy" @click="addingAsset = false; editingAsset = null">Cancel</button>
-            <button type="submit" class="button small-btn" :disabled="busy">{{ editingAsset ? 'Save changes' : 'Save asset' }}</button>
+            <button type="button" class="button secondary small-btn" :disabled="busy" @click="addingAsset = false">Cancel</button>
+            <button type="submit" class="button small-btn" :disabled="busy">Save asset</button>
           </div>
         </form>
 
@@ -458,26 +451,23 @@ onMounted(load)
         </form>
 
         <div v-if="!shown.length" class="empty">No assets here.</div>
-        <div v-for="a in shown" :key="a.id" class="asset-row" :class="a.status" :data-testid="`asset-${a.asset_tag}`">
-          <div class="row-text">
-            <strong><span v-if="a.ordinal !== null" class="muted">{{ a.ordinal }}. </span>{{ assetNumbers(a) }}</strong>
-            <small class="register-line">{{ registerLine(a) }}</small>
-            <small>
-              <span class="badge" :class="a.company_id === null ? 'blue' : ''">{{ ownerLabel(a.company_id, companyNames) }}</span>
-              {{ assetStatusLabel(a.status) }}
-              <template v-if="openAssignment(a)?.issued_at"> · issued {{ openAssignment(a)!.issued_at!.slice(0, 10) }}</template>
-              <template v-if="a.serial_number"> · S/N {{ a.serial_number }}</template>
-              <template v-if="a.condition"> · {{ a.condition }}</template>
-            </small>
-          </div>
-          <div class="actions">
-            <button v-if="canFor(a)('it.assign')" class="button secondary small-btn" type="button" :disabled="busy" @click="editAsset(a)">Edit</button>
-            <button v-if="canFor(a)('it.assign')" class="button secondary small-btn danger" type="button" :disabled="busy" @click="removeAsset(a)">Delete</button>
-            <button v-for="action in actionsFor(a)" :key="action.key" class="button small-btn" :class="{ secondary: action.key === 'cancel' }" type="button" :disabled="busy" @click="act(a, action)">
-              {{ action.label }}
-            </button>
-          </div>
-        </div>
+        <AssetRow
+          v-for="a in shown"
+          :key="a.id"
+          :asset="a"
+          :types="types"
+          :company-names="companyNames"
+          :holder-names="holderNames"
+          :holder-id="openAssignment(a)?.person_id ?? null"
+          :issued-at="openAssignment(a)?.issued_at ?? null"
+          :actions="actionsFor(a)"
+          :can-edit="canFor(a)('it.assign')"
+          :busy="busy"
+          :just-saved="savedId === a.id"
+          @save="(fields) => saveRow(a, fields)"
+          @remove="removeAsset(a)"
+          @act="(action) => act(a, action)"
+        />
       </template>
     </div>
   </div>

@@ -19,6 +19,7 @@ import path from 'node:path'
 import zlib from 'node:zlib'
 import { createClient } from '@supabase/supabase-js'
 import { parseSheet, resolveHolder } from '../../shared/popisImport.js'
+import { parseRowCells, unescapeXml } from '../src/popisXlsxCells.js'
 
 // ----------------------------------------------------------------- xlsx
 
@@ -49,10 +50,6 @@ function readZip(buf) {
   return files
 }
 
-const unescapeXml = (s) =>
-  s.replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"')
-   .replace(/&apos;/g, "'").replace(/&amp;/g, '&')
-
 function sharedStrings(files) {
   const xml = files['xl/sharedStrings.xml']?.toString('utf8')
   if (!xml) return []
@@ -69,24 +66,9 @@ function sheetNames(files) {
 /** Rows of one sheet as arrays of cell text, column position preserved. */
 function sheetRows(files, index, strings) {
   const xml = files[`xl/worksheets/sheet${index + 1}.xml`].toString('utf8')
-  return [...xml.matchAll(/<row[^>]*>(.*?)<\/row>/gs)].map((rowMatch) => {
-    const cells = []
-    for (const c of rowMatch[1].matchAll(/<c([^>]*)>(.*?)<\/c>/gs)) {
-      const ref = c[1].match(/r="([A-Z]+)\d+"/)
-      const col = ref ? ref[1].split('').reduce((n, ch) => n * 26 + ch.charCodeAt(0) - 64, 0) - 1 : cells.length
-      const isShared = /t="s"/.test(c[1])
-      const isInline = /t="(inlineStr|str)"/.test(c[1])
-      const v = c[2].match(/<v>(.*?)<\/v>/s)
-      const t = c[2].match(/<t[^>]*>(.*?)<\/t>/s)
-      let text = null
-      if (isShared && v) text = strings[Number(v[1])] ?? null
-      else if (isInline && t) text = unescapeXml(t[1])
-      else if (v) text = unescapeXml(v[1])
-      while (cells.length < col) cells.push(null)
-      cells[col] = text
-    }
-    return { cells }
-  })
+  return [...xml.matchAll(/<row[^>]*>(.*?)<\/row>/gs)].map((rowMatch) => ({
+    cells: parseRowCells(rowMatch[1], strings),
+  }))
 }
 
 // ----------------------------------------------------------------- passes

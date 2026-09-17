@@ -4833,6 +4833,18 @@ export type Database = {
       }
       equipment_form_data: { Args: { p_queue_id: string }; Returns: Json }
       first_day_details: { Args: { p_company_id: string }; Returns: Json }
+      hand_asset_out: {
+        Args: {
+          p_asset_id: string
+          p_condition?: string
+          p_reason?: string
+          p_sign_image?: string
+          p_sign_method?: Database["public"]["Enums"]["signature_method"]
+          p_sign_name: string
+          p_to_person_id: string
+        }
+        Returns: Json
+      }
       handover_candidates: {
         Args: { p_asset_id: string }
         Returns: {
@@ -4878,6 +4890,7 @@ export type Database = {
       mark_notifications_read: { Args: { p_ids?: string[] }; Returns: number }
       mark_payroll_exported: { Args: { p_period_id: string }; Returns: Json }
       payroll_settings: { Args: { p_company_id: string }; Returns: Json }
+      person_can_sign: { Args: { p_person_id: string }; Returns: boolean }
       prepare_payroll_period: {
         Args: {
           p_company_id: string
@@ -5033,18 +5046,6 @@ export type Database = {
         Args: { p_company_id: string; p_items: string[] }
         Returns: Json
       }
-      start_asset_handover: {
-        Args: {
-          p_asset_id: string
-          p_condition?: string
-          p_reason?: string
-          p_sign_image?: string
-          p_sign_method?: Database["public"]["Enums"]["signature_method"]
-          p_sign_name: string
-          p_to_person_id: string
-        }
-        Returns: Json
-      }
       start_equipment_return: {
         Args: {
           p_asset_id: string
@@ -5060,6 +5061,17 @@ export type Database = {
       starter_kit: { Args: { p_company_id: string }; Returns: Json }
       submit_requested_document: {
         Args: { p_document_id: string; p_request_id: string }
+        Returns: Json
+      }
+      take_asset_back: {
+        Args: {
+          p_asset_id: string
+          p_condition?: string
+          p_reason?: string
+          p_sign_image?: string
+          p_sign_method?: Database["public"]["Enums"]["signature_method"]
+          p_sign_name: string
+        }
         Returns: Json
       }
       team_leave: {

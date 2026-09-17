@@ -10,7 +10,7 @@ import { assetStatusLabel } from '@/lib/equipment'
 import { missingRecordMessage } from '@/lib/missingRecord'
 import { handoverActions, handoverStatusLine, type Handover, type HandoverAction } from '@/lib/equipment'
 import SignaturePad from '@/components/SignaturePad.vue'
-import { handoverCapacity, handoverStatement, type SignatureInput } from '@shared/signature'
+import { handoverCapacity, handoverStatement, type HandoverSide, type SignatureInput } from '@shared/signature'
 
 /**
  * One asset, and everything the app knows about it.
@@ -24,11 +24,12 @@ import { handoverCapacity, handoverStatement, type SignatureInput } from '@share
  * Notes are written and never edited. A service history whose lines can be
  * rewritten records what somebody thinks now, not what happened then.
  *
- * Handing it to somebody else happens here, because here is where you can see
- * who has it now. It is the return flow pointed the other way — the same table,
- * the same two signatures, the same rule that the asset does not move until the
- * person taking it has signed — so it is not a second way of moving equipment,
- * just the other direction of the one that exists.
+ * Moving it happens here, because here is where you can see who has it now.
+ * Equipment never goes from one employee straight to another: you ask for it
+ * back, it lands in magacin, and then it goes out again. So this page offers
+ * exactly one of two buttons — take it back, or hand it out — depending on
+ * whether anybody holds it. The round trip is not a rule to remember; it is the
+ * only thing the page lets you do.
  */
 const route = useRoute()
 const auth = useAuthStore()
@@ -80,8 +81,10 @@ const error = ref<string | null>(null)
 const busy = ref(false)
 
 type HandoverRow = Handover & {
+  created_at: string
   counterparty: { full_name: string } | null
   starter: { full_name: string } | null
+  document: { id: string; version: number; archived_at: string | null } | null
 }
 type Candidate = { id: string; full_name: string; job_title: string | null }
 
@@ -90,9 +93,15 @@ const noteForm = ref({ kind: 'service', body: '', happenedOn: new Date().toISOSt
 
 const handovers = ref<HandoverRow[]>([])
 const candidates = ref<Candidate[]>([])
-const handing = ref(false)
+// 'out' picks a person and hands it to them; 'back' asks the current holder for
+// it. Which one is offered follows from whether anybody holds it.
+const handing = ref<'out' | 'back' | null>(null)
 const signingHandover = ref(false)
 const handForm = ref({ toPersonId: '', condition: '', reason: '' })
+// Whether the person we are asking can actually reach the form. Null while we
+// have not asked; false means somebody else will have to receive it for the
+// company, which is worth knowing before you sign rather than a month later.
+const holderCanSign = ref<boolean | null>(null)
 const pending = computed(() => handovers.value.find((h) => h.status === 'awaiting') ?? null)
 
 const open = computed(() => asset.value?.asset_assignments.find((a) => a.returned_at === null) ?? null)
@@ -156,7 +165,7 @@ async function load(): Promise<void> {
     supabase.from('companies').select('id, name'),
     supabase
       .from('asset_handovers')
-      .select('id, kind, status, started_by, counterparty_id, from_person_id, to_person_id, decline_reason, signed_by_starter_at, signed_by_counterparty_at, counterparty:people!asset_handovers_counterparty_id_fkey(full_name), starter:people!asset_handovers_started_by_fkey(full_name)')
+      .select('id, kind, status, created_at, started_by, counterparty_id, from_person_id, to_person_id, decline_reason, signed_by_starter_at, signed_by_counterparty_at, counterparty:people!asset_handovers_counterparty_id_fkey(full_name), starter:people!asset_handovers_started_by_fkey(full_name), document:documents(id, version, archived_at)')
       .eq('asset_id', assetId)
       .order('created_at', { ascending: false }),
   ])
@@ -177,14 +186,36 @@ async function load(): Promise<void> {
   handovers.value = (handRes.data ?? []) as unknown as HandoverRow[]
 }
 
+/**
+ * Handovers signed in the app whose paper copy has never come back.
+ *
+ * The app's signature settles who agreed to what; the printed form signed by
+ * hand is what anybody would actually produce in an argument. A handover
+ * finished in the app with an unsigned PDF sitting at version 1 is only half
+ * done, and nothing said so until now.
+ */
+const awaitingScan = computed(() =>
+  handovers.value.filter(
+    (h) => h.status === 'accepted' && h.document !== null && h.document.version < 2 && h.document.archived_at === null,
+  ),
+)
+
 const companyName = computed(() =>
   (asset.value?.company_id ? companies.value[asset.value.company_id] : null) ?? 'the company',
 )
 
-async function openHandover(): Promise<void> {
+async function openHandover(mode: 'out' | 'back'): Promise<void> {
   error.value = null
   handForm.value = { toPersonId: '', condition: '', reason: '' }
-  handing.value = true
+  handing.value = mode
+  holderCanSign.value = null
+  if (mode === 'back') {
+    if (!open.value) return
+    const { data, error: err } = await supabase.rpc('person_can_sign', { p_person_id: open.value.person_id })
+    if (err) console.error('Could not check whether they can sign:', err.message)
+    else holderCanSign.value = data
+    return
+  }
   const { data, error: err } = await supabase.rpc('handover_candidates', { p_asset_id: assetId })
   if (err) {
     error.value = 'Could not load who this can go to.'
@@ -195,7 +226,7 @@ async function openHandover(): Promise<void> {
 }
 
 function reviewHandover(): void {
-  if (!handForm.value.toPersonId) {
+  if (handing.value === 'out' && !handForm.value.toPersonId) {
     error.value = 'Choose who is taking it.'
     return
   }
@@ -203,21 +234,27 @@ function reviewHandover(): void {
   signingHandover.value = true
 }
 
+/** The words about to be signed — the same sentence the database will store. */
+const signingSide = computed<HandoverSide>(() => (handing.value === 'back' ? 'recalling' : 'handingOver'))
+
 async function signAndHand(sig: SignatureInput): Promise<void> {
   busy.value = true
   error.value = null
-  const { error: err } = await supabase.rpc('start_asset_handover', {
+  const common = {
     p_asset_id: assetId,
-    p_to_person_id: handForm.value.toPersonId,
     p_sign_name: sig.name,
     p_sign_method: sig.method,
     p_sign_image: sig.image ?? undefined,
     p_reason: handForm.value.reason || undefined,
     p_condition: handForm.value.condition || undefined,
-  })
+  }
+  const { error: err } =
+    handing.value === 'back'
+      ? await supabase.rpc('take_asset_back', common)
+      : await supabase.rpc('hand_asset_out', { ...common, p_to_person_id: handForm.value.toPersonId })
   busy.value = false
   if (err) { error.value = err.message; return }
-  handing.value = false
+  handing.value = null
   signingHandover.value = false
   await load()
 }
@@ -318,8 +355,8 @@ onMounted(load)
             class="button small-btn"
             type="button"
             :disabled="busy"
-            @click="openHandover"
-          >{{ open ? 'Hand it to someone else' : 'Hand it to someone' }}</button>
+            @click="openHandover(open ? 'back' : 'out')"
+          >{{ open ? 'Ask for it back' : 'Hand it to someone' }}</button>
         </div>
       </section>
 
@@ -328,10 +365,10 @@ onMounted(load)
           <div>
             <h2>Waiting on a signature</h2>
             <p>
-              {{ pending.starter?.full_name ?? 'Someone' }} signed this over to
-              {{ pending.counterparty?.full_name ?? 'someone' }} on
-              {{ pending.signed_by_starter_at?.slice(0, 10) }}.
-              It stays where it is until they sign for it.
+              {{ pending.starter?.full_name ?? 'Someone' }} signed this on
+              {{ pending.signed_by_starter_at?.slice(0, 10) }}, waiting on
+              {{ pending.counterparty?.full_name ?? 'someone' }}.
+              It stays where it is until they sign too.
             </p>
           </div>
           <button
@@ -348,16 +385,18 @@ onMounted(load)
       <section v-if="handing" class="card">
         <div class="card-head">
           <div>
-            <h2>Hand over {{ asset.asset_tag }}</h2>
-            <p>
-              <template v-if="open">{{ open.person?.full_name }} holds it now.</template>
-              <template v-else>It is in magacin now.</template>
-              You sign for the company; it moves once they sign for it.
+            <h2>
+              {{ handing === 'back' ? `Ask ${open?.person?.full_name ?? 'them'} for ${asset.asset_tag} back` : `Hand out ${asset.asset_tag}` }}
+            </h2>
+            <p v-if="handing === 'back'">
+              It stays with them until they confirm they handed it over. Then it is in
+              magacin, and you can hand it to somebody else from here.
             </p>
+            <p v-else>It is in magacin. It moves once they sign for it.</p>
           </div>
         </div>
         <form class="note-form" novalidate @submit.prevent="reviewHandover">
-          <label>
+          <label v-if="handing === 'out'">
             <span>Who is taking it</span>
             <select v-model="handForm.toPersonId">
               <option value="">Choose someone…</option>
@@ -367,13 +406,23 @@ onMounted(load)
             </select>
           </label>
           <label><span>Condition</span><input v-model="handForm.condition" maxlength="120" placeholder="As issued" /></label>
-          <label class="wide"><span>Why it is moving</span><input v-model="handForm.reason" maxlength="500" placeholder="Replacing a failed machine" /></label>
-          <p v-if="!candidates.length" class="fineprint">
+          <label class="wide">
+            <span>{{ handing === 'back' ? 'Why you are asking for it back' : 'Why it is moving' }}</span>
+            <input v-model="handForm.reason" maxlength="500" :placeholder="handing === 'back' ? 'Needed for a new starter' : 'Replacing a failed machine'" />
+          </label>
+          <p v-if="handing === 'out' && !candidates.length" class="fineprint">
             Nobody is currently employed by this company to hand it to.
           </p>
+          <p v-if="handing === 'back' && holderCanSign === false" class="warn-note">
+            {{ open?.person?.full_name ?? 'They' }} has no account here, so they cannot sign this
+            themselves. Another person in IT or HR signs it in on the company's behalf when the
+            equipment actually comes back — the form will say so rather than claim they signed.
+          </p>
           <div class="form-actions">
-            <button type="button" class="button secondary small-btn" :disabled="busy" @click="handing = false">Cancel</button>
-            <button type="submit" class="button small-btn" :disabled="busy || !candidates.length">Review and sign</button>
+            <button type="button" class="button secondary small-btn" :disabled="busy" @click="handing = null">Cancel</button>
+            <button type="submit" class="button small-btn" :disabled="busy || (handing === 'out' && !candidates.length)">
+              Review and sign
+            </button>
           </div>
         </form>
       </section>
@@ -381,12 +430,12 @@ onMounted(load)
       <dialog v-if="signingHandover" class="sign-dialog" open @click.self="signingHandover = false">
         <div class="sign-card">
           <div class="sign-head">
-            <strong>Sign over {{ asset.asset_tag }}</strong>
+            <strong>{{ handing === 'back' ? `Ask for ${asset.asset_tag} back` : `Sign over ${asset.asset_tag}` }}</strong>
             <button class="button secondary small-btn" type="button" :disabled="busy" @click="signingHandover = false">Close</button>
           </div>
           <SignaturePad
-            :statement="handoverStatement('handingOver', companyName)"
-            :capacity="handoverCapacity('handingOver', companyName)"
+            :statement="handoverStatement(signingSide, companyName)"
+            :capacity="handoverCapacity(signingSide, companyName)"
             :suggested-name="auth.personName ?? ''"
             :busy="busy"
             @sign="signAndHand"
@@ -428,6 +477,13 @@ onMounted(load)
           </div>
         </form>
 
+        <p v-for="h in awaitingScan" :key="`scan-${h.id}`" class="awaiting-scan">
+          Signed in the app on {{ h.signed_by_counterparty_at?.slice(0, 10) }}, but the signed paper copy
+          has not been uploaded. Print the form from
+          <router-link v-if="h.from_person_id ?? h.to_person_id" :to="{ name: 'person', params: { personId: h.from_person_id ?? h.to_person_id } }">their documents</router-link>
+          <template v-else>their documents</template>, sign it, and upload the scan as a new version.
+        </p>
+
         <p v-for="h in handovers.filter((x) => x.status === 'declined')" :key="h.id" class="declined">
           {{ handoverStatusLine(h, auth.personId, { starter: h.starter?.full_name ?? 'they', counterparty: h.counterparty?.full_name ?? 'they' }) }}
         </p>
@@ -457,6 +513,9 @@ onMounted(load)
 .card-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 14px; flex-wrap: wrap; }
 .pending-card { margin-bottom: 18px; background: #fbf9ef; }
 .declined { margin: 0; padding: 12px 24px; border-top: 1px solid #edf0eb; font-size: 11px; color: #a8332b; }
+/* Amber, not red: nothing is wrong, something is unfinished. */
+.awaiting-scan { margin: 0; padding: 12px 24px; border-top: 1px solid #edf0eb; background: #fbf9ef; font-size: 11px; color: #8a6d1f; }
+.awaiting-scan a { color: inherit; }
 .sign-dialog { position: fixed; inset: 0; width: 100%; height: 100%; max-width: none; max-height: none; border: 0; padding: 20px; background: rgba(20, 28, 20, 0.35); display: grid; place-items: center; z-index: 60; }
 .sign-card { background: #fff; border-radius: 14px; padding: 22px; width: min(560px, 100%); max-height: 90vh; overflow: auto; box-shadow: 0 18px 50px rgba(20, 28, 20, 0.18); display: grid; gap: 14px; }
 .sign-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
@@ -468,6 +527,7 @@ onMounted(load)
 .note-form label.wide { grid-column: 1 / -1; }
 .note-form input, .note-form select { font: inherit; font-size: 12px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; background: #fff; }
 .fineprint { grid-column: 1 / -1; margin: 0; font-size: 10px; color: var(--muted); }
+.warn-note { grid-column: 1 / -1; margin: 0; padding: 10px 12px; border-radius: 8px; background: #fbf9ef; font-size: 11px; color: #8a6d1f; line-height: 1.5; }
 .form-actions { grid-column: 1 / -1; display: flex; gap: 8px; justify-content: flex-end; }
 
 .history { list-style: none; margin: 0; padding: 0; }

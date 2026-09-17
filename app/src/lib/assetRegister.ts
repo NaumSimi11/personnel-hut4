@@ -133,3 +133,42 @@ export function matchesSearch(
     .toLowerCase()
   return words.every((word) => haystack.includes(word))
 }
+
+/**
+ * What the books meant by a holder we could not match to a person.
+ *
+ * The Корисник column was used for *where a thing is* as much as *who has it*.
+ * Of 64 unmatched holders, 58 name a place or the company itself — "office",
+ * "office Struga", "Synami DOOEL", "sluzbeno vozilo", "vo server B006", even a
+ * trademark. Only 6 name a person, and four of those work at a different
+ * company from the asset, which is why matching missed them.
+ *
+ * That difference decides what to do with the row. A laptop sitting in the
+ * Struga office is recorded correctly and wants nothing. A laptop the books say
+ * Miran Thaqi has is a real person holding real kit that the app does not know
+ * about, and somebody should hand it to him properly.
+ *
+ * So this recognises what is demonstrably not a person and calls everything
+ * else a person — the safe way round. A place wrongly called a person puts one
+ * extra row in front of somebody who will see it is a place; a person wrongly
+ * called a place hides a laptop nobody is accountable for.
+ */
+export type BookHolder = 'place' | 'company' | 'person'
+
+// Cyrillic and Latin both appear in the books, sometimes in the same cell.
+const PLACE_WORDS =
+  /(office|kancelarij|канцелариј|magacin|магацин|склад|server|сервер|vozil|возил|sluzben|службен|marka|марка|depo|депо|warehouse)/i
+const COMPANY_SUFFIX = /(\bdoo(el)?\b|\bдоо(ел)?\b|\bltd\b|\bd\.?o\.?o\b)/i
+
+export function bookHolder(note: string | null | undefined): BookHolder | null {
+  const text = (note ?? '').trim()
+  if (text === '') return null
+  if (COMPANY_SUFFIX.test(text)) return 'company'
+  if (PLACE_WORDS.test(text)) return 'place'
+  return 'person'
+}
+
+/** The holder filter's value for rows the books put somewhere rather than with someone. */
+export const KEPT_SOMEWHERE = '__kept'
+/** The holder filter's value for rows naming a person we never matched. */
+export const UNMATCHED_PERSON = '__unmatched'

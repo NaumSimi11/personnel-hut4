@@ -7,6 +7,7 @@ import {
   equipmentRequestInput,
   itRequestStatusLabel,
   handoverActions,
+  handoverSide,
   handoverStatusLine,
   returnRequestInput,
   type Handover,
@@ -79,7 +80,14 @@ const signingTitle = computed(() => {
   const a = accepting.value
   if (!a) return `Sign the return of ${returning.value?.asset?.asset_tag ?? 'this asset'}`
   const tag = a.asset?.asset_tag ?? 'this asset'
-  return a.kind === 'return' ? `Accept ${tag} back` : `Accept ${tag}`
+  switch (handoverSide(a, auth.personId)) {
+    case 'returning':
+      return `Confirm you handed ${tag} over`
+    case 'receivingForCompany':
+      return `Accept ${tag} back`
+    default:
+      return `Accept ${tag}`
+  }
 })
 function closeSigning(): void {
   signingReturn.value = false
@@ -89,12 +97,25 @@ function closeSigning(): void {
 const signingCompany = computed(() =>
   companyName(returning.value?.asset?.company_id ?? accepting.value?.company_id ?? '') || 'the company',
 )
-// Which of the four statements is in front of you: starting a return, taking
-// one in as HR, or signing for equipment somebody is handing you.
-const signingSide = computed<HandoverSide>(() => {
-  if (!accepting.value) return 'returning'
-  return accepting.value.kind === 'return' ? 'receivingForCompany' : 'receiving'
-})
+// Which statement is in front of you follows from where you stand in the
+// handover, exactly as app.handover_side decides it on the way in — so what you
+// read before signing is what gets stored against your name.
+const signingSide = computed<HandoverSide>(() =>
+  accepting.value ? handoverSide(accepting.value, auth.personId) : 'returning',
+)
+
+/** What a row waiting on you is actually asking. */
+function askOf(h: HandoverRow): string {
+  const who = h.starter?.full_name ?? 'someone'
+  switch (handoverSide(h, auth.personId)) {
+    case 'returning':
+      return `${who} is asking for this back`
+    case 'receivingForCompany':
+      return 'returned to you'
+    default:
+      return `${who} is handing this to you`
+  }
+}
 
 /** A handover in flight for an asset, so its row says so instead of offering Return again. */
 const openHandoverFor = (assetId: string) =>
@@ -206,14 +227,14 @@ async function signAndAccept(sig: SignatureInput): Promise<void> {
     accepting.value = null
     const tag = h.asset?.asset_tag ?? 'The asset'
     notice.value =
-      h.kind === 'return'
+      h.to_person_id === null
         ? `${tag} is back in magacin. The form carries both names.`
         : `${tag} is yours. The form carries both names.`
   }
 }
 
 async function actOnHandover(h: HandoverRow, action: HandoverAction): Promise<void> {
-  const isReturn = h.kind === 'return'
+  const isReturn = h.to_person_id === null
   if (action.key === 'accept') {
     // The counterparty signs the same form; accepting without a name on it
     // would leave the first signature facing nothing.
@@ -361,10 +382,7 @@ watch(() => `${props.personId}|${props.companies.map((c) => c.id).join(',')}`, (
 
       <div v-for="r in forMe" :key="r.id" class="equipment-row awaiting">
         <div class="row-text">
-          <strong>
-            {{ r.asset?.asset_tag }} —
-            {{ r.kind === 'return' ? 'returned to you' : `${r.starter?.full_name ?? 'someone'} is handing this to you` }}
-          </strong>
+          <strong>{{ r.asset?.asset_tag }} — {{ askOf(r) }}</strong>
           <small>
             <template v-if="r.asset?.model">{{ r.asset.model }} · </template>
             signed {{ r.signed_by_starter_at?.slice(0, 10) }}

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { assetInput, assetStatusLabel, assignmentActions, itRequestActions, itRequestInput, kitItems, kitProgress, ownerLabel, parseSystems, handoverActions, handoverStatusLine, tidyKit, type Handover } from './equipment'
+import { assetInput, assetStatusLabel, assignmentActions, itRequestActions, itRequestInput, kitItems, kitProgress, ownerLabel, parseSystems, handoverActions, handoverSide, handoverStatusLine, tidyKit, type Handover } from './equipment'
 
 describe('assetInput', () => {
   it('needs a tag and a type; the rest is optional', () => {
@@ -96,46 +96,73 @@ describe('assetInput with every column the sheets use', () => {
   })
 })
 
+describe('handoverSide', () => {
+  const back: Handover = {
+    id: 'r1', kind: 'return', status: 'awaiting', started_by: 'p1', counterparty_id: 'hr1',
+    from_person_id: 'p1', to_person_id: null,
+    decline_reason: null, signed_by_starter_at: null, signed_by_counterparty_at: null,
+  }
+  const out: Handover = { ...back, kind: 'issue', started_by: 'it1', counterparty_id: 'p2', from_person_id: null, to_person_id: 'p2' }
+
+  it('reads off where you stand, not which button was pressed', () => {
+    expect(handoverSide(back, 'p1')).toBe('returning')
+    expect(handoverSide(back, 'hr1')).toBe('receivingForCompany')
+    expect(handoverSide(out, 'p2')).toBe('receiving')
+    expect(handoverSide(out, 'it1')).toBe('handingOver')
+  })
+
+  it('gives the same answer for a recall as for a return, because it is one', () => {
+    // HR asked for it back: they started it, the holder is the counterparty.
+    const recall: Handover = { ...back, started_by: 'hr1', counterparty_id: 'p1' }
+    expect(handoverSide(recall, 'p1')).toBe('returning')
+    expect(handoverSide(recall, 'hr1')).toBe('receivingForCompany')
+  })
+})
+
 describe('handoverActions', () => {
-  const ret: Handover = {
+  const back: Handover = {
     id: 'r1', kind: 'return', status: 'awaiting', started_by: 'p1', counterparty_id: 'hr1',
     from_person_id: 'p1', to_person_id: null,
     decline_reason: null, signed_by_starter_at: '2026-09-17', signed_by_counterparty_at: null,
   }
-  const give: Handover = {
-    ...ret, kind: 'reassign', started_by: 'it1', counterparty_id: 'p2',
-    from_person_id: 'p1', to_person_id: 'p2',
-  }
+  const out: Handover = { ...back, kind: 'issue', started_by: 'it1', counterparty_id: 'p2', from_person_id: null, to_person_id: 'p2' }
 
-  it('lets the counterparty decide, and nothing else', () => {
-    expect(handoverActions(ret, 'hr1')).toEqual([
+  it('asks HR to accept a return', () => {
+    expect(handoverActions(back, 'hr1')).toEqual([
       { key: 'accept', label: 'Accept the return' },
       { key: 'decline', label: 'Not accepted' },
     ])
   })
 
-  it('names the buttons for the direction it is pointed', () => {
-    expect(handoverActions(give, 'p2')).toEqual([
+  it('asks the holder to confirm, not to accept, when HR wants it back', () => {
+    const recall: Handover = { ...back, started_by: 'hr1', counterparty_id: 'p1' }
+    expect(handoverActions(recall, 'p1')).toEqual([
+      { key: 'accept', label: 'Confirm I handed it over' },
+      { key: 'decline', label: 'I still have it' },
+    ])
+  })
+
+  it('asks the receiver to accept when something is handed out', () => {
+    expect(handoverActions(out, 'p2')).toEqual([
       { key: 'accept', label: 'Accept it' },
       { key: 'decline', label: 'I did not get it' },
     ])
-    expect(handoverActions(give, 'it1')).toEqual([{ key: 'cancel', label: 'Withdraw' }])
+    expect(handoverActions(out, 'it1')).toEqual([{ key: 'cancel', label: 'Withdraw' }])
   })
 
   it('lets whoever started it take it back while the other has not looked', () => {
-    expect(handoverActions(ret, 'p1')).toEqual([{ key: 'cancel', label: 'Cancel the return' }])
+    expect(handoverActions(back, 'p1')).toEqual([{ key: 'cancel', label: 'Cancel the return' }])
   })
 
-  it('offers a bystander nothing — including the person losing the asset', () => {
-    expect(handoverActions(ret, 'someone-else')).toEqual([])
-    expect(handoverActions(ret, null)).toEqual([])
-    expect(handoverActions(give, 'p1')).toEqual([])
+  it('offers a bystander nothing', () => {
+    expect(handoverActions(back, 'someone-else')).toEqual([])
+    expect(handoverActions(back, null)).toEqual([])
   })
 
   it('offers nothing once it is settled', () => {
     for (const status of ['accepted', 'declined', 'cancelled'] as const) {
-      expect(handoverActions({ ...ret, status }, 'hr1')).toEqual([])
-      expect(handoverActions({ ...ret, status }, 'p1')).toEqual([])
+      expect(handoverActions({ ...back, status }, 'hr1')).toEqual([])
+      expect(handoverActions({ ...back, status }, 'p1')).toEqual([])
     }
   })
 })
@@ -161,8 +188,8 @@ describe('handoverStatusLine', () => {
       .toBe('Accepted by Ana. Signed by both of you.')
   })
 
-  it('reads the other way round for a reassignment', () => {
-    expect(handoverStatusLine({ ...base, kind: 'reassign', status: 'accepted' }, 'p1', names))
+  it('reads the other way round for something handed out', () => {
+    expect(handoverStatusLine({ ...base, kind: 'issue', status: 'accepted' }, 'p1', names))
       .toBe('Ana signed for it.')
   })
 

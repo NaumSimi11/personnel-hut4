@@ -84,47 +84,48 @@ DONE
   return form is filed while they still hold it, so equipment can still be
   recovered from somebody on leave or not answering.
 
+ALSO DONE (18 Sep)
+- equipment register: two new filters — "kept somewhere, not with a person"
+  (58 rows: office, office Struga, the company itself, a car, a server, a
+  trademark) and "books name a person we have not matched" (6 rows). Before,
+  "In magacin" swept all 64 in and claimed they were free to hand out.
+- equipment never passes from one employee straight to another. The one-step
+  reassign is gone. Ask for it back → it lands in magacin → hand it out.
+  Two acts, two forms, and the register can see it in between.
+- the HR side is emailed, at the company's HR inbox when one is set.
+- an accepted handover whose signed paper copy never came back is flagged in
+  amber on the asset page and has its own tab on the new page below.
+- /equipment/movements — everything that has changed hands, read-only.
+
 LEFT
 (nothing from the list above)
 
 ---
 NEXT — things I noticed while building, in the order I would do them
 
-1. 64 pieces of equipment say who has them, but not WHO.
-   When we imported the Excel, 64 rows had a name in the books that did not
-   match anyone in the app. The register shows them as "Petar (from the books,
-   not matched)". So nobody really holds them as far as the app is concerned.
-   Handing one over now fixes it — but nothing tells you which 64 they are.
-   TO DO: a filter on /equipment saying "show me the ones from the books",
-   so somebody can go through them and hand each to the right person.
+1. 14 of 42 people have no login, and 11 of them hold equipment.
+   If HR asks one of them for a laptop back, that person cannot sign —
+   they have nothing to sign in to. It works anyway: a second person in
+   IT or HR signs it in on the company's behalf when the laptop actually
+   turns up, and the form says exactly that instead of pretending they
+   signed. The asset page warns you before you start.
+   TO DO (maybe): decide whether those 14 should get accounts. It is a
+   people decision, not a code one.
 
 2. Nobody has clicked through this in a browser except me, by hand.
    We have tests, and I drove the database directly, but the automated
-   browser tests have not been run on ANY of the equipment work — register,
-   requests, signing, contracts, the asset page, handovers.
+   browser tests have not been run on ANY of the equipment work.
    TO DO: run them. Problem: they would run against the live database and
-   leave junk in it, like last time. They want a copy of the database to
-   play in first.
+   leave junk in it, like last time. They want a copy to play in first.
 
 3. A handover nobody signs just sits there forever.
-   You hand a laptop to Marko. Marko never signs. Six months later the app
-   still says Ana has it, and there is a request hanging in the air.
-   TO DO: after two weeks, show it as old on the asset page and tell whoever
-   started it. NOT auto-cancel — quietly undoing it is worse.
+   You ask Marko for a laptop back. Marko never signs. Six months later
+   the app still says he has it, and the request hangs in the air.
+   TO DO: after two weeks, show it as old and tell whoever started it.
+   NOT auto-cancel — quietly undoing it is worse.
 
-4. We make the PDF, but never check that a signed one comes back.
-   The app files a form, you print it, sign it on paper, upload it back.
-   If nobody uploads it, nothing complains. Same gap the return form has.
-   TO DO: on the asset page, say "no signed copy on file" when there is none.
-
-5. HR cannot see what moved this month.
-   Handovers show up on the asset and on the person's page, which is right
-   for the two people involved. But there is no list. To see everything that
-   changed hands you have to open assets one by one.
-   TO DO: one read-only page. The data is already there.
-
-6. The form prints everything the person holds, not the one thing.
+4. The form prints everything the person holds, not the one thing.
    You hand back one laptop; the PDF lists your laptop AND your phone AND
-   your monitor. That is correct when somebody is leaving the company. It is
-   misleading for a single handover.
+   your monitor. Correct when somebody is leaving the company. Misleading
+   for a single handover.
    TO DO: when the form is about one asset, print one asset.

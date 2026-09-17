@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { NOBODY, OTHER_HOLDER, assetLine, assetNumbers, holderChoice, matchesSearch } from './assetRegister'
+import { NOBODY, OTHER_HOLDER, assetLine, assetNumbers, bookHolder, holderChoice, matchesSearch } from './assetRegister'
 
 const LOOKUPS = {
   types: { laptop: 'Laptop', vehicle: 'Vehicles' },
@@ -192,5 +192,35 @@ describe('matchesSearch', () => {
   it('needs every word, so two terms narrow rather than widen', () => {
     expect(hit('dell naum')).toBe(true)
     expect(hit('dell ivana')).toBe(false)
+  })
+})
+
+describe('bookHolder', () => {
+  it('says nothing when the books named nobody', () => {
+    expect(bookHolder(null)).toBe(null)
+    expect(bookHolder('')).toBe(null)
+    expect(bookHolder('   ')).toBe(null)
+  })
+
+  it('recognises the company holding its own kit', () => {
+    expect(bookHolder('Synami DOOEL')).toBe('company')
+    expect(bookHolder('Liquiditas DOOEL')).toBe('company')
+  })
+
+  it('recognises a place, in either alphabet', () => {
+    for (const note of ['office', 'office Struga', 'sluzbeno vozilo', 'Server', 'vo server B006', 'magacin (kaj Dare)', 'trgovska marka', 'Канцеларија']) {
+      expect(bookHolder(note), note).toBe('place')
+    }
+  })
+
+  it('calls a name a person, including someone at another company', () => {
+    expect(bookHolder('Miran Thaqi')).toBe('person')
+    expect(bookHolder('Sashko Sardzovski (Praedium)')).toBe('person')
+    expect(bookHolder('Nenad Cvetanov (Clip)')).toBe('person')
+  })
+
+  it('errs towards person, so a real holder is never hidden as a place', () => {
+    expect(bookHolder('D.S.')).toBe('person')
+    expect(bookHolder('kaj Dare')).toBe('person')
   })
 })

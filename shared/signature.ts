@@ -54,9 +54,9 @@ export function signatureProblem(input: SignatureInput): string | null {
  * These are shown before signing; the database composes the same words again
  * when it records the signature, so what somebody read is what was stored and
  * the page cannot choose the wording. Any change here must be made in the
- * handover RPCs (migration 0062) too — they are the copy that is kept.
+ * handover RPCs (migration 0063) too — they are the copy that is kept.
  */
-export type HandoverSide = 'returning' | 'receivingForCompany' | 'handingOver' | 'receiving'
+export type HandoverSide = 'returning' | 'receivingForCompany' | 'handingOver' | 'recalling' | 'receiving'
 
 export function handoverStatement(side: HandoverSide, companyName: string): string {
   switch (side) {
@@ -74,6 +74,11 @@ export function handoverStatement(side: HandoverSide, companyName: string): stri
       return (
         `I confirm that I am handing over the equipment listed on this form on behalf of ${companyName}, ` +
         'that I am authorised to do so, and that the record of who held it before is correct.'
+      )
+    case 'recalling':
+      return (
+        `I confirm that I am asking for the equipment listed on this form back on behalf of ${companyName}, ` +
+        'and that I am authorised to do so.'
       )
     case 'receiving':
       return (

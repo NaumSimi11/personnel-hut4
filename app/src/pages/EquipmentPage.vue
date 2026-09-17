@@ -13,7 +13,7 @@ import {
   ownerLabel,
   type AssignmentAction,
 } from '@/lib/equipment'
-import { holderChoice, matchesSearch, NOBODY, OTHER_HOLDER } from '@/lib/assetRegister'
+import { bookHolder, holderChoice, KEPT_SOMEWHERE, matchesSearch, NOBODY, OTHER_HOLDER, UNMATCHED_PERSON } from '@/lib/assetRegister'
 import AssetRow, { type RowEdit } from '@/components/equipment/AssetRow.vue'
 import { nextAssetTag, nextInventoryNumber } from '@/lib/assetNumbering'
 
@@ -83,16 +83,54 @@ const filterOptions = computed(() => {
 })
 const shown = computed(() => {
   const byCompany = filter.value === '' ? assets.value : filter.value === POOL ? assets.value.filter((a) => a.company_id === null) : assets.value.filter((a) => a.company_id === filter.value)
-  const byHolder = holderFilter.value === ''
-    ? byCompany
-    : holderFilter.value === NOBODY
-      ? byCompany.filter((a) => !openAssignment(a))
-      : byCompany.filter((a) => openAssignment(a)?.person_id === holderFilter.value)
+  const byHolder = filterByHolder(byCompany)
   const found = byHolder.filter((a) =>
     matchesSearch(a, query.value, holderNames.value[openAssignment(a)?.person_id ?? ''] ?? null, typeNames.value[a.type_key] ?? null),
   )
   return [...found].sort((a, b) => a.asset_tag.localeCompare(b.asset_tag))
 })
+/**
+ * The holder filter.
+ *
+ * "In magacin" used to mean "no live assignment", which quietly swept in the 64
+ * rows whose holder came from the books — so the register claimed dozens of
+ * laptops were free to hand out while the books named where they were. Those
+ * rows now answer to their own two options, because they are two different
+ * problems: a thing kept in an office is recorded correctly and wants nothing,
+ * while a thing the books say a person has is unaccounted for and wants
+ * handing over properly.
+ */
+function filterByHolder(rows: Asset[]): Asset[] {
+  switch (holderFilter.value) {
+    case '':
+      return rows
+    case NOBODY:
+      return rows.filter((a) => !openAssignment(a) && bookHolder(a.holder_note) === null)
+    case KEPT_SOMEWHERE:
+      return rows.filter((a) => {
+        const kind = bookHolder(a.holder_note)
+        return !openAssignment(a) && (kind === 'place' || kind === 'company')
+      })
+    case UNMATCHED_PERSON:
+      return rows.filter((a) => !openAssignment(a) && bookHolder(a.holder_note) === 'person')
+    default:
+      return rows.filter((a) => openAssignment(a)?.person_id === holderFilter.value)
+  }
+}
+
+/** How many rows each book-holder option would show, so the option can say so. */
+const bookCounts = computed(() => {
+  let kept = 0
+  let unmatched = 0
+  for (const a of assets.value) {
+    if (openAssignment(a)) continue
+    const kind = bookHolder(a.holder_note)
+    if (kind === 'place' || kind === 'company') kept += 1
+    else if (kind === 'person') unmatched += 1
+  }
+  return { kept, unmatched }
+})
+
 const openAssignment = (a: Asset) => a.asset_assignments.find((x) => x.returned_at === null) ?? null
 const typeNames = computed(() => Object.fromEntries(types.value.map((t) => [t.key, t.label])))
 // Only assets with a live (unreturned) assignment have a holder; that name comes
@@ -377,7 +415,10 @@ onMounted(load)
         <h1>Every laptop, phone and licence across the holding.</h1>
         <p class="page-sub">The holding's pool goes to anyone employed anywhere; a company's assets stay with its people. Issuing makes the handover form; a scheduled departure makes the return form.</p>
       </div>
-      <button v-if="ownerOptions.length && !addingAsset" class="button" type="button" data-testid="add-asset" @click="startAsset">Add asset</button>
+      <div class="head-actions">
+        <router-link class="button secondary" :to="{ name: 'handovers' }">What changed hands</router-link>
+        <button v-if="ownerOptions.length && !addingAsset" class="button" type="button" data-testid="add-asset" @click="startAsset">Add asset</button>
+      </div>
     </div>
     <div v-if="notice" class="notice" role="status">{{ notice }}</div>
     <p v-if="error" class="error-note" role="alert">{{ error }}</p>
@@ -398,6 +439,12 @@ onMounted(load)
         <select v-model="holderFilter" aria-label="Filter by who holds it">
           <option value="">Anyone</option>
           <option :value="NOBODY">In magacin</option>
+          <option v-if="bookCounts.kept" :value="KEPT_SOMEWHERE">
+            Kept somewhere, not with a person ({{ bookCounts.kept }})
+          </option>
+          <option v-if="bookCounts.unmatched" :value="UNMATCHED_PERSON">
+            Books name a person we have not matched ({{ bookCounts.unmatched }})
+          </option>
           <option v-for="h in holdersWithAssets" :key="h.id" :value="h.id">{{ h.name }}</option>
         </select>
         <CompanyFilter v-model="filter" :companies="filterOptions" all-label="Everywhere" />
@@ -507,6 +554,7 @@ onMounted(load)
 </template>
 
 <style scoped>
+.head-actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 .search { font: inherit; font-size: 12px; padding: 7px 11px; border: 1px solid var(--line); border-radius: 999px; background: #fff; min-width: 230px; flex: 1; }
 .filters select { font: inherit; font-size: 12px; padding: 7px 10px; border: 1px solid var(--line); border-radius: 999px; background: #fff; }
 .button.danger { color: #a8332b; border-color: #e6c9c6; }

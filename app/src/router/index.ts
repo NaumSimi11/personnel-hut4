@@ -119,6 +119,12 @@ export const router = createRouter({
           component: () => import('@/pages/EquipmentPage.vue'),
         },
         {
+          // Before the :assetId route, or "movements" reads as an asset id.
+          path: 'equipment/movements',
+          name: 'handovers',
+          component: () => import('@/pages/HandoversPage.vue'),
+        },
+        {
           path: 'equipment/:assetId',
           name: 'asset',
           component: () => import('@/pages/AssetPage.vue'),

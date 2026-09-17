@@ -169,16 +169,19 @@ export const returnRequestInput = z.object({
 })
 export type ReturnRequestForm = z.input<typeof returnRequestInput>
 
-export type HandoverKind = 'return' | 'issue' | 'reassign'
+export type HandoverKind = 'return' | 'issue'
 export type HandoverStatus = 'awaiting' | 'accepted' | 'declined' | 'cancelled'
 
 /**
  * An asset changing hands, whichever way it is pointed.
  *
- * A return used to have its own type, its own buttons and its own wording.
- * Reassigning is the same event with the names swapped, so it is the same type:
- * somebody starts it and signs, the counterparty signs, and only then does the
- * thing move. `kind` only decides what the buttons are called.
+ * A return used to have its own type, its own buttons and its own wording, and
+ * so did handing something out. They are the same event: somebody starts it and
+ * signs, the counterparty signs, and only then does the thing move.
+ *
+ * Equipment never goes from one employee straight to another — it comes back to
+ * HR and goes out again — so `to_person_id` being null is what "back to
+ * magacin" means, and a move between two people is two of these.
  */
 export type Handover = {
   readonly id: string
@@ -193,12 +196,27 @@ export type Handover = {
   readonly signed_by_counterparty_at: string | null
 }
 
+/**
+ * Where a person stands in a handover. Mirrors app.handover_side in the
+ * database, which decides the words they actually sign.
+ */
+export type HandoverSideKey = 'returning' | 'receiving' | 'receivingForCompany' | 'handingOver'
+
+export function handoverSide(h: Handover, personId: string | null): HandoverSideKey {
+  if (personId !== null && personId === h.from_person_id) return 'returning'
+  if (personId !== null && personId === h.to_person_id) return 'receiving'
+  return h.to_person_id === null ? 'receivingForCompany' : 'handingOver'
+}
+
 export type HandoverAction = { key: 'accept' | 'decline' | 'cancel'; label: string }
 
-const LABELS: Record<HandoverKind, { accept: string; decline: string; cancel: string }> = {
-  return: { accept: 'Accept the return', decline: 'Not accepted', cancel: 'Cancel the return' },
-  issue: { accept: 'Accept it', decline: 'I did not get it', cancel: 'Withdraw' },
-  reassign: { accept: 'Accept it', decline: 'I did not get it', cancel: 'Withdraw' },
+// What the buttons say follows from the act, not the button. Somebody confirming
+// they gave a laptop back is not "accepting" anything.
+const LABELS: Record<HandoverSideKey, { accept: string; decline: string }> = {
+  returning: { accept: 'Confirm I handed it over', decline: 'I still have it' },
+  receiving: { accept: 'Accept it', decline: 'I did not get it' },
+  receivingForCompany: { accept: 'Accept the return', decline: 'Not accepted' },
+  handingOver: { accept: 'Accept it', decline: 'I did not get it' },
 }
 
 /**
@@ -210,14 +228,16 @@ const LABELS: Record<HandoverKind, { accept: string; decline: string; cancel: st
  */
 export function handoverActions(h: Handover, viewerId: string | null): HandoverAction[] {
   if (h.status !== 'awaiting' || !viewerId) return []
-  const labels = LABELS[h.kind]
   if (viewerId === h.counterparty_id) {
+    const labels = LABELS[handoverSide(h, viewerId)]
     return [
       { key: 'accept', label: labels.accept },
       { key: 'decline', label: labels.decline },
     ]
   }
-  if (viewerId === h.started_by) return [{ key: 'cancel', label: labels.cancel }]
+  if (viewerId === h.started_by) {
+    return [{ key: 'cancel', label: viewerId === h.from_person_id ? 'Cancel the return' : 'Withdraw' }]
+  }
   return []
 }
 

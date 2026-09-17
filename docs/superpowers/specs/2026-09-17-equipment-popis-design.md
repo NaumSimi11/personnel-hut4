@@ -383,15 +383,52 @@ truth, not a defect.
 **Closing is irreversible by design.** A signed count is a record. The recovery
 path is a new round, and the UI should say so before the button is pressed.
 
+## Every company counts
+
+All six companies get a round each year, including Praedium and Snowball, which
+own nothing today and have no sheet. A company that exists is a company that
+counts; owning nothing is a finding, not a reason to skip.
+
+So **a round with no lines is valid and must close cleanly**, producing a report
+that states the company holds no assets. This falls out of the rules already
+given — closing is refused while a line is `pending`, and zero lines means zero
+pending — but it is worth naming, because it is easy to implement a close that
+assumes at least one line and fails on an empty round.
+
+## Liquiditas is closing
+
+Liquiditas still exists and counts this year like everyone else. It is expected
+to close at some point after that, and when it does its assets do not disappear:
+they move to another company in the holding, each one carrying a transfer
+document naming who authorised the move and when.
+
+This is the reason transfers are in this design rather than a later one. The
+sequence the app has to support, in order:
+
+1. Register what Liquiditas owns — its 16 items — and who holds them. Some
+   holders already sit at other companies (`Marko Ivanoski (Hut4)`), which the
+   import preserves.
+2. Count them this year, with a commission and a signed report, as for any
+   other company.
+3. When the company closes, transfer each remaining asset out, one document per
+   asset, leaving a complete paper trail from Liquiditas' register to whichever
+   company receives it.
+
+A closing company is therefore not a special case in the data model. It is the
+ordinary transfer path, used once per asset. What it does demand is that
+transfers work for an asset that is *currently held by a person*, not only for
+one sitting in magacin: the holder does not necessarily change when the owning
+company does. `transfer_asset` changes `assets.company_id` and leaves any open
+`asset_assignments` row untouched, so a laptop can change hands on paper while
+staying in the same person's bag.
+
 ## Open
 
-Two things the maintainer should settle before implementation, neither of which
-blocks starting:
+One thing the maintainer should settle before the report is built, which does
+not block starting:
 
-1. **The legal company names** for the report header (`СИНАМИ ДООЕЛ Скопје`,
-   `Хут4 Капитал ДООЕЛ Скопје`, and Liquiditas' equivalent). `companies` holds a
-   display name; the report needs the registered one. Likely a new nullable
-   `legal_name` column.
-2. **Whether Praedium and Snowball count too.** They exist in the app but have
-   no sheet. If they hold assets, they need rounds; if they hold none, opening a
-   round for them produces an empty but valid report.
+**The registered legal names** for the report header — `СИНАМИ ДООЕЛ Скопје` and
+`Хут4 Капитал ДООЕЛ Скопје` come from the sheets, but Liquiditas, Praedium,
+Snowball and Hut4's own remain unknown. `companies` holds a display name; the
+report needs the registered one, so this wants a nullable `legal_name` column
+filled in per company, falling back to the display name until it is.

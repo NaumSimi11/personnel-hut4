@@ -50,3 +50,10 @@ https://personnel-hut4.vercel.app/directory when in people, the first selected t
 
 https://personnel-hut4.vercel.app/people/42dd912e-16c6-4bbc-abf3-77cbbdf17eb1
 when we are here, all the cards that needs to get update ( edit mode ) are not responsive, when in edit or preview mode. review them. 
+
+
+https://personnel-hut4.vercel.app/equipment
+in the equipment sidebar page , we need filter ( search by equipment, ) filter by user, and so on. 
+
+
+in the return equipment thing we build before, with the sign in, we need top open dialog instead of toogle down up that signing thing. opening dialog, standing int he viewport is much more usable from all perspectives

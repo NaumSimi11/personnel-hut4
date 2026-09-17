@@ -30,7 +30,9 @@ type DirectoryRow = {
 const auth = useAuthStore()
 const rows = ref<DirectoryRow[]>([])
 const query = ref('')
-const filter = ref<DirectoryFilter>('all')
+// The directory opens on the people who work here. 'Everyone' includes those
+// who left years ago, which is a question somebody asks, not the answer to open on.
+const filter = ref<DirectoryFilter>('active')
 const companyFilter = ref('')
 const companies = ref<{ id: string; name: string }[]>([])
 const loading = ref(true)
@@ -121,7 +123,7 @@ onMounted(load)
       <div class="card-head">
         <div>
           <h2>Employee directory</h2>
-          <p>Everyone you are permitted to see, across the holding.</p>
+          <p>The people you are permitted to see, across the holding.</p>
         </div>
         <input
           v-model="query"

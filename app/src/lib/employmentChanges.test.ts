@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { changeInput, currentPeriod, describeChanges, diffChanges, matchesFilter } from './employmentChanges'
+import { DIRECTORY_FILTERS, changeInput, currentPeriod, describeChanges, diffChanges, matchesFilter } from './employmentChanges'
 
 const period = {
   job_title: 'Warehouse Lead',
@@ -109,5 +109,15 @@ describe('currentPeriod with a future transfer', () => {
     ]
     expect(currentPeriod(periods, today)?.status).toBe('active')
     expect(currentPeriod([{ status: 'pre_start', start_date: '2027-01-01', end_date: null }], today)?.status).toBe('pre_start')
+  })
+})
+
+describe('DIRECTORY_FILTERS order', () => {
+  it('leads with Active, because that is what the directory opens on', () => {
+    expect(DIRECTORY_FILTERS[0]).toEqual({ key: 'active', label: 'Active' })
+  })
+
+  it('still offers Everyone, as a deliberate choice rather than the default', () => {
+    expect(DIRECTORY_FILTERS.map((f) => f.key)).toContain('all')
   })
 })

@@ -4323,6 +4323,7 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      hiring_managers: { Args: { p_company_id: string }; Returns: { full_name: string; id: string }[] }
       contract_values: { Args: { p_employment_id?: string; p_person_id: string }; Returns: Json }
       publish_contract_template: { Args: { p_body?: string; p_template_id: string; p_title?: string }; Returns: Json }
       accept_equipment_return: { Args: { p_condition?: string; p_return_id: string }; Returns: Json }

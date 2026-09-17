@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { onMounted, ref, watch } from 'vue'
 import { z } from 'zod'
 import { cleanJobTitle, jobTitleProblem } from '@/lib/jobTitle'
 import { supabase } from '@/lib/supabase'
@@ -147,14 +147,29 @@ function friendly(message: string): string {
   return message
 }
 
+// Only people who could actually own the vacancy in the chosen company — HR and
+// above. The list follows the company, because the right names differ per one.
+async function loadManagers(companyId: string): Promise<void> {
+  if (!companyId) { people.value = []; return }
+  const { data, error: err } = await supabase.rpc('hiring_managers', { p_company_id: companyId })
+  if (err) {
+    console.error('Hiring managers load failed:', err.message)
+    people.value = []
+    return
+  }
+  people.value = (data ?? []) as { id: string; full_name: string }[]
+  // A manager chosen for another company is no longer a valid answer.
+  if (form.value.hiringManagerId && !people.value.some((p) => p.id === form.value.hiringManagerId)) {
+    form.value.hiringManagerId = ''
+  }
+}
+watch(() => form.value.companyId, loadManagers)
+
 onMounted(async () => {
-  const [companiesRes, peopleRes] = await Promise.all([
-    supabase.from('companies').select('id, name').is('archived_at', null).order('name'),
-    supabase.from('people').select('id, full_name').order('full_name'),
-  ])
+  const companiesRes = await supabase.from('companies').select('id, name').is('archived_at', null).order('name')
   companies.value = companiesRes.data ?? []
-  people.value = peopleRes.data ?? []
   if (!form.value.companyId && companies.value[0]) form.value.companyId = companies.value[0].id
+  await loadManagers(form.value.companyId)
 })
 </script>
 
@@ -194,6 +209,7 @@ onMounted(async () => {
           <label for="rh-manager">Hiring manager (optional)</label>
           <select id="rh-manager" v-model="form.hiringManagerId">
             <option value="">No hiring manager yet</option>
+            <option v-if="!people.length" disabled>Nobody here holds HR or recruitment access</option>
             <option v-for="p in people" :key="p.id" :value="p.id">{{ p.full_name }}</option>
           </select>
         </div>

@@ -93,8 +93,8 @@ export function currentPeriod<T extends PeriodLite>(periods: T[], today = todayD
 }
 
 export const DIRECTORY_FILTERS = [
-  { key: 'all', label: 'Everyone' },
   { key: 'active', label: 'Active' },
+  { key: 'all', label: 'Everyone' },
   { key: 'starting', label: 'Starting soon' },
   { key: 'departing', label: 'Departing' },
   { key: 'former', label: 'Former' },

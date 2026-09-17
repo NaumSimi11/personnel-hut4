@@ -84,6 +84,12 @@ writeFileSync(
         // function.
         { src: '^/api(?:/.*)?$', dest: '/api' },
         { handle: 'filesystem' },
+        // A build asset that is not on disk is gone, not a route. Without this
+        // the catch-all below answers it with index.html, and the browser
+        // rejects HTML where it expected a module — the confusing MIME error a
+        // tab hits when it is a deploy behind. A plain 404 lets the app see
+        // what happened and reload itself.
+        { src: '^/assets/.*$', status: 404 },
         // Anything left is a client route: the SPA owns it.
         { src: '^/(?!api/).*$', dest: '/index.html' },
       ],

@@ -1,5 +1,6 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
+import { isStaleBuildError } from '@/lib/staleBuild'
 
 export const router = createRouter({
   history: createWebHistory(),
@@ -163,4 +164,18 @@ router.beforeEach(async (to) => {
   }
   if (to.name === 'login' && auth.isAuthenticated) return { name: 'overview' }
   return true
+})
+
+/**
+ * A tab left open across a deploy still holds the old index.html, so the next
+ * lazily-loaded route asks for a chunk that has been replaced. Nothing is
+ * wrong with the app — this tab is simply out of date — and a full load of the
+ * same path fetches the current index.html and the chunks that go with it.
+ *
+ * Only for that one situation: reloading on an ordinary error would hide real
+ * bugs, and could loop. `assign` rather than `reload` so the person still ends
+ * up where they were trying to go.
+ */
+router.onError((error, to) => {
+  if (isStaleBuildError(error)) window.location.assign(to.fullPath)
 })

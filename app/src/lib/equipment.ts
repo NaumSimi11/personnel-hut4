@@ -14,7 +14,7 @@ export const assetInput = z.object({
   ordinal: z
     .string()
     .trim()
-    .regex(/^\d*$/, 'ред. бр. is a number.')
+    .regex(/^\d*$/, 'The number must be a number.')
     .optional()
     .transform((v) => (v ? Number(v) : null)),
   assetTag: z.string().trim().min(2, 'Enter the asset tag.').max(60),

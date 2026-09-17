@@ -80,7 +80,7 @@ describe('assetLine with what the books say', () => {
 
 describe('assetNumbers', () => {
   it('shows both numbers that are printed on the label', () => {
-    expect(assetNumbers({ asset_tag: 'A070', inventory_number: '121' })).toBe('A070 · инв. 121')
+    expect(assetNumbers({ asset_tag: 'A070', inventory_number: '121' })).toBe('A070 · inv. 121')
   })
 
   it('shows the tag alone when the sheet carried no inventory number', () => {

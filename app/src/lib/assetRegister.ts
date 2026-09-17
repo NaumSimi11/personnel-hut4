@@ -41,7 +41,8 @@ export function assetLine(asset: RegisterAsset, lookups: RegisterLookups): strin
 }
 
 /**
- * The two numbers printed on the physical label: the Шифра and the Инв. бр.
+ * The two numbers printed on the physical label: the asset tag (Шифра on
+ * the company's own lists) and the inventory number (Инв. бр.).
  * They are different identifiers — the second is what the accounts reconcile a
  * попис against — and a register that shows only one cannot be checked against
  * the thing in your hand.
@@ -51,7 +52,7 @@ export function assetNumbers(asset: {
   readonly inventory_number?: string | null
 }): string {
   const inventory = (asset.inventory_number ?? '').trim()
-  return inventory ? `${asset.asset_tag} · инв. ${inventory}` : asset.asset_tag
+  return inventory ? `${asset.asset_tag} · inv. ${inventory}` : asset.asset_tag
 }
 
 /** The select's value when the holder is not a person in this system. */

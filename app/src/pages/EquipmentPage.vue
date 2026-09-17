@@ -350,10 +350,10 @@ onMounted(load)
               <option v-for="o in ownerOptions" :key="o.id" :value="o.id">{{ o.name }}</option>
             </select>
           </label>
-          <label><span>ред. бр.</span><input id="asset-ordinal" v-model="assetForm.ordinal" inputmode="numeric" maxlength="6" /></label>
-          <label><span>Шифра (asset tag)</span><input id="asset-tag" v-model="assetForm.assetTag" maxlength="60" /></label>
+          <label><span>No.</span><input id="asset-ordinal" v-model="assetForm.ordinal" inputmode="numeric" maxlength="6" /></label>
+          <label><span>Asset tag</span><input id="asset-tag" v-model="assetForm.assetTag" maxlength="60" /></label>
           <label>
-            <span>Инв. бр. (inventory number)</span>
+            <span>Inventory number</span>
             <input id="asset-inventory" v-model="assetForm.inventoryNumber" maxlength="60" />
           </label>
           <label>

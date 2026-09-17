@@ -14,6 +14,8 @@ import CompanyTile from '@/components/CompanyTile.vue'
 import CompanyStructurePanel from '@/components/CompanyStructurePanel.vue'
 import CompanyPayrollPanel from '@/components/CompanyPayrollPanel.vue'
 import PayrollPeriodsPanel from '@/components/PayrollPeriodsPanel.vue'
+import BonusesPanel from '@/components/payroll/BonusesPanel.vue'
+import PayrollSettingsPanel from '@/components/payroll/PayrollSettingsPanel.vue'
 import WorkflowOwnersPanel from '@/components/WorkflowOwnersPanel.vue'
 import DocumentsCard from '@/components/DocumentsCard.vue'
 import PoliciesPanel from '@/components/PoliciesPanel.vue'
@@ -114,6 +116,7 @@ const router = useRouter()
 const companyId = route.params.companyId as string
 
 const company = ref<CompanyRow | null>(null)
+const bonusesPanel = ref<InstanceType<typeof BonusesPanel> | null>(null)
 const employments = ref<EmploymentRow[]>([])
 const hiringRequests = ref<HiringRequestRow[]>([])
 const jobs = ref<JobRow[]>([])
@@ -204,8 +207,8 @@ const notice = ref<string | null>(null)
 const visibleTabs = computed(() =>
   TABS.filter((t) => {
     if (t.id === 'payroll') return auth.can(companyId, 'payroll.summary')
-    // Settings: admins, and HR who may shape the checklists (the other panels guard their own writes).
-    if (t.id === 'settings') return auth.isAdmin || auth.can(companyId, 'tasks.assign') || auth.can(companyId, 'it.assign')
+    // Settings: admins, HR who may shape the checklists, and whoever prepares payroll (the panels guard their own writes).
+    if (t.id === 'settings') return auth.isAdmin || ['tasks.assign', 'it.assign', 'payroll.individual'].some((cap) => auth.can(companyId, cap))
     if (t.id === 'equipment') return auth.can(companyId, 'it.view')
     if (t.id === 'activity') {
       return ['access.manage', 'jobs.view', 'candidates.view'].some((cap) => auth.can(companyId, cap))
@@ -753,7 +756,8 @@ onMounted(load)
 
         <div v-else-if="activeTab === 'payroll'" class="stack">
           <CompanyPayrollPanel :company-id="companyId" />
-          <PayrollPeriodsPanel :company-id="companyId" :company-code="company.short_code" />
+          <PayrollPeriodsPanel :company-id="companyId" :company-code="company.short_code" @changed="bonusesPanel?.reload()" />
+          <BonusesPanel v-if="auth.can(companyId, 'payroll.individual')" ref="bonusesPanel" :company-id="companyId" />
         </div>
 
         <div v-else-if="activeTab === 'leave'" class="stack">
@@ -772,6 +776,7 @@ onMounted(load)
           <HandoverSettingsPanel :company-id="companyId" :company-name="company.name" />
           <StarterKitPanel :company-id="companyId" :company-name="company.name" />
           <FirstDayPanel :company-id="companyId" :company-name="company.name" />
+          <PayrollSettingsPanel v-if="auth.isAdmin || auth.can(companyId, 'payroll.individual')" :company-id="companyId" :company-name="company.name" />
           <template v-if="auth.isAdmin">
             <WorkflowOwnersPanel :company-id="companyId" />
             <NotificationSettingsPanel :company-id="companyId" />

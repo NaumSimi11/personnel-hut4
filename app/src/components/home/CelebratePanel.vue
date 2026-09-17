@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/stores/auth'
 import { inDaysLabel, shoutoutLine, type DashboardSnapshot } from '@/lib/dashboard'
+import { MESSAGE_MAX, type KudosValue } from '@/lib/kudos'
 import { shortDate } from '@/lib/leave'
 
 /**
@@ -12,16 +13,18 @@ import { shortDate } from '@/lib/leave'
  * need personal.view, applied in the database, which is why they can be
  * empty while the others are not; the year never leaves the database).
  * Kudos stay for everyone: you thank people you may see, and you always
- * read what you gave or received.
+ * read what you gave or received. A kudos may name one of the holding's
+ * values (plan 051); the wall shows it as a pill.
  */
 const props = defineProps<{ snapshot: DashboardSnapshot; showTeam: boolean; loading?: boolean }>()
 const emit = defineEmits<{ changed: [] }>()
 
 const auth = useAuthStore()
-const MESSAGE_MAX = 280
 
 const toId = ref('')
 const message = ref('')
+const valueId = ref('')
+const values = ref<KudosValue[]>([])
 const busy = ref(false)
 const error = ref<string | null>(null)
 const notice = ref<string | null>(null)
@@ -37,7 +40,7 @@ async function postKudos(): Promise<void> {
   busy.value = true
   const { error: err } = await supabase
     .from('kudos')
-    .insert({ from_person_id: auth.personId, to_person_id: toId.value, message: message.value.trim() })
+    .insert({ from_person_id: auth.personId, to_person_id: toId.value, message: message.value.trim(), value_id: valueId.value || null })
   busy.value = false
   if (err) {
     error.value = err.message.includes('row-level security') ? 'You can only thank colleagues whose records you may see.' : 'Could not post the kudos. Try again.'
@@ -48,8 +51,19 @@ async function postKudos(): Promise<void> {
   notice.value = `Kudos to ${name} is on the wall.`
   message.value = ''
   toId.value = ''
+  valueId.value = ''
   emit('changed')
 }
+
+async function loadValues(): Promise<void> {
+  const { data, error: err } = await supabase.from('kudos_values').select('id, name, description, active').eq('active', true).order('sort_order').order('name')
+  if (err) {
+    console.error('Kudos values load failed:', err.message)
+    return
+  }
+  values.value = (data ?? []) as KudosValue[]
+}
+onMounted(loadValues)
 
 async function removeKudos(id: string): Promise<void> {
   error.value = null
@@ -97,6 +111,14 @@ function when(iso: string): string {
               </select>
               <small v-if="!loading && !snapshot.colleagues.length" class="hint left">You can thank colleagues whose records you may see.</small>
             </div>
+            <div v-if="values.length" class="field">
+              <label for="kudos-value">Value</label>
+              <select id="kudos-value" v-model="valueId" :disabled="loading">
+                <option value="">— No specific value —</option>
+                <option v-for="v in values" :key="v.id" :value="v.id">{{ v.name }}</option>
+              </select>
+              <small v-if="valueId" class="hint left">{{ values.find((v) => v.id === valueId)?.description }}</small>
+            </div>
             <div class="field">
               <label for="kudos-message">Message</label>
               <input id="kudos-message" v-model="message" :maxlength="MESSAGE_MAX" placeholder="What did they do well?" autocomplete="off" />
@@ -124,6 +146,7 @@ function when(iso: string): string {
                 <small>{{ when(k.created_at) }}</small>
               </div>
               <p class="kudos-msg">{{ k.message }}</p>
+              <span v-if="k.value_name" class="value-pill" data-testid="kudos-value-pill">{{ k.value_name }}</span>
               <button v-if="k.mine || auth.isAdmin" class="linkish" type="button" @click="removeKudos(k.id)">Remove</button>
             </li>
           </ul>
@@ -211,6 +234,7 @@ function when(iso: string): string {
 .kudos-head { display: flex; justify-content: space-between; gap: 10px; font-size: 12px; }
 .kudos-head small { color: var(--muted); }
 .kudos-msg { margin: 0; font-size: 13px; }
+.value-pill { justify-self: start; font-size: 10.5px; font-weight: 600; padding: 2px 8px; border-radius: 999px; background: #e8f1ea; color: #2f5d3f; }
 .linkish { background: none; border: 0; padding: 0; color: var(--muted); font-size: 11px; text-decoration: underline; cursor: pointer; justify-self: start; min-height: 24px; }
 .linkish:hover { color: var(--red); }
 .fun { border-color: #dfe9dd; background: linear-gradient(160deg, #fff, var(--green-soft)); }

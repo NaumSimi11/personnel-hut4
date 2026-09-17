@@ -71,6 +71,8 @@ export type KudosRow = {
   from_name: string
   to_name: string
   mine: boolean
+  value_id: string | null
+  value_name: string | null
 }
 
 /** What `dashboard_snapshot` returns: the team facts, already scoped to the viewer's companies. */

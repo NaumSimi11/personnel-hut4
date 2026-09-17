@@ -118,6 +118,11 @@ export const router = createRouter({
           component: () => import('@/pages/EquipmentPage.vue'),
         },
         {
+          path: 'kudos',
+          name: 'kudos',
+          component: () => import('@/pages/KudosPage.vue'),
+        },
+        {
           path: 'people/:personId',
           name: 'person',
           component: () => import('@/pages/PersonProfilePage.vue'),

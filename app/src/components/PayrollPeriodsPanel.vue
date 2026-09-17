@@ -5,12 +5,14 @@ import { useAuthStore } from '@/stores/auth'
 import { useDialogStore } from '@/stores/dialogs'
 import { formatAmount, todayDb } from '@/lib/compensation'
 import {
+  ESTIMATE_NOTE,
   defaultPeriod,
   payrollActions,
   payrollCsv,
   payrollFileName,
   periodInput,
   periodStatusLabel,
+  periodTotals,
   type PayrollAction,
   type PayrollLine,
 } from '@/lib/payroll'
@@ -20,10 +22,14 @@ import {
  * compensation in force, review its lines, approve (someone other than
  * the preparer), download the CSV and mark it exported. Reading needs
  * payroll.summary (periods) and payroll.individual (lines); every state
- * change goes through the functions of migration 0023.
+ * change goes through the functions of migration 0023. Plan 051: each
+ * line carries the bonus swept in and the net estimate the period's rate
+ * and flat deduction gave it; a reopened period is prepared again before
+ * it is approved (its bonuses went back to pending).
  */
 
 const props = defineProps<{ companyId: string; companyCode: string }>()
+const emit = defineEmits<{ changed: [] }>()
 
 type Period = {
   id: string
@@ -36,8 +42,12 @@ type Period = {
   approved_by: string | null
   exported_at: string | null
   note: string | null
+  reopened_at: string | null
+  tax_rate_percent: number | null
+  deductions_flat: number | null
 }
 type Line = PayrollLine & { id: string; person_id: string }
+const LINE_COLUMNS = 'id, person_id, full_name, job_title, amount, currency, pay_basis_key, effective_from, effective_to, days_covered, bonus, gross, tax, deductions, net'
 
 const auth = useAuthStore()
 const dialogs = useDialogStore()
@@ -59,14 +69,15 @@ const form = ref({ start: '', end: '', currency: 'EUR', note: '' })
 const personName = (id: string | null) => (id ? (names.value[id] ?? 'someone') : '—')
 const actionsFor = (p: Period): PayrollAction[] => payrollActions(p, auth.personId, can)
 const openPeriod = computed(() => periods.value.find((p) => p.id === openId.value) ?? null)
-const total = computed(() => lines.value.reduce((sum, l) => sum + Number(l.amount), 0))
+const totals = computed(() => periodTotals(lines.value))
+const hasEstimate = (p: Period | null) => !!p && (Number(p.tax_rate_percent) > 0 || Number(p.deductions_flat) > 0)
 
 async function load(): Promise<void> {
   loading.value = true
   error.value = null
   const { data, error: err } = await supabase
     .from('payroll_periods')
-    .select('id, period_start, period_end, currency, status, prepared_by, prepared_at, approved_by, exported_at, note')
+    .select('id, period_start, period_end, currency, status, prepared_by, prepared_at, approved_by, exported_at, note, reopened_at, tax_rate_percent, deductions_flat')
     .eq('company_id', props.companyId)
     .order('period_start', { ascending: false })
   loading.value = false
@@ -89,7 +100,7 @@ async function loadLines(periodId: string): Promise<void> {
   linesLoading.value = true
   const { data, error: err } = await supabase
     .from('payroll_lines')
-    .select('id, person_id, full_name, job_title, amount, currency, pay_basis_key, effective_from, effective_to, days_covered')
+    .select(LINE_COLUMNS)
     .eq('period_id', periodId)
     .order('full_name')
     .order('effective_from')
@@ -126,6 +137,7 @@ function friendly(message: string): string {
   if (/payroll\.approve/.test(message)) return 'You need payroll.approve in this company.'
   if (/payroll\.export/.test(message)) return 'You need payroll.export in this company.'
   if (/cannot approve it/.test(message)) return 'The person who prepared a period cannot approve it.'
+  if (/prepare it again first/.test(message)) return 'This period was reopened and its bonuses went back to pending; prepare it again first.'
   return message
 }
 
@@ -146,8 +158,13 @@ async function prepare(start: string, end: string, currency: string, note: strin
     console.error('Payroll prepare failed:', err.message)
     return false
   }
-  const result = data as { lines: number; uncovered: number } | null
-  notice.value = `Prepared: ${result?.lines ?? 0} lines${result?.uncovered ? ` · ${result.uncovered} active ${result.uncovered === 1 ? 'person has' : 'people have'} no approved record in ${currency}` : ''}.`
+  const result = data as { lines: number; uncovered: number; bonuses: number; bonuses_waiting: number } | null
+  const parts = [`${result?.lines ?? 0} lines`]
+  if (result?.bonuses) parts.push(`${result.bonuses} ${result.bonuses === 1 ? 'bonus' : 'bonuses'} included`)
+  if (result?.bonuses_waiting) parts.push(`${result.bonuses_waiting} ${result.bonuses_waiting === 1 ? 'bonus waits' : 'bonuses wait'} (no line for the person in ${currency})`)
+  if (result?.uncovered) parts.push(`${result.uncovered} active ${result.uncovered === 1 ? 'person has' : 'people have'} no approved record in ${currency}`)
+  notice.value = `Prepared: ${parts.join(' · ')}.`
+  emit('changed')
   await load()
   return true
 }
@@ -186,12 +203,17 @@ async function act(p: Period, action: PayrollAction): Promise<void> {
   busy.value = true
   error.value = null
   notice.value = null
-  const { error: err } = await supabase.rpc(fn, { p_period_id: p.id })
+  const { data, error: err } = await supabase.rpc(fn, { p_period_id: p.id })
   busy.value = false
   if (err) {
     error.value = friendly(err.message)
     console.error(`Payroll ${action.key} failed:`, err.message)
     return
+  }
+  if (action.key === 'reopen') {
+    const released = Number((data as { bonuses_released?: number } | null)?.bonuses_released ?? 0)
+    notice.value = released ? `Reopened; ${released} ${released === 1 ? 'bonus is' : 'bonuses are'} pending again. Prepare the period again before approving it.` : 'Reopened. Prepare the period again before approving it.'
+    emit('changed')
   }
   await load()
 }
@@ -200,7 +222,7 @@ async function download(p: Period): Promise<void> {
   error.value = null
   const { data, error: err } = await supabase
     .from('payroll_lines')
-    .select('full_name, job_title, amount, currency, pay_basis_key, effective_from, effective_to, days_covered')
+    .select(LINE_COLUMNS)
     .eq('period_id', p.id)
     .order('full_name')
     .order('effective_from')
@@ -257,6 +279,7 @@ watch(() => props.companyId, load)
               <template v-if="p.prepared_by"> · prepared by {{ personName(p.prepared_by) }}</template>
               <template v-if="p.approved_by"> · approved by {{ personName(p.approved_by) }}</template>
               <template v-if="p.exported_at"> · exported {{ p.exported_at.slice(0, 10) }}</template>
+              <template v-if="p.status === 'in_review' && p.reopened_at"> · <span class="reopened" data-testid="period-reopened">reopened — prepare again before approving</span></template>
               <template v-if="p.note"> · {{ p.note }}</template>
             </small>
           </div>
@@ -284,13 +307,21 @@ watch(() => props.companyId, load)
           <div v-if="linesLoading" class="empty">Loading lines…</div>
           <div v-else-if="!lines.length" class="empty">No lines: nobody has an approved record in {{ p.currency }} for this range.</div>
           <template v-else>
-            <div v-for="l in lines" :key="l.id" class="line-row">
+            <div v-for="l in lines" :key="l.id" class="line-row" data-testid="payroll-line">
               <div class="row-text">
                 <strong>{{ l.full_name }} <span class="muted">· {{ l.job_title }}</span></strong>
                 <small>{{ formatAmount(Number(l.amount), l.currency) }} {{ l.pay_basis_key }} · {{ l.effective_from }} → {{ l.effective_to }} · {{ l.days_covered }} days</small>
+                <small class="estimate" data-testid="line-estimate">
+                  <template v-if="Number(l.bonus)">bonus {{ formatAmount(Number(l.bonus), l.currency) }} · </template>gross {{ formatAmount(Number(l.gross), l.currency) }} · tax {{ formatAmount(Number(l.tax), l.currency) }} · deductions {{ formatAmount(Number(l.deductions), l.currency) }} · net {{ formatAmount(Number(l.net), l.currency) }}
+                </small>
               </div>
             </div>
-            <div class="lines-total">{{ lines.length }} lines · amounts as recorded, sum {{ formatAmount(total, openPeriod?.currency ?? '') }} (not pro-rated)</div>
+            <div class="lines-total" data-testid="period-totals">
+              {{ lines.length }} lines · amounts as recorded, sum {{ formatAmount(totals.amount, openPeriod?.currency ?? '') }} (not pro-rated)
+              <template v-if="totals.bonus"> · bonuses {{ formatAmount(totals.bonus, openPeriod?.currency ?? '') }}</template>
+              <br />
+              gross {{ formatAmount(totals.gross, openPeriod?.currency ?? '') }} · tax {{ formatAmount(totals.tax, openPeriod?.currency ?? '') }}<template v-if="hasEstimate(openPeriod)"> ({{ Number(openPeriod?.tax_rate_percent ?? 0) }}%)</template> · deductions {{ formatAmount(totals.deductions, openPeriod?.currency ?? '') }} · net {{ formatAmount(totals.net, openPeriod?.currency ?? '') }} — {{ ESTIMATE_NOTE }}
+            </div>
           </template>
         </div>
       </template>
@@ -309,7 +340,9 @@ watch(() => props.companyId, load)
 .small-btn { font-size: 11px; padding: 7px 11px; }
 .lines { background: #fafbf8; border-top: 1px solid #edf0eb; }
 .line-row { padding: 9px 24px 9px 40px; border-top: 1px solid #f1f3ee; }
-.lines-total { padding: 10px 24px 12px 40px; font-size: 11px; color: var(--muted); }
+.lines-total { padding: 10px 24px 12px 40px; font-size: 11px; color: var(--muted); line-height: 1.6; }
+.estimate { color: #4c6b57; }
+.reopened { color: #a8631b; font-weight: 600; }
 .form { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 14px; padding: 16px 24px; background: #fafbf8; border-top: 1px solid var(--line); }
 .form label { display: grid; gap: 4px; font-size: 11px; color: var(--muted); }
 .form .form-actions { grid-column: 1 / -1; display: flex; justify-content: flex-end; gap: 8px; }

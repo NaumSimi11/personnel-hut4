@@ -2310,21 +2310,27 @@ export type Database = {
           from_person_id: string
           id: string
           message: string
+          posted_by: string | null
           to_person_id: string
+          value_id: string | null
         }
         Insert: {
           created_at?: string
           from_person_id: string
           id?: string
           message: string
+          posted_by?: string | null
           to_person_id: string
+          value_id?: string | null
         }
         Update: {
           created_at?: string
           from_person_id?: string
           id?: string
           message?: string
+          posted_by?: string | null
           to_person_id?: string
+          value_id?: string | null
         }
         Relationships: [
           {
@@ -2342,6 +2348,33 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      kudos_values: {
+        Row: {
+          active: boolean
+          created_at: string
+          description: string | null
+          id: string
+          name: string
+          sort_order: number
+        }
+        Insert: {
+          active?: boolean
+          created_at?: string
+          description?: string | null
+          id?: string
+          name: string
+          sort_order?: number
+        }
+        Update: {
+          active?: boolean
+          created_at?: string
+          description?: string | null
+          id?: string
+          name?: string
+          sort_order?: number
+        }
+        Relationships: []
       }
       leave_adjustments: {
         Row: {
@@ -3002,57 +3035,133 @@ export type Database = {
         }
         Relationships: []
       }
+      payroll_items: {
+        Row: {
+          amount: number
+          company_id: string
+          created_at: string
+          created_by: string | null
+          currency: string
+          id: string
+          item_date: string
+          period_id: string | null
+          person_id: string
+          reason: string
+        }
+        Insert: {
+          amount: number
+          company_id: string
+          created_at?: string
+          created_by?: string | null
+          currency: string
+          id?: string
+          item_date?: string
+          period_id?: string | null
+          person_id: string
+          reason: string
+        }
+        Update: {
+          amount?: number
+          company_id?: string
+          created_at?: string
+          created_by?: string | null
+          currency?: string
+          id?: string
+          item_date?: string
+          period_id?: string | null
+          person_id?: string
+          reason?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "payroll_items_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "payroll_items_period_id_fkey"
+            columns: ["period_id"]
+            isOneToOne: false
+            referencedRelation: "payroll_periods"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "payroll_items_person_id_fkey"
+            columns: ["person_id"]
+            isOneToOne: false
+            referencedRelation: "people"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       payroll_lines: {
         Row: {
           amount: number
+          bonus: number
           company_id: string
           compensation_record_id: string | null
           created_at: string
           currency: string
           days_covered: number
+          deductions: number
           effective_from: string
           effective_to: string
           employment_period_id: string
           full_name: string
+          gross: number
           id: string
           job_title: string
+          net: number
           pay_basis_key: string
           period_id: string
           person_id: string
+          tax: number
         }
         Insert: {
           amount: number
+          bonus?: number
           company_id: string
           compensation_record_id?: string | null
           created_at?: string
           currency: string
           days_covered: number
+          deductions?: number
           effective_from: string
           effective_to: string
           employment_period_id: string
           full_name: string
+          gross?: number
           id?: string
           job_title: string
+          net?: number
           pay_basis_key: string
           period_id: string
           person_id: string
+          tax?: number
         }
         Update: {
           amount?: number
+          bonus?: number
           company_id?: string
           compensation_record_id?: string | null
           created_at?: string
           currency?: string
           days_covered?: number
+          deductions?: number
           effective_from?: string
           effective_to?: string
           employment_period_id?: string
           full_name?: string
+          gross?: number
           id?: string
           job_title?: string
+          net?: number
           pay_basis_key?: string
           period_id?: string
           person_id?: string
+          tax?: number
         }
         Relationships: [
           {
@@ -3098,6 +3207,7 @@ export type Database = {
           company_id: string
           created_at: string
           currency: string
+          deductions_flat: number | null
           export_document_id: string | null
           exported_at: string | null
           id: string
@@ -3106,7 +3216,9 @@ export type Database = {
           period_start: string
           prepared_at: string | null
           prepared_by: string | null
+          reopened_at: string | null
           status: string
+          tax_rate_percent: number | null
           updated_at: string
         }
         Insert: {
@@ -3114,6 +3226,7 @@ export type Database = {
           company_id: string
           created_at?: string
           currency: string
+          deductions_flat?: number | null
           export_document_id?: string | null
           exported_at?: string | null
           id?: string
@@ -3122,7 +3235,9 @@ export type Database = {
           period_start: string
           prepared_at?: string | null
           prepared_by?: string | null
+          reopened_at?: string | null
           status?: string
+          tax_rate_percent?: number | null
           updated_at?: string
         }
         Update: {
@@ -3130,6 +3245,7 @@ export type Database = {
           company_id?: string
           created_at?: string
           currency?: string
+          deductions_flat?: number | null
           export_document_id?: string | null
           exported_at?: string | null
           id?: string
@@ -3138,7 +3254,9 @@ export type Database = {
           period_start?: string
           prepared_at?: string | null
           prepared_by?: string | null
+          reopened_at?: string | null
           status?: string
+          tax_rate_percent?: number | null
           updated_at?: string
         }
         Relationships: [
@@ -4209,6 +4327,14 @@ export type Database = {
         Returns: Json
       }
       first_day_details: { Args: { p_company_id: string }; Returns: Json }
+      add_payroll_item: { Args: { p: Json }; Returns: Json }
+      remove_payroll_item: { Args: { p_id: string }; Returns: Json }
+      payroll_settings: { Args: { p_company_id: string }; Returns: Json }
+      set_payroll_settings: { Args: { p: Json; p_company_id: string }; Returns: Json }
+      kudos_overview: { Args: { p_month?: string | null }; Returns: Json }
+      record_kudos: { Args: { p: Json }; Returns: Json }
+      update_kudos: { Args: { p: Json; p_id: string }; Returns: Json }
+      save_kudos_value: { Args: { p: Json; p_id: string | null }; Returns: Json }
       handover_fields: { Args: never; Returns: Json }
       import_field_notebook: {
         Args: { p_commit?: boolean; p_payload: Json }

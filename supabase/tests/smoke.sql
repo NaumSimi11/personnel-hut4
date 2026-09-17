@@ -4518,4 +4518,297 @@ delete from public.grant_capabilities gc using omar_b_added a where gc.grant_id 
 drop table omar_b_added;
 delete from public.access_grants where id = '40000000-0000-0000-0000-000000000043';
 
+-- ================================================================ 0044
+-- Kudos values, a kudos recorded on someone's behalf, bonuses swept into
+-- the next period, the net estimate (plan 051).
+do $$
+begin
+  assert (select count(*) from public.kudos_values where active
+          and name in ('Teamwork', 'Ownership', 'Customer focus', 'Innovation', 'Integrity')) = 5,
+    'the five values are seeded';
+end $$;
+
+-- Alex (people.view in A) thanks Omar with a value; Omar, the receiver, may
+-- neither edit nor record on anyone's behalf; a retired value is refused on
+-- a new kudos and kept on an old one.
+set app.test_uid = '00000000-0000-0000-0000-000000000001';  -- Alex
+set role authenticated;
+do $$
+declare v_team uuid := (select id from public.kudos_values where name = 'Teamwork');
+begin
+  insert into public.kudos (from_person_id, to_person_id, message, value_id)
+    values ('20000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000003', 'Smoke: great sprint', v_team);
+  assert (select value_id from public.kudos where message = 'Smoke: great sprint') = v_team, 'a kudos carries its value';
+  assert (select count(*) from jsonb_array_elements(public.dashboard_snapshot(30) -> 'kudos') k
+          where k ->> 'message' = 'Smoke: great sprint' and k ->> 'value_name' = 'Teamwork') = 1,
+    'the wall shows the value';
+  -- Reviewed: the wall's insert cannot claim someone recorded it, nor pick its date.
+  begin
+    insert into public.kudos (from_person_id, to_person_id, message, posted_by)
+      values ('20000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000003', 'forged', '20000000-0000-0000-0000-000000000004');
+    raise exception 'FAIL: posted_by set from the wall';
+  exception when insufficient_privilege then null;
+  end;
+  -- Reviewed: HR fixing a typo on a kudos the giver posted themselves leaves it theirs.
+  perform public.update_kudos((select id from public.kudos where message = 'Smoke: great sprint'), '{"message": "Smoke: great sprint!"}');
+  assert (select posted_by from public.kudos where message = 'Smoke: great sprint!') is null, 'an edit does not claim the kudos';
+  perform public.update_kudos((select id from public.kudos where message = 'Smoke: great sprint!'), '{"message": "Smoke: great sprint"}');
+end $$;
+reset role;
+set app.test_uid = '00000000-0000-0000-0000-000000000003';  -- Omar
+set role authenticated;
+do $$
+declare v_id uuid := (select id from public.kudos where message = 'Smoke: great sprint');
+begin
+  begin
+    perform public.update_kudos(v_id, '{"message": "polished"}');
+    raise exception 'FAIL: the receiver edited a kudos';
+  exception when insufficient_privilege then null;
+  end;
+  begin
+    perform public.record_kudos(jsonb_build_object('from_person_id', '20000000-0000-0000-0000-000000000001',
+      'to_person_id', '20000000-0000-0000-0000-000000000003', 'message', 'x'));
+    raise exception 'FAIL: recorded on behalf without people.view';
+  exception when insufficient_privilege then null;
+  end;
+  delete from public.kudos where id = v_id;
+  assert exists (select 1 from public.kudos where id = v_id), 'the receiver does not remove a kudos';
+  begin
+    perform public.save_kudos_value(null, '{"name": "Speed"}');
+    raise exception 'FAIL: a non-admin added a value';
+  exception when insufficient_privilege then null;
+  end;
+end $$;
+reset role;
+-- Ada retires Innovation and adds Craft; the name is unique.
+set app.test_uid = '00000000-0000-0000-0000-000000000004';  -- Ada
+set role authenticated;
+do $$
+declare r jsonb; v_innov uuid := (select id from public.kudos_values where name = 'Innovation');
+begin
+  r := public.save_kudos_value(v_innov, '{"name": "Innovation", "description": "Found a smarter way.", "active": false}');
+  assert (select not active from public.kudos_values where id = v_innov), 'a value retires';
+  r := public.save_kudos_value(null, '{"name": " Craft ", "description": "Did it properly."}');
+  assert (select name from public.kudos_values where id = (r ->> 'id')::uuid) = 'Craft', 'a value is added trimmed';
+  begin
+    perform public.save_kudos_value(null, '{"name": "craft"}');
+    raise exception 'FAIL: a duplicate value';
+  exception when raise_exception then
+    if sqlerrm not like '%already exists%' then raise; end if;
+  end;
+end $$;
+reset role;
+-- Alex records a kudos from Omar to Pia three days ago, then edits it; the
+-- retired value is refused on a new one; the overview counts.
+set app.test_uid = '00000000-0000-0000-0000-000000000001';  -- Alex
+set role authenticated;
+do $$
+declare
+  r jsonb; v_id uuid; o jsonb;
+  v_innov uuid := (select id from public.kudos_values where name = 'Innovation');
+  v_craft uuid := (select id from public.kudos_values where name = 'Craft');
+begin
+  r := public.record_kudos(jsonb_build_object('from_person_id', '20000000-0000-0000-0000-000000000003',
+    'to_person_id', '20000000-0000-0000-0000-000000000021', 'message', ' Smoke: covered my shift ',
+    'value_id', v_craft, 'on_date', (current_date - 3)::text));
+  v_id := (r ->> 'id')::uuid;
+  assert (select date(created_at) from public.kudos where id = v_id) = current_date - 3, 'dated as asked';
+  assert (select posted_by from public.kudos where id = v_id) = '20000000-0000-0000-0000-000000000001', 'the recorder is kept';
+  assert (select message from public.kudos where id = v_id) = 'Smoke: covered my shift', 'message trimmed';
+  begin
+    perform public.record_kudos(jsonb_build_object('from_person_id', '20000000-0000-0000-0000-000000000003',
+      'to_person_id', '20000000-0000-0000-0000-000000000021', 'message', 'x', 'value_id', v_innov));
+    raise exception 'FAIL: a retired value on a new kudos';
+  exception when raise_exception then
+    if sqlerrm not like '%retired%' then raise; end if;
+  end;
+  begin
+    perform public.record_kudos(jsonb_build_object('from_person_id', '20000000-0000-0000-0000-000000000003',
+      'to_person_id', '20000000-0000-0000-0000-000000000021', 'message', 'x', 'on_date', (current_date + 1)::text));
+    raise exception 'FAIL: a future kudos';
+  exception when invalid_parameter_value then null;
+  end;
+  begin
+    perform public.record_kudos(jsonb_build_object('from_person_id', '20000000-0000-0000-0000-000000000021',
+      'to_person_id', '20000000-0000-0000-0000-000000000021', 'message', 'x'));
+    raise exception 'FAIL: a kudos to oneself';
+  exception when invalid_parameter_value then null;
+  end;
+  r := public.update_kudos(v_id, jsonb_build_object('message', 'Smoke: covered my whole shift', 'value_id', '', 'on_date', current_date::text));
+  assert (select message from public.kudos where id = v_id) = 'Smoke: covered my whole shift', 'message edited';
+  assert (select value_id from public.kudos where id = v_id) is null, 'value cleared';
+  assert (select date(created_at) from public.kudos where id = v_id) = current_date, 'moved to today';
+  o := public.kudos_overview(null);
+  assert (o ->> 'total')::int >= 2, 'the overview lists what Alex manages: ' || (o ->> 'total');
+  assert (select count(*) from jsonb_array_elements(o -> 'rows') x where x ->> 'id' = v_id::text and x ->> 'posted_by_name' = 'Alex Director') = 1,
+    'the row says who recorded it';
+  assert (select (v ->> 'count')::int from jsonb_array_elements(o -> 'values') v where v ->> 'name' = 'Teamwork') >= 1, 'counts per value';
+  assert (select count(*) from jsonb_array_elements(o -> 'values') v where v ->> 'name' = 'Innovation' and (v ->> 'active')::boolean = false) = 1,
+    'a retired value is listed as such';
+  o := public.kudos_overview(to_char(current_date, 'YYYY-MM'));
+  assert (select count(*) from jsonb_array_elements(o -> 'rows') x where x ->> 'id' = v_id::text) = 1, 'the month filter keeps this month';
+  begin
+    perform public.kudos_overview('2026-9');
+    raise exception 'FAIL: a bad month';
+  exception when invalid_parameter_value then null;
+  end;
+end $$;
+reset role;
+-- Bea manages only Company B: none of these rows are hers.
+set app.test_uid = '00000000-0000-0000-0000-000000000005';  -- Bea
+set role authenticated;
+do $$
+declare o jsonb := public.kudos_overview(null);
+begin
+  assert (select count(*) from jsonb_array_elements(o -> 'rows') x where x ->> 'message' like 'Smoke:%') = 0, 'Bea sees no Company A kudos';
+end $$;
+reset role;
+
+-- Bonuses and the net estimate. A person employed in A with no EUR record
+-- shows a bonus waiting; Pia's bonus lands in the next EUR period once.
+insert into public.people (id, full_name) values ('20000000-0000-0000-0000-000000000044', 'Wilma Waiting');
+insert into public.employment_periods (id, person_id, company_id, job_title, status, start_date) values
+  ('30000000-0000-0000-0000-000000000044', '20000000-0000-0000-0000-000000000044', '10000000-0000-0000-0000-00000000000a', 'Runner', 'active', '2024-01-01');
+set app.test_uid = '00000000-0000-0000-0000-000000000003';  -- Omar: no payroll capability
+set role authenticated;
+do $$
+begin
+  begin
+    perform public.set_payroll_settings('10000000-0000-0000-0000-00000000000a', '{"tax_rate_percent": 10, "deductions_flat": 50}');
+    raise exception 'FAIL: settings without payroll.individual';
+  exception when insufficient_privilege then null;
+  end;
+  begin
+    perform public.add_payroll_item(jsonb_build_object('person_id', '20000000-0000-0000-0000-000000000021',
+      'company_id', '10000000-0000-0000-0000-00000000000a', 'amount', 250, 'currency', 'EUR', 'reason', 'x'));
+    raise exception 'FAIL: a bonus without payroll.individual';
+  exception when insufficient_privilege then null;
+  end;
+end $$;
+reset role;
+set app.test_uid = '00000000-0000-0000-0000-000000000002';  -- Fiona (payroll.individual in A)
+set role authenticated;
+do $$
+declare r jsonb; v_id uuid; v_item uuid; v_wait uuid; v_line record;
+begin
+  assert (public.payroll_settings('10000000-0000-0000-0000-00000000000b') ->> 'own')::boolean = false, 'B has no settings of its own';
+  begin
+    perform public.set_payroll_settings('10000000-0000-0000-0000-00000000000a', '{"tax_rate_percent": 150, "deductions_flat": 0}');
+    raise exception 'FAIL: a rate above 100';
+  exception when invalid_parameter_value then null;
+  end;
+  r := public.set_payroll_settings('10000000-0000-0000-0000-00000000000a', '{"tax_rate_percent": "10", "deductions_flat": "50"}');
+  assert (public.payroll_settings('10000000-0000-0000-0000-00000000000a') ->> 'tax_rate_percent')::numeric = 10, 'rate saved';
+  assert (public.payroll_settings('10000000-0000-0000-0000-00000000000a') ->> 'own')::boolean, 'A has its own';
+
+  r := public.add_payroll_item(jsonb_build_object('person_id', '20000000-0000-0000-0000-000000000021',
+    'company_id', '10000000-0000-0000-0000-00000000000a', 'amount', '250', 'currency', 'eur', 'reason', ' Quarter bonus ',
+    'item_date', (current_date + 95)::text));
+  v_item := (r ->> 'id')::uuid;
+  assert (select currency || '|' || reason from public.payroll_items where id = v_item) = 'EUR|Quarter bonus', 'bonus normalised';
+  r := public.add_payroll_item(jsonb_build_object('person_id', '20000000-0000-0000-0000-000000000044',
+    'company_id', '10000000-0000-0000-0000-00000000000a', 'amount', 100, 'currency', 'EUR', 'reason', 'Welcome bonus'));
+  v_wait := (r ->> 'id')::uuid;
+  begin
+    perform public.add_payroll_item(jsonb_build_object('person_id', '20000000-0000-0000-0000-000000000021',
+      'company_id', '10000000-0000-0000-0000-00000000000a', 'amount', -5, 'currency', 'EUR', 'reason', 'x'));
+    raise exception 'FAIL: a negative bonus';
+  exception when invalid_parameter_value then null;
+  end;
+  begin
+    perform public.add_payroll_item(jsonb_build_object('person_id', '20000000-0000-0000-0000-000000000005',
+      'company_id', '10000000-0000-0000-0000-00000000000a', 'amount', 5, 'currency', 'EUR', 'reason', 'x'));
+    raise exception 'FAIL: a bonus for someone not employed here';
+  exception when invalid_parameter_value then null;
+  end;
+
+  -- The next EUR period sweeps Pia's bonus; Wilma's waits (no line).
+  r := public.prepare_payroll_period('10000000-0000-0000-0000-00000000000a', current_date + 100, current_date + 130, 'EUR', 'with bonuses');
+  v_id := (r ->> 'period_id')::uuid;
+  assert (r ->> 'bonuses')::int = 1, 'one bonus included: ' || r::text;
+  assert (r ->> 'bonuses_waiting')::int = 1, 'one bonus waiting: ' || r::text;
+  assert (select period_id from public.payroll_items where id = v_item) = v_id, 'the bonus is attached to the period';
+  assert (select period_id from public.payroll_items where id = v_wait) is null, 'the waiting bonus stays pending';
+  select * into v_line from public.payroll_lines where period_id = v_id and person_id = '20000000-0000-0000-0000-000000000021';
+  assert v_line.amount = 1200 and v_line.bonus = 250 and v_line.gross = 1450, 'gross = amount + bonus: ' || row_to_json(v_line)::text;
+  assert v_line.tax = 145.00 and v_line.deductions = 50 and v_line.net = 1255.00, 'net = gross - tax - deductions: ' || row_to_json(v_line)::text;
+  assert (select tax_rate_percent from public.payroll_periods where id = v_id) = 10, 'the period snapshots the rate';
+  assert (select sum(deductions) from public.payroll_lines where period_id = v_id and person_id = '20000000-0000-0000-0000-000000000001') = 50,
+    'the flat deduction once per person';
+  assert (select count(*) from public.payroll_lines where period_id = v_id and bonus <> 0) = 1, 'the bonus on one line only';
+  begin
+    perform public.remove_payroll_item(v_item);
+    raise exception 'FAIL: removed a swept bonus';
+  exception when raise_exception then
+    if sqlerrm not like '%in a prepared period%' then raise; end if;
+  end;
+  -- Preparing again attaches it once more, not twice.
+  r := public.prepare_payroll_period('10000000-0000-0000-0000-00000000000a', current_date + 100, current_date + 130, 'EUR', null);
+  assert (r ->> 'bonuses')::int = 1, 'prepared again: still one bonus';
+  assert (select sum(bonus) from public.payroll_lines where period_id = v_id) = 250, 'still 250 in the lines';
+  perform public.remove_payroll_item(v_wait);
+  assert not exists (select 1 from public.payroll_items where id = v_wait), 'a pending bonus is removed';
+end $$;
+reset role;
+-- Alex approves, reopens (the bonus goes back to pending), cannot approve
+-- again until Fiona prepares again.
+set app.test_uid = '00000000-0000-0000-0000-000000000001';  -- Alex
+set role authenticated;
+do $$
+declare r jsonb;
+  v_id uuid := (select id from public.payroll_periods where company_id = '10000000-0000-0000-0000-00000000000a' and period_start = current_date + 100 and currency = 'EUR');
+begin
+  perform public.approve_payroll_period(v_id);
+  r := public.reopen_payroll_period(v_id);
+  assert (r ->> 'bonuses_released')::int = 1, 'reopening releases the bonus';
+  assert (select period_id from public.payroll_items where reason = 'Quarter bonus') is null, 'the bonus is pending again';
+  assert (select reopened_at from public.payroll_periods where id = v_id) is not null, 'reopened_at stamped';
+  -- Reviewed: the lines drop the released bonus, at the period's own rate.
+  assert (select bonus || '|' || gross || '|' || tax || '|' || net from public.payroll_lines where period_id = v_id and person_id = '20000000-0000-0000-0000-000000000021')
+    = '0.00|1200.00|120.00|1030.00', 'the lines no longer carry the released bonus';
+  begin
+    perform public.approve_payroll_period(v_id);
+    raise exception 'FAIL: approved a reopened period without preparing it again';
+  exception when raise_exception then
+    if sqlerrm not like '%prepare it again%' then raise; end if;
+  end;
+end $$;
+reset role;
+set app.test_uid = '00000000-0000-0000-0000-000000000002';  -- Fiona
+set role authenticated;
+do $$
+declare r jsonb;
+begin
+  r := public.prepare_payroll_period('10000000-0000-0000-0000-00000000000a', current_date + 100, current_date + 130, 'EUR', null);
+  assert (r ->> 'bonuses')::int = 1, 'prepared again after reopening: the bonus is back in';
+  assert (select reopened_at from public.payroll_periods where id = (r ->> 'period_id')::uuid) is null, 'reopened_at cleared';
+end $$;
+reset role;
+set app.test_uid = '00000000-0000-0000-0000-000000000001';  -- Alex
+set role authenticated;
+do $$
+declare v_id uuid := (select id from public.payroll_periods where company_id = '10000000-0000-0000-0000-00000000000a' and period_start = current_date + 100 and currency = 'EUR');
+begin
+  perform public.approve_payroll_period(v_id);
+  assert (select status from public.payroll_periods where id = v_id) = 'approved', 'approved after preparing again';
+end $$;
+reset role;
+-- Omar reads no bonuses; amounts stay out of the audit trail.
+set app.test_uid = '00000000-0000-0000-0000-000000000003';  -- Omar
+set role authenticated;
+do $$
+begin
+  assert (select count(*) from public.payroll_items) = 0, 'Omar sees no bonuses';
+end $$;
+reset role;
+do $$
+begin
+  assert not exists (select 1 from public.activity_log where entity_type = 'payroll_items' and coalesce(after, '{}') ? 'amount'),
+    'bonus amounts are not in the audit trail';
+  assert not exists (select 1 from public.activity_log where entity_type = 'payroll_lines'
+                     and (coalesce(after, '{}') ?| array['gross', 'net', 'tax', 'bonus'] or coalesce(before, '{}') ?| array['gross', 'net', 'tax', 'bonus'])),
+    'line estimates are not in the audit trail';
+end $$;
+set app.test_uid = '';
+
 select 'SMOKE TESTS PASSED' as result;

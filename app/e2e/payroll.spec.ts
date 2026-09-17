@@ -120,8 +120,8 @@ test('prepare → lines → no self-approval → colleague-prepared approved →
   const [download] = await Promise.all([page.waitForEvent('download'), row.getByRole('button', { name: 'Download CSV' }).click()])
   expect(download.suggestedFilename()).toBe(`payroll-prae-${START}-${END}-eur.csv`)
   const csv = await (await download.createReadStream()).toArray().then((chunks) => Buffer.concat(chunks).toString('utf8'))
-  expect(csv.split('\n')[0]).toBe('Person,Job title,Amount,Currency,Pay basis,From,To,Days covered')
-  expect(csv).toContain(`${PERSON},Payroll Clerk,2400.00,EUR,monthly,${START},${END},31`)
+  expect(csv.split('\n')[0]).toBe('Person,Job title,Amount,Currency,Pay basis,From,To,Days covered,Bonus,Gross,Tax,Deductions,Net')
+  expect(csv).toContain(`${PERSON},Payroll Clerk,2400.00,EUR,monthly,${START},${END},31,0.00,2400.00,`)
 
   await row.getByRole('button', { name: 'Mark exported' }).click()
   await confirmDialog(page)

@@ -103,7 +103,18 @@ function supabaseStore(client) {
         .eq('company_id', companyId)
         .eq('asset_tag', assetTag)
         .maybeSingle()
-      return data ? { id: data.id } : null
+      if (!data) return null
+      // An assignment with no returned_at is the asset's current holder.
+      const { data: open, error } = await client
+        .from('asset_assignments')
+        .select('person_id')
+        .eq('asset_id', data.id)
+        .is('returned_at', null)
+        .limit(1)
+      // Stop the whole run rather than report "nobody holds it" on a failed
+      // lookup: that answer would let the caller issue the asset a second time.
+      if (error) throw new Error(`could not read assignments of asset ${data.id}: ${error.message}`)
+      return { id: data.id, openAssignment: open?.[0] ? { personId: open[0].person_id } : null }
     },
     async insertAssignment(assetId, personId) {
       const { error } = await client
@@ -174,6 +185,10 @@ async function apply(reviewFile, commit) {
   for (const sheet of review.sheets) {
     for (const [index, item] of sheet.items.entries()) {
       // A sheet row without a code still needs a unique tag within its company.
+      // This generated tag is also what makes a re-run resumable (see
+      // popisAssetWrite.ts): it is only stable while this same review file is
+      // reused unedited — reordering or adding items renumbers it, and the
+      // re-run would then create duplicates instead of reconciling.
       const tag = item.assetTag ?? `${sheet.sheet.replace(/\s+/g, '').toUpperCase()}-${String(index + 1).padStart(4, '0')}`
       const noteParts = []
       if (item.holder.kind === 'company') noteParts.push(`Held by ${item.holder.text}`)

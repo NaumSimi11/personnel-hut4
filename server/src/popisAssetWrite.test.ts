@@ -18,6 +18,36 @@ const unreachable: AssetStore = {
   markAssigned: () => { throw new Error('markAssigned should not have been called') },
 }
 
+/** An assignment as the fake store holds it; `returnedAt` set means the asset came back. */
+type FakeAssignment = { readonly personId: string; readonly returnedAt: string | null }
+
+/**
+ * A store whose asset insert always hits the duplicate key, so every call
+ * takes the reconcile path. It reports an open assignment the same way the
+ * real store does — only a row with no `returnedAt` counts as open.
+ */
+function reconcilingStore(existing: readonly FakeAssignment[], calls: string[]): AssetStore {
+  return {
+    ...unreachable,
+    insertAsset: async () => ({
+      id: null,
+      error: { code: '23505', message: 'duplicate key value violates unique constraint' },
+    }),
+    findAssetByTag: async () => {
+      const open = existing.find((assignment) => assignment.returnedAt === null)
+      return { id: 'existing-asset', openAssignment: open ? { personId: open.personId } : null }
+    },
+    insertAssignment: async (assetId, personId) => {
+      calls.push(`insertAssignment:${assetId}:${personId}`)
+      return { error: null }
+    },
+    markAssigned: async (assetId) => {
+      calls.push(`markAssigned:${assetId}`)
+      return { error: null }
+    },
+  }
+}
+
 describe('writeAsset', () => {
   it('writes available -> assignment -> assigned, in that order, for a person holder', async () => {
     const calls: string[] = []
@@ -107,6 +137,49 @@ describe('writeAsset', () => {
     const result = await writeAsset(store, { asset: SAMPLE_ASSET, personId: null })
 
     expect(result).toEqual({ outcome: 'created', assigned: false })
+  })
+
+  it('does not write a second assignment when the reconciled asset is already issued to the same person', async () => {
+    const calls: string[] = []
+    const store = reconcilingStore([{ personId: 'person-1', returnedAt: null }], calls)
+
+    const result = await writeAsset(store, { asset: SAMPLE_ASSET, personId: 'person-1' })
+
+    expect(calls).toEqual(['markAssigned:existing-asset']) // no second insertAssignment
+    expect(result).toEqual({ outcome: 'reconciled', assigned: true })
+  })
+
+  it('fails, naming both people, when the reconciled asset is open to someone else', async () => {
+    const calls: string[] = []
+    const store = reconcilingStore([{ personId: 'person-2', returnedAt: null }], calls)
+
+    const result = await writeAsset(store, { asset: SAMPLE_ASSET, personId: 'person-1' })
+
+    expect(calls).toEqual([]) // nothing written at all
+    expect(result.outcome).toBe('failed')
+    const message = 'message' in result ? result.message : ''
+    expect(message).toContain('person-2')
+    expect(message).toContain('person-1')
+  })
+
+  it('writes the assignment as before when the reconciled asset has none', async () => {
+    const calls: string[] = []
+    const store = reconcilingStore([], calls)
+
+    const result = await writeAsset(store, { asset: SAMPLE_ASSET, personId: 'person-1' })
+
+    expect(calls).toEqual(['insertAssignment:existing-asset:person-1', 'markAssigned:existing-asset'])
+    expect(result).toEqual({ outcome: 'reconciled', assigned: true })
+  })
+
+  it('treats a returned assignment as closed, so the asset can be issued again', async () => {
+    const calls: string[] = []
+    const store = reconcilingStore([{ personId: 'person-2', returnedAt: '2026-01-31T00:00:00.000Z' }], calls)
+
+    const result = await writeAsset(store, { asset: SAMPLE_ASSET, personId: 'person-1' })
+
+    expect(calls).toEqual(['insertAssignment:existing-asset:person-1', 'markAssigned:existing-asset'])
+    expect(result).toEqual({ outcome: 'reconciled', assigned: true })
   })
 
   it('does not mutate the item or the asset row it is given', async () => {

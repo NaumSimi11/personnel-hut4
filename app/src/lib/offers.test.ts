@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { offerActions, offerTermsInput, termsFromOffer } from './offers'
+import { OFFER_STAGES, offerActions, offerStage, offerTermsInput, termsFromOffer } from './offers'
 
 describe('offerTermsInput', () => {
   it('accepts salary, currency, pay basis, start date and employment type', () => {
@@ -78,5 +78,52 @@ describe('offerActions', () => {
       { to: 'withdrawn', label: 'Withdraw offer' },
     ])
     expect(offerActions({ status: 'accepted', created_by: me }, me, can(['candidates.review']))).toEqual([])
+  })
+})
+
+describe('OFFER_STAGES', () => {
+  it('names the chain an offer walks, in order', () => {
+    expect(OFFER_STAGES.map((s) => s.id)).toEqual([
+      'draft',
+      'in_approval',
+      'approved',
+      'extended',
+      'accepted',
+    ])
+  })
+
+  it('numbers them so the card reads like the job strip', () => {
+    expect(OFFER_STAGES.map((s) => s.number)).toEqual(['01', '02', '03', '04', '05'])
+  })
+
+  it('labels them in words, not database keys', () => {
+    expect(OFFER_STAGES.map((s) => s.label)).toEqual([
+      'Drafted',
+      'In approval',
+      'Approved',
+      'Extended',
+      'Accepted',
+    ])
+  })
+})
+
+describe('offerStage', () => {
+  it('places a live offer on the chain', () => {
+    expect(offerStage('draft')).toBe('draft')
+    expect(offerStage('in_approval')).toBe('in_approval')
+    expect(offerStage('approved')).toBe('approved')
+    expect(offerStage('extended')).toBe('extended')
+    expect(offerStage('accepted')).toBe('accepted')
+  })
+
+  it('shows no chain for an offer that ended off it', () => {
+    // Withdrawn and declined leave the chain rather than finish it, and the
+    // card already states which; drawing a half-lit strip would only mislead.
+    expect(offerStage('withdrawn')).toBeNull()
+    expect(offerStage('declined')).toBeNull()
+  })
+
+  it('shows no chain for a status it does not recognise', () => {
+    expect(offerStage('something_new')).toBeNull()
   })
 })

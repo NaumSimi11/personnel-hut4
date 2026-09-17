@@ -6,6 +6,11 @@ import { useAuthStore } from '@/stores/auth'
 import { useDialogStore } from '@/stores/dialogs'
 import { friendlyDepartureError } from '@/lib/departure'
 import { progress, type ChecklistKind, type ChecklistTask, type Phase } from '@/lib/checklists'
+import { nextAction, nextActionSentence } from '@/lib/nextAction'
+import { planSections, type PlanSectionId } from '@/lib/planSections'
+import { planStep } from '@/lib/journey'
+import JobStepper from '@/components/JobStepper.vue'
+import { todayDb } from '@/lib/compensation'
 import ChecklistTasks from '@/components/checklists/ChecklistTasks.vue'
 import HandoverCard from '@/components/handover/HandoverCard.vue'
 import StarterKitCard from '@/components/equipment/StarterKitCard.vue'
@@ -48,6 +53,49 @@ const finishError = ref<string | null>(null)
 const finishSuccess = ref<string | null>(null)
 
 const bar = computed(() => progress(tasks.value))
+// The single line worth doing next, so the reader does not have to derive it
+// from a list where every line looks equally urgent.
+const next = computed(() => (plan.value ? nextAction(tasks.value, plan.value.kind, todayDb()) : null))
+const nextSentence = computed(() => (next.value ? nextActionSentence(next.value) : null))
+
+// The readiness count is the most useful number on the page; clicking it should
+// take you to what it is counting rather than leaving you to find it.
+const CLOSED_STATES = new Set(['done', 'skipped'])
+const firstGapId = computed(
+  () => tasks.value.find((t) => t.critical && !CLOSED_STATES.has(t.status))?.id ?? null,
+)
+// The same strip the job page shows, carried past "Hired" so the hiring half
+// and the onboarding half read as one journey rather than two tools.
+const journeyStep = computed(() =>
+  plan.value ? planStep({ status: plan.value.status, startDate: plan.value.start_date }, todayDb()) : null,
+)
+
+// The starter kit card renders nothing when the company has configured no kit,
+// so the nav must not offer a link to it. It reports back on load.
+const kitPresent = ref(true)
+const navSections = computed(() => sections.value.filter((sec) => sec.id !== 'kit' || kitPresent.value))
+
+const sections = computed(() =>
+  plan.value
+    ? planSections({
+        kind: plan.value.kind,
+        hasPerson: Boolean(plan.value.person),
+        canViewTasks: auth.can(plan.value.company_id, 'tasks.view'),
+        canViewIt: auth.can(plan.value.company_id, 'it.view'),
+      })
+    : [],
+)
+function goToSection(id: PlanSectionId): void {
+  document.getElementById(`plan-${id}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+}
+
+function goToFirstGap(): void {
+  const id = firstGapId.value
+  if (!id) return
+  const row = document.querySelector(`[data-testid="task-${id}"]`)
+  row?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+  row?.querySelector<HTMLInputElement>('input[type="checkbox"]')?.focus()
+}
 const isOffboarding = computed(() => (plan.value ? plan.value.kind === 'offboarding' : route.name === 'offboarding-plan'))
 const readinessLabel = computed(() => {
   const n = bar.value.criticalOpen
@@ -181,10 +229,35 @@ onMounted(async () => {
           </router-link>
         </div>
         <span v-if="plan.status === 'cancelled'" class="badge readiness-badge">Cancelled<template v-if="plan.cancelled_reason"> · {{ plan.cancelled_reason }}</template></span>
-        <span v-else class="badge readiness-badge" :class="bar.criticalOpen ? 'amber' : 'green'">{{ readinessLabel }}</span>
+        <button
+          v-else-if="firstGapId"
+          type="button"
+          class="badge readiness-badge amber is-link"
+          :title="`Go to the first ${isOffboarding ? 'blocker' : 'gap'}`"
+          @click="goToFirstGap"
+        >{{ readinessLabel }}</button>
+        <span v-else class="badge readiness-badge green">{{ readinessLabel }}</span>
       </div>
 
-      <div class="card">
+      <JobStepper v-if="!isOffboarding && journeyStep" :current="journeyStep" label="Employee journey" />
+
+      <div v-if="active && next && nextSentence" class="card next-card">
+        <div>
+          <span class="eyebrow">Next</span>
+          <p class="next-line" :class="{ late: next.overdue || next.task.status === 'blocked' }">{{ nextSentence }}</p>
+        </div>
+        <span class="badge" :class="next.task.critical ? 'amber' : 'green'">
+          {{ next.task.critical ? 'Required' : 'Optional' }}
+        </span>
+      </div>
+
+      <nav v-if="navSections.length > 1" class="section-nav" aria-label="Sections of this plan">
+        <button v-for="sec in navSections" :key="sec.id" type="button" class="section-link" @click="goToSection(sec.id)">
+          {{ sec.label }}
+        </button>
+      </nav>
+
+      <div id="plan-checklist" class="card">
         <ChecklistTasks
           :plan-id="plan.id"
           :company-id="plan.company_id"
@@ -197,6 +270,7 @@ onMounted(async () => {
       </div>
 
       <WelcomeNoteCard
+        :id="`plan-welcome`"
         v-if="plan.kind === 'onboarding' && auth.can(plan.company_id, 'tasks.view')"
         class="handover"
         :plan-id="plan.id"
@@ -205,6 +279,8 @@ onMounted(async () => {
       />
 
       <StarterKitCard
+        :id="`plan-kit`"
+        @present="kitPresent = $event"
         v-if="plan.kind === 'onboarding' && plan.person && auth.can(plan.company_id, 'it.view')"
         class="handover"
         :plan-id="plan.id"
@@ -214,6 +290,7 @@ onMounted(async () => {
       />
 
       <HandoverCard
+        :id="`plan-handover`"
         v-if="plan.person && auth.can(plan.company_id, 'tasks.view')"
         class="handover"
         :plan-id="plan.id"
@@ -240,6 +317,16 @@ onMounted(async () => {
 </template>
 
 <style scoped>
+/* The sticky nav would otherwise cover the heading it just jumped to. */
+#plan-checklist, #plan-welcome, #plan-kit, #plan-handover { scroll-margin-top: 64px; }
+.section-nav { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 14px; position: sticky; top: 0; z-index: 2; padding: 8px 0; background: var(--paper, #f6f8f3); }
+.section-link { font-size: 12px; font-weight: 600; color: var(--ink); background: #fff; border: 1px solid #e3e7de; border-radius: 999px; padding: 6px 14px; cursor: pointer; }
+.section-link:hover { background: #f2f5ee; }
+.badge.is-link { cursor: pointer; border: 0; font: inherit; font-size: 11px; }
+.badge.is-link:hover { filter: brightness(0.96); }
+.next-card { display: flex; align-items: center; justify-content: space-between; gap: 18px; padding: 16px 24px; margin-bottom: 14px; flex-wrap: wrap; }
+.next-line { margin: 4px 0 0; font-size: 14px; font-weight: 600; }
+.next-line.late { color: #a8332b; }
 .back-link { display: inline-block; font-size: 11px; color: var(--muted); text-decoration: none; margin-bottom: 14px; }
 .back-link:hover { color: var(--green); text-decoration: underline; }
 .page-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-bottom: 22px; }

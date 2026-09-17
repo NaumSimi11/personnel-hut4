@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
 import { z } from 'zod'
+import { cleanJobTitle, jobTitleProblem } from '@/lib/jobTitle'
 import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/stores/auth'
 import { deliverNotifications, deliverySentence } from '@/lib/notificationsApi'
@@ -43,7 +44,14 @@ const revising = ref<RevisionTarget | null>(null)
 
 const input = z.object({
   companyId: z.string().uuid('Choose a company.'),
-  title: z.string().trim().min(2, 'Enter a job title.').max(120),
+  title: z
+    .string()
+    .max(120)
+    .transform(cleanJobTitle)
+    .superRefine((value, ctx) => {
+      const problem = jobTitleProblem(value)
+      if (problem) ctx.addIssue({ code: z.ZodIssueCode.custom, message: problem })
+    }),
   reason: z.string().trim().max(2000, 'Keep the reason under 2000 characters.'),
   headcount: z.coerce.number().int().min(1, 'Headcount must be at least 1.'),
   targetStartDate: z.union([

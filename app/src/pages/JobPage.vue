@@ -15,6 +15,7 @@ import JobPromotionPanel from '@/components/JobPromotionPanel.vue'
 import JobActivityPanel from '@/components/JobActivityPanel.vue'
 import JobInterviewsPanel from '@/components/JobInterviewsPanel.vue'
 import { criteriaFor, criteriaInput, type Criterion } from '@/lib/interviews'
+import { missingRecordMessage } from '@/lib/missingRecord'
 import {
   currentStep,
   friendlyRecruitmentError,
@@ -124,6 +125,11 @@ const activeCount = computed(
 )
 const actionQueue = computed(() => candidateQueue(applications.value))
 const liveChannels = computed(() => channels.value.filter(isPublished).length)
+// A draft role has nothing in it yet, and four tiles reading zero say so less
+// clearly than the status card above them already does.
+const hasNumbersWorthShowing = computed(
+  () => liveChannels.value > 0 || activeCount.value > 0 || hiredCount.value > 0,
+)
 
 const step = computed(() =>
   currentStep({
@@ -177,7 +183,12 @@ async function loadJob(): Promise<void> {
     .eq('id', jobId)
     .maybeSingle()
   if (err || !data) {
-    error.value = 'Job not found or not visible with your access.'
+    error.value = missingRecordMessage({
+      noun: 'job',
+      lookupFailed: Boolean(err),
+      seesEverything: auth.isAdmin,
+      plural: 'it',
+    })
     console.error('Job load failed:', err?.message)
     return
   }
@@ -454,7 +465,7 @@ onMounted(async () => {
             <router-link class="button secondary small-btn" :to="{ name: 'application', params: { applicationId: a.id } }">View onboarding handoff</router-link>
           </div>
         </section>
-        <div class="metrics">
+        <div v-if="hasNumbersWorthShowing" class="metrics">
           <div class="card metric-tile">
             <span class="metric-label">Live listings</span>
             <span class="metric-value">{{ liveChannels }}</span>

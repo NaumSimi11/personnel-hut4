@@ -1,18 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import {
-  OWNER_ROLES,
-  PHASES_FOR,
-  emptyTemplateLine,
-  filterPlans,
-  groupByPhase,
-  lineInput,
-  messageForChecklist,
-  moved,
-  ownerLabel,
-  progress,
-  whenLabel,
-  type ChecklistTask,
-} from './checklists'
+import { OWNER_ROLES, PHASES_FOR, emptyTemplateLine, filterPlans, groupByPhase, lineInput, messageForChecklist, moved, ownerLabel, planMeta, progress, type ChecklistTask, whenLabel } from './checklists'
 
 const t = (over: Partial<ChecklistTask>): ChecklistTask => ({
   id: 'x',
@@ -110,5 +97,43 @@ describe('messages', () => {
     expect(messageForChecklist({ code: '42501', message: 'Shaping a checklist needs tasks.assign in this company.' })).toMatch(/tasks\.assign/)
     expect(messageForChecklist({ code: '22023', message: 'Days must be between -60 and 120.' })).toBe('Days must be between -60 and 120.')
     expect(messageForChecklist({ message: 'new row violates row-level security policy' })).toMatch(/permission/)
+  })
+})
+
+describe('planMeta', () => {
+  const base = {
+    companyName: 'Snowball',
+    jobTitle: 'Frontend Dev',
+    startDate: '2026-09-17',
+    endDate: null,
+    closed: 0,
+    total: 11,
+  }
+
+  it('names the role, so two hires with the same name stay apart', () => {
+    expect(planMeta(base, 'onboarding')).toBe('Snowball · Frontend Dev · starts 2026-09-17 · 0/11 done')
+  })
+
+  it('leaves the role out rather than printing a gap when there is none', () => {
+    expect(planMeta({ ...base, jobTitle: null }, 'onboarding')).toBe('Snowball · starts 2026-09-17 · 0/11 done')
+  })
+
+  it('falls back to a dash for a company it cannot name', () => {
+    expect(planMeta({ ...base, companyName: null, jobTitle: null }, 'onboarding')).toBe(
+      '— · starts 2026-09-17 · 0/11 done',
+    )
+  })
+
+  it('counts the closed lines', () => {
+    expect(planMeta({ ...base, closed: 7, total: 11 }, 'onboarding')).toContain('7/11 done')
+  })
+
+  it('speaks of the last day when leaving', () => {
+    expect(planMeta(base, 'offboarding')).toBe('Snowball · Frontend Dev · last day 2026-09-17 · 0/11 done')
+  })
+
+  it('adds the end of employment only when it differs from the last day', () => {
+    expect(planMeta({ ...base, endDate: '2026-09-30' }, 'offboarding')).toContain('employment ends 2026-09-30')
+    expect(planMeta({ ...base, endDate: '2026-09-17' }, 'offboarding')).not.toContain('employment ends')
   })
 })

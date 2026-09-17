@@ -106,3 +106,29 @@ export function offerActions(
 export function offerStatusLabel(status: string): string {
   return status.replace('_', ' ')
 }
+
+/**
+ * The chain an offer walks, shown as a strip on the offer card.
+ *
+ * The five steps are not ceremony to be compressed: submitting, approving,
+ * extending and hearing back are four different people-facts, and the approver
+ * may not be the author. What made them *feel* like ceremony was that the card
+ * named only the current status, so there was no way to see how far along the
+ * offer was or what remained. Naming the whole chain fixes that without
+ * weakening a single gate.
+ */
+export type OfferStageId = 'draft' | 'in_approval' | 'approved' | 'extended' | 'accepted'
+
+export const OFFER_STAGES: readonly { id: OfferStageId; number: string; label: string }[] = [
+  { id: 'draft', number: '01', label: 'Drafted' },
+  { id: 'in_approval', number: '02', label: 'In approval' },
+  { id: 'approved', number: '03', label: 'Approved' },
+  { id: 'extended', number: '04', label: 'Extended' },
+  { id: 'accepted', number: '05', label: 'Accepted' },
+]
+
+/** Where a live offer sits, or null for one that left the chain. */
+export function offerStage(status: string): OfferStageId | null {
+  const stage = OFFER_STAGES.find((s) => s.id === status)
+  return stage ? stage.id : null
+}

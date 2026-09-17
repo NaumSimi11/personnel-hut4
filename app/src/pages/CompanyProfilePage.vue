@@ -31,6 +31,7 @@ import InviteAccessDialog from '@/components/InviteAccessDialog.vue'
 import TransferDialog, { type TransferTarget } from '@/components/TransferDialog.vue'
 import { upcoming } from '@/lib/companyOps'
 import { todayDb } from '@/lib/compensation'
+import { missingRecordMessage } from '@/lib/missingRecord'
 
 /**
  * One company, tabbed (plan 014): Overview / People / Access / Hiring /
@@ -350,7 +351,12 @@ async function load(): Promise<void> {
 
   if (companyRes.error || !companyRes.data) {
     notFound.value = true
-    error.value = 'Company not found or not visible with your access.'
+    error.value = missingRecordMessage({
+      noun: 'company',
+      lookupFailed: Boolean(companyRes.error),
+      seesEverything: auth.isAdmin,
+      plural: 'it',
+    })
     loading.value = false
     return
   }

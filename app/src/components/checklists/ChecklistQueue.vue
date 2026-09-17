@@ -3,7 +3,9 @@ import { computed, onMounted, ref } from 'vue'
 import { supabase } from '@/lib/supabase'
 import CompanyFilter from '@/components/CompanyFilter.vue'
 import ChecklistTasks from '@/components/checklists/ChecklistTasks.vue'
-import { OWNER_ROLES, filterPlans, progress, type ChecklistKind, type ChecklistTask, type Phase } from '@/lib/checklists'
+import { OWNER_ROLES, filterPlans, planMeta, progress, type ChecklistKind, type ChecklistTask, type Phase } from '@/lib/checklists'
+import { queueSummary, queueSummaryLine } from '@/lib/queueSummary'
+import { todayDb } from '@/lib/compensation'
 
 /**
  * The Onboarding / Offboarding queue (plan 047): every checklist of one
@@ -20,7 +22,7 @@ type PlanRow = {
   cancelled_reason: string | null
   person: { id: string; full_name: string } | null
   company: { name: string } | null
-  employment_period: { end_date: string | null } | null
+  employment_period: { end_date: string | null; job_title: string | null } | null
   plan_tasks: ChecklistTask[]
 }
 
@@ -36,6 +38,9 @@ const error = ref<string | null>(null)
 const isOff = computed(() => props.kind === 'offboarding')
 const filtered = computed(() => filterPlans(plans.value, { companyId: companyFilter.value, ownerRole: ownerFilter.value }))
 const inProgress = computed(() => filtered.value.filter((p) => p.status === 'in_progress'))
+// What the whole queue adds up to, so the top of the page says something
+// without the reader totting up every row.
+const summaryLine = computed(() => queueSummaryLine(queueSummary(inProgress.value, todayDb()), props.kind))
 const closed = computed(() => filtered.value.filter((p) => p.status !== 'in_progress'))
 
 function badgeFor(p: PlanRow): { text: string; cls: string } {
@@ -48,10 +53,17 @@ function badgeFor(p: PlanRow): { text: string; cls: string } {
 
 function meta(p: PlanRow): string {
   const b = progress(p.plan_tasks)
-  const parts = [p.company?.name ?? '—', `${isOff.value ? 'last day' : 'starts'} ${p.start_date}`]
-  if (isOff.value && p.employment_period?.end_date && p.employment_period.end_date !== p.start_date) parts.push(`employment ends ${p.employment_period.end_date}`)
-  parts.push(`${b.closed}/${b.total} done`)
-  return parts.join(' · ')
+  return planMeta(
+    {
+      companyName: p.company?.name ?? null,
+      jobTitle: p.employment_period?.job_title ?? null,
+      startDate: p.start_date,
+      endDate: p.employment_period?.end_date ?? null,
+      closed: b.closed,
+      total: b.total,
+    },
+    props.kind,
+  )
 }
 
 function toggleOpen(id: string): void {
@@ -71,7 +83,7 @@ async function load(): Promise<void> {
         `id, company_id, start_date, status, cancelled_reason,
          person:people!plans_person_id_fkey(id, full_name),
          company:companies(name),
-         employment_period:employment_periods!plans_employment_period_id_fkey(end_date),
+         employment_period:employment_periods!plans_employment_period_id_fkey(end_date, job_title),
          plan_tasks(id, title, description, owner_role, phase_key, due_date, critical, status, blocked_reason, skip_reason, done_at, sort_order, owner:people!plan_tasks_owner_id_fkey(full_name))`,
       )
       .eq('kind', props.kind)
@@ -116,6 +128,7 @@ onMounted(load)
               <h2>In progress</h2>
               <p>{{ isOff ? 'Scheduled departures with open handover, equipment and access lines.' : 'Checklists still being worked before or after the start date.' }}</p>
             </div>
+            <p v-if="summaryLine" class="queue-summary">{{ summaryLine }}</p>
           </div>
           <div v-if="!inProgress.length" class="empty">Nothing in progress{{ companyFilter || ownerFilter ? ' for this filter' : '' }}.</div>
           <div v-for="p in inProgress" :key="p.id" class="plan" :data-testid="`plan-${p.id}`">
@@ -164,6 +177,7 @@ onMounted(load)
 </template>
 
 <style scoped>
+.queue-summary { margin: 0; font-size: 12px; font-weight: 600; color: var(--ink); white-space: nowrap; }
 .filters { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-bottom: 16px; }
 .owner { border: 1px solid var(--line); background: #fafbf9; padding: 9px 12px; font-size: 12px; }
 .section { margin-bottom: 22px; }

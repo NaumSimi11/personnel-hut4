@@ -1,16 +1,30 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import { JOB_STEPS, stepIndex, type StepId } from '@/lib/jobWorkspace'
+import { JOURNEY_STEPS, journeyStepIndex, type JourneyStep, type JourneyStepId } from '@/lib/journey'
 
-/** The five-step hiring journey from the prototype, with the current step lit. */
-const props = defineProps<{ current: StepId }>()
-const currentIndex = computed(() => stepIndex(props.current))
+/**
+ * The journey strip, with the current step lit.
+ *
+ * It defaults to the whole arc — hiring through to the person's first day — so
+ * the job page and the onboarding plan page show one continuous journey. Pass
+ * `steps` to show a shorter stretch of it.
+ */
+type StripStep = { id: string; number: string; label: string }
+
+const props = withDefaults(
+  defineProps<{ current: string; steps?: readonly StripStep[]; label?: string; compact?: boolean }>(),
+  { steps: () => JOURNEY_STEPS as readonly StripStep[], label: 'Hiring journey', compact: false },
+)
+const currentIndex = computed(() => {
+  const own = props.steps.findIndex((s) => s.id === props.current)
+  return own === -1 ? journeyStepIndex(props.current as JourneyStepId) : own
+})
 </script>
 
 <template>
-  <ol class="stepper" aria-label="Hiring journey">
+  <ol class="stepper" :class="{ compact }" :aria-label="label">
     <li
-      v-for="(step, i) in JOB_STEPS"
+      v-for="(step, i) in steps"
       :key="step.id"
       class="step"
       :class="{ done: i < currentIndex, current: i === currentIndex }"
@@ -55,6 +69,9 @@ const currentIndex = computed(() => stepIndex(props.current))
   font-weight: 650;
   flex-shrink: 0;
 }
+.stepper.compact { margin: 0 24px 16px; gap: 6px; }
+.stepper.compact .step { min-width: 92px; padding: 7px 10px; font-size: 10px; }
+.stepper.compact .number { width: 19px; height: 19px; font-size: 10px; }
 .step.done { color: var(--ink); }
 .step.done .number { background: #edf5ed; color: #3e744e; }
 .step.current { color: var(--ink); font-weight: 600; border-color: var(--green); }

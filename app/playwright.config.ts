@@ -26,6 +26,25 @@ process.env.TEST_USER_PASSWORD = env.TEST_USER_PASSWORD ?? ''
 process.env.SUPABASE_URL = env.SUPABASE_URL ?? ''
 process.env.SUPABASE_SECRET_KEY = env.SUPABASE_SECRET_KEY ?? ''
 
+// The suite builds a service-key client — which bypasses row-level security —
+// and its teardown hard-deletes people. The only Supabase project configured
+// here is the one the deployed app serves, so a run mutates live records.
+//
+// That is deliberate, but it must never happen by accident: a stray `npm run
+// test:e2e` has already removed people out from under someone using the app,
+// leaving notifications pointing at records that no longer exist. So the run
+// takes an explicit acknowledgement rather than a silent assumption.
+if ((env.E2E_ALLOW_PRODUCTION ?? '').trim().toLowerCase() !== 'true') {
+  throw new Error(
+    'Refusing to run E2E: these tests write to — and delete from — the live ' +
+      `Supabase project (${env.SUPABASE_URL || 'SUPABASE_URL unset'}), which is ` +
+      'the same one the deployed app serves.\n\n' +
+      'If that is what you intend, set E2E_ALLOW_PRODUCTION=true in .env.local. ' +
+      'To keep production untouched, point SUPABASE_URL and ' +
+      'VITE_SUPABASE_URL at a separate project first.',
+  )
+}
+
 export default defineConfig({
   testDir: './e2e',
   timeout: 60000,

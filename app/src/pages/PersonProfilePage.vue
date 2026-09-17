@@ -21,6 +21,7 @@ import { departureState, friendlyDepartureError } from '@/lib/departure'
 import { tenureLabel } from '@/lib/tenure'
 import { todayDb } from '@/lib/compensation'
 import { deliverNotifications } from '@/lib/notificationsApi'
+import { missingRecordMessage } from '@/lib/missingRecord'
 
 type Employment = {
   id: string
@@ -309,7 +310,11 @@ async function load(): Promise<void> {
   peopleOptions.value = (peopleRes.data ?? []).map((p) => ({ id: p.id, name: p.full_name }))
   typeOptions.value = typesRes.data ?? []
   if (personRes.error || !personRes.data) {
-    error.value = 'Person not found or not visible with your access.'
+    error.value = missingRecordMessage({
+      noun: 'person',
+      lookupFailed: Boolean(personRes.error),
+      seesEverything: auth.isAdmin,
+    })
     loading.value = false
     return
   }

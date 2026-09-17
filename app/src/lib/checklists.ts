@@ -130,3 +130,32 @@ export function messageForChecklist(error: { code?: string; message: string }): 
   if (/row-level security/i.test(error.message)) return 'You do not have permission to change this checklist.'
   return error.message
 }
+
+/**
+ * The line under a person's name in a checklist queue.
+ *
+ * It carries the role because a queue keyed only on name, company and date
+ * renders two different hires identically when they happen to share a name —
+ * and picking the wrong one means onboarding, or handing a laptop to, the
+ * wrong human.
+ */
+export type PlanSummary = {
+  readonly companyName: string | null
+  readonly jobTitle: string | null
+  readonly startDate: string
+  readonly endDate: string | null
+  readonly closed: number
+  readonly total: number
+}
+
+export function planMeta(plan: PlanSummary, kind: ChecklistKind): string {
+  const leaving = kind === 'offboarding'
+  const parts = [plan.companyName ?? '—']
+  if (plan.jobTitle) parts.push(plan.jobTitle)
+  parts.push(`${leaving ? 'last day' : 'starts'} ${plan.startDate}`)
+  if (leaving && plan.endDate && plan.endDate !== plan.startDate) {
+    parts.push(`employment ends ${plan.endDate}`)
+  }
+  parts.push(`${plan.closed}/${plan.total} done`)
+  return parts.join(' · ')
+}

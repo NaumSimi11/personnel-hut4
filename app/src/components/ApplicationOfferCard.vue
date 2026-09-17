@@ -12,7 +12,10 @@ import {
   termsToRow,
   type OfferTerms,
   type OfferTermsForm,
+  OFFER_STAGES,
+  offerStage,
 } from '@/lib/offers'
+import JobStepper from '@/components/JobStepper.vue'
 
 /**
  * The offer for one application (plan 018b): explicit terms, then a state
@@ -39,6 +42,9 @@ const props = defineProps<{ applicationId: string; companyId: string; canReview:
 const emit = defineEmits<{ accepted: [terms: OfferTerms] }>()
 
 const auth = useAuthStore()
+// Where the live offer sits on its chain, so the card shows the whole route
+// rather than only the step it happens to be on.
+const stageNow = computed(() => (live.value ? offerStage(live.value.status) : null))
 const dialogs = useDialogStore()
 const offers = ref<Offer[]>([])
 const payBases = ref<{ key: string; label: string }[]>([])
@@ -258,6 +264,13 @@ defineExpose({ reload: load, liveTerms: () => (live.value ? terms(live.value) : 
       <template v-else>An offer can be drafted once the candidate reaches the interview stage.</template>
     </div>
     <div v-else-if="live" class="offer-body">
+      <JobStepper
+        v-if="stageNow"
+        :current="stageNow"
+        :steps="OFFER_STAGES"
+        label="Offer progress"
+        compact
+      />
       <div class="offer-head">
         <div class="row-text">
           <strong v-if="terms(live)">

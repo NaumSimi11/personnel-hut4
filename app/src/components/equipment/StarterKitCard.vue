@@ -14,7 +14,9 @@ import { generateDocuments } from '@/lib/notificationsApi'
  * line ticks itself.
  */
 const props = defineProps<{ planId: string; personId: string; companyId: string }>()
-const emit = defineEmits<{ changed: [] }>()
+// `present` lets the page know whether this card rendered anything: with no
+// starter-kit request there is no card, and a nav link to it would go nowhere.
+const emit = defineEmits<{ changed: []; present: [present: boolean] }>()
 
 type Request = { id: string; status: string; requested_systems: unknown }
 type AssetOption = { id: string; asset_tag: string; model: string | null; company_id: string | null }
@@ -52,9 +54,11 @@ async function load(): Promise<void> {
   if (reqRes.error) {
     error.value = 'Could not load the starter kit.'
     console.error('Starter kit load failed:', reqRes.error.message)
+    emit('present', false)
     return
   }
   request.value = (reqRes.data as Request | null) ?? null
+  emit('present', request.value !== null)
   // Only assets that may go to this person: the pool, or this company's.
   assets.value = ((assetRes.data ?? []) as AssetOption[]).filter((a) => a.company_id === null || a.company_id === props.companyId)
 }

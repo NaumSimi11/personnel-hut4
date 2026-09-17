@@ -5,6 +5,7 @@ import { supabase } from '@/lib/supabase'
 import { useAccessCatalog } from '@/stores/accessCatalog'
 import { useAuthStore } from '@/stores/auth'
 import { diffSets, withDependencies, withoutDependents } from '@/lib/permissions'
+import { missingRecordMessage } from '@/lib/missingRecord'
 import PlatformAdminPanel from '@/components/PlatformAdminPanel.vue'
 
 const route = useRoute()
@@ -151,7 +152,12 @@ onMounted(async () => {
     supabase.from('companies').select('id, name').is('archived_at', null).order('name'),
   ])
   if (personRes.error || !personRes.data) {
-    error.value = 'Person not found or not visible with your access.'
+    error.value = missingRecordMessage({
+      noun: 'person',
+      lookupFailed: Boolean(personRes.error),
+      seesEverything: auth.isAdmin,
+      plural: 'them',
+    })
     loading.value = false
     return
   }

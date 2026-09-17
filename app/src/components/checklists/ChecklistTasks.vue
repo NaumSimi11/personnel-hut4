@@ -161,7 +161,7 @@ function dueClass(task: ChecklistTask): string {
           <p v-if="task.status === 'blocked' && task.blocked_reason" class="reason">Blocked: {{ task.blocked_reason }}</p>
           <p v-if="task.status === 'skipped'" class="reason">Skipped<template v-if="task.skip_reason">: {{ task.skip_reason }}</template></p>
         </div>
-        <span class="badge" :class="task.status === 'done' ? 'green' : task.status === 'blocked' ? 'amber' : task.status === 'open' ? 'blue' : ''">{{ task.status }}</span>
+        <span class="badge" :class="task.status === 'done' ? 'green' : task.status === 'blocked' ? 'amber' : task.status === 'open' ? 'quiet' : ''">{{ task.status }}</span>
         <details v-if="active && task.status !== 'done'" class="menu">
           <summary aria-label="More actions">···</summary>
           <div class="menu-items">
@@ -190,6 +190,8 @@ function dueClass(task: ChecklistTask): string {
 </template>
 
 <style scoped>
+/* The default state on every line — present for clarity, not for attention. */
+.badge.quiet { background: transparent; color: var(--muted); border: 1px solid #e3e7de; font-weight: 500; }
 .progress { padding: 12px 24px 4px; }
 .compact .progress { padding: 8px 0 4px; }
 .bar { height: 6px; border-radius: 999px; background: #e8ede6; overflow: hidden; }

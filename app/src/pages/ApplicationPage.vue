@@ -16,6 +16,7 @@ import { deliverNotifications, deliverySentence } from '@/lib/notificationsApi'
 import { candidateNextStep } from '@/lib/hiringJourney'
 import { criteriaFor } from '@/lib/interviews'
 import type { OfferTerms } from '@/lib/offers'
+import { missingRecordMessage } from '@/lib/missingRecord'
 
 /**
  * One application, everything in one place (plan 018a): who the candidate
@@ -226,7 +227,12 @@ async function load(): Promise<void> {
     supabase.from('channels').select('key, label'),
   ])
   if (appRes.error || !appRes.data) {
-    error.value = 'Application not found or not visible with your access.'
+    error.value = missingRecordMessage({
+      noun: 'application',
+      lookupFailed: Boolean(appRes.error),
+      seesEverything: auth.isAdmin,
+      plural: 'it',
+    })
     console.error('Application load failed:', appRes.error?.message)
     loading.value = false
     return

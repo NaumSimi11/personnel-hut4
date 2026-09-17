@@ -12,9 +12,7 @@ import { assetStatusLabel, itRequestStatusLabel } from '@/lib/equipment'
  */
 
 type Company = { id: string; name: string }
-const props = withDefaults(defineProps<{
-  /** Render bare, for a parent that already provides the card and its heading. */
-  headless?: boolean; personId: string; companies: Company[]; title?: string }>(), { title: 'Equipment' })
+const props = withDefaults(defineProps<{ personId: string; companies: Company[]; title?: string }>(), { title: 'Equipment' })
 
 type Held = {
   id: string
@@ -75,8 +73,8 @@ watch(() => `${props.personId}|${props.companies.map((c) => c.id).join(',')}`, (
 </script>
 
 <template>
-  <div v-if="visible && (loading || error || held.length || requests.length)" :class="headless ? 'bare' : 'card'">
-    <div v-if="!headless" class="card-head">
+  <div v-if="visible && (loading || error || held.length || requests.length)" class="card">
+    <div class="card-head">
       <div>
         <h2>{{ title }}</h2>
         <p>Equipment on hand and open IT work.</p>
@@ -110,7 +108,6 @@ watch(() => `${props.personId}|${props.companies.map((c) => c.id).join(',')}`, (
 </template>
 
 <style scoped>
-.bare { display: block; }
 .equipment-row { display: flex; align-items: center; gap: 13px; padding: 13px 24px; border-top: 1px solid #edf0eb; }
 .row-text strong { display: block; font-size: 12px; font-weight: 550; }
 .row-text small { display: block; font-size: 11px; color: var(--muted); margin-top: 4px; }

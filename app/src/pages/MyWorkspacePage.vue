@@ -3,8 +3,9 @@ import { computed, onMounted, ref } from 'vue'
 import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/stores/auth'
 import { departureState } from '@/lib/departure'
+import { tenureLabel } from '@/lib/tenure'
+import { todayDb } from '@/lib/compensation'
 import CompensationCard from '@/components/CompensationCard.vue'
-import CollapsibleSection from '@/components/CollapsibleSection.vue'
 import LeaveCard from '@/components/LeaveCard.vue'
 import AvatarUpload from '@/components/AvatarUpload.vue'
 import DocumentsCard from '@/components/DocumentsCard.vue'
@@ -267,7 +268,8 @@ onMounted(load)
       <p v-if="error" class="error-note" role="alert">{{ error }}</p>
       <div v-if="loading" class="empty">Loading your workspace…</div>
 
-      <div v-else class="stack">
+      <div v-else class="grid-two">
+        <div class="left-column">
           <MyRequestsCard />
           <MyPoliciesCard />
           <div v-if="plan" class="card plan-card">
@@ -288,7 +290,13 @@ onMounted(load)
             </div>
           </div>
 
-          <CollapsibleSection title="My tasks" hint="Onboarding tasks assigned to you that are still open." :count="myTasks.length">
+          <div class="card tasks-card">
+            <div class="card-head">
+              <div>
+                <h2>My tasks</h2>
+                <p>Onboarding tasks assigned to you that are still open.</p>
+              </div>
+            </div>
             <p v-if="taskError" class="error-note" role="alert">{{ taskError }}</p>
             <div v-if="!myTasks.length" class="empty">No tasks assigned to you.</div>
             <div v-for="t in myTasks" :key="t.id" class="task-row">
@@ -313,25 +321,36 @@ onMounted(load)
                 </router-link>
               </div>
             </div>
-          </CollapsibleSection>
+          </div>
+        </div>
 
-          <CollapsibleSection title="My profile" hint="Your contact details and current employment.">
-            <div class="card-body">
-              <p class="profile-line"><strong>{{ person?.full_name ?? '—' }}</strong></p>
-              <p class="profile-line">{{ person?.work_email ?? '—' }}</p>
-              <template v-if="current">
-                <p class="profile-line">{{ current.job_title }} · {{ current.company?.name }}</p>
-                <p class="profile-line">
-                  <span class="badge" :class="employmentBadgeClass(current.status)">
-                    {{ current.status.replace('_', ' ') }}
-                  </span>
-                  started {{ current.start_date }}
-                </p>
-              </template>
+        <div class="right-column">
+          <div class="card">
+            <div class="card-head">
+              <h2>My profile</h2>
             </div>
-          </CollapsibleSection>
-
-          <CollapsibleSection title="Employment history" hint="Every period recorded for you." :count="employments.length">
+            <div class="card-body profile">
+              <div class="profile-top">
+                <div>
+                  <strong class="profile-name">{{ person?.full_name ?? '—' }}</strong>
+                  <a v-if="person?.work_email" class="profile-mail" :href="`mailto:${person.work_email}`">{{ person.work_email }}</a>
+                  <span v-else class="profile-mail">—</span>
+                </div>
+                <span v-if="current" class="badge" :class="employmentBadgeClass(current.status)">
+                  {{ current.status.replace('_', ' ') }}
+                </span>
+              </div>
+              <dl v-if="current" class="facts">
+                <div><dt>Role</dt><dd>{{ current.job_title }}</dd></div>
+                <div><dt>Company</dt><dd>{{ current.company?.name ?? '—' }}</dd></div>
+                <div><dt>Started</dt><dd>{{ current.start_date }}</dd></div>
+                <div><dt>Time here</dt><dd>{{ tenureLabel(current.start_date, current.end_date, todayDb()) }}</dd></div>
+              </dl>
+              <p v-else class="empty">No current employment recorded.</p>
+            </div>
+            <div class="card-head">
+              <h2>Employment history</h2>
+            </div>
             <div v-if="!employments.length" class="empty">No employment recorded.</div>
             <div v-for="emp in employments" :key="emp.id" class="emp-row">
               <div class="row-text">
@@ -342,24 +361,17 @@ onMounted(load)
                 {{ emp.status.replace('_', ' ') }}
               </span>
             </div>
-          </CollapsibleSection>
+          </div>
 
-          <CollapsibleSection v-if="auth.personId" title="My leave" hint="Days taken, days left, and requests you have made.">
+          <LeaveCard v-if="auth.personId" :person-id="auth.personId" title="My leave" />
+          <CompensationCard v-if="auth.personId" :person-id="auth.personId" :periods="employments" title="My compensation" />
+          <DocumentsCard v-if="auth.personId" :person-id="auth.personId" :companies="myCompanies" title="My documents" />
+          <PersonEquipmentCard v-if="auth.personId" :person-id="auth.personId" :companies="myCompanies" title="My equipment" />
 
-            <LeaveCard :person-id="auth.personId"  headless />
-
-          </CollapsibleSection>
-          <CollapsibleSection v-if="auth.personId" title="My compensation" hint="Your pay as recorded, and its history.">
-            <CompensationCard :person-id="auth.personId"  :periods="employments" headless />
-          </CollapsibleSection>
-          <CollapsibleSection v-if="auth.personId" title="My documents" hint="Contracts, handover forms and anything filed about you.">
-            <DocumentsCard :person-id="auth.personId"  :companies="myCompanies" headless />
-          </CollapsibleSection>
-          <CollapsibleSection v-if="auth.personId" title="My equipment" hint="What you hold, and any IT request of yours.">
-            <PersonEquipmentCard :person-id="auth.personId"  :companies="myCompanies" headless />
-          </CollapsibleSection>
-
-          <CollapsibleSection title="My access" hint="What you may see and do, company by company." :count="grants.length">
+          <div class="card">
+            <div class="card-head">
+              <h2>My access</h2>
+            </div>
             <div class="card-body">
               <p v-if="auth.isAdmin" class="inline-note">
                 You are a platform admin: full access across every company.
@@ -367,20 +379,24 @@ onMounted(load)
               <div v-if="!grants.length && !auth.isAdmin" class="empty">
                 No capabilities granted in any company yet.
               </div>
-              <div v-for="g in grants" :key="g.company_id" class="access-block">
-                <div class="access-block-head">
+              <details v-for="g in grants" :key="g.company_id" class="access-block">
+                <summary class="access-block-head">
+                  <span class="chevron" aria-hidden="true">›</span>
                   <strong>{{ g.company?.name }}</strong>
                   <span class="muted-count">{{ g.grant_capabilities.length }} capabilities</span>
-                </div>
+                </summary>
                 <div v-if="!g.grant_capabilities.length" class="empty">No capabilities granted here.</div>
                 <ul v-else>
                   <li v-for="label in labelsFor(g)" :key="label">{{ label }}</li>
                 </ul>
-              </div>
+              </details>
             </div>
-          </CollapsibleSection>
+          </div>
 
-          <CollapsibleSection title="My projects" hint="Where you are assigned." :count="projects.length">
+          <div class="card">
+            <div class="card-head">
+              <h2>My projects</h2>
+            </div>
             <div v-if="!projects.length" class="empty">No project assignments synced.</div>
             <div v-for="p in projects" :key="p.id" class="emp-row">
               <div class="row-text">
@@ -391,7 +407,8 @@ onMounted(load)
               </div>
               <span class="badge">{{ p.project?.status ?? '—' }}</span>
             </div>
-          </CollapsibleSection>
+          </div>
+        </div>
       </div>
     </template>
   </div>
@@ -401,7 +418,10 @@ onMounted(load)
 .page-head { margin-bottom: 22px; }
 .me-head { display: flex; align-items: center; gap: 22px; flex-wrap: wrap; }
 .page-sub { margin: 0; font-size: 12px; color: var(--muted); }
-.stack { display: grid; gap: 14px; align-content: start; max-width: 940px; }
+.grid-two { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(260px, 1fr); gap: 22px; }
+@media (max-width: 900px) { .grid-two { grid-template-columns: 1fr; } }
+.left-column { display: grid; gap: 22px; align-content: start; }
+.right-column { display: grid; gap: 22px; align-content: start; }
 .task-row {
   display: flex;
   align-items: center;
@@ -416,7 +436,14 @@ onMounted(load)
 .row-actions { display: flex; gap: 7px; flex-wrap: wrap; }
 .small-btn { font-size: 11px; padding: 7px 11px; text-decoration: none; }
 .emp-row { display: flex; align-items: center; gap: 13px; padding: 15px 24px; border-top: 1px solid #edf0eb; }
-.profile-line { margin: 0 0 8px; font-size: 12px; }
+.profile { display: grid; gap: 16px; }
+.profile-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; }
+.profile-name { display: block; font-size: 15px; font-weight: 650; }
+.profile-mail { display: block; margin-top: 3px; font-size: 12px; color: var(--muted); text-decoration: none; }
+.profile-mail:hover { text-decoration: underline; }
+.facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 12px; margin: 0; }
+.facts dt { font-size: 10px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); }
+.facts dd { margin: 3px 0 0; font-size: 12px; font-weight: 550; }
 .inline-note {
   margin: 0 0 14px;
   padding: 10px 14px;
@@ -426,11 +453,21 @@ onMounted(load)
   font-size: 11px;
   line-height: 1.5;
 }
-.access-block { padding: 15px 24px; border-top: 1px solid #edf0eb; }
-.access-block-head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
+.access-block { padding: 0; border-top: 1px solid #edf0eb; }
+.access-block-head {
+  display: flex; align-items: center; gap: 10px; padding: 14px 24px;
+  cursor: pointer; list-style: none;
+}
+.access-block-head::-webkit-details-marker { display: none; }
+.access-block-head:hover { background: #f7f9f5; }
+.access-block-head strong { flex: 1; }
+.chevron { color: var(--muted); font-size: 14px; transition: transform 0.15s ease; }
+.access-block[open] .chevron { transform: rotate(90deg); }
+@media (prefers-reduced-motion: reduce) { .chevron { transition: none; } }
 .access-block-head strong { font-size: 12px; font-weight: 550; }
 .muted-count { font-size: 11px; color: var(--muted); }
-.access-block ul { margin: 10px 0 0; padding-left: 18px; font-size: 11px; color: var(--ink); }
+.access-block ul { margin: 0; padding: 0 24px 14px 46px; font-size: 11px; color: var(--ink); columns: 2; }
+@media (max-width: 700px) { .access-block ul { columns: 1; } }
 .access-block li { margin-bottom: 4px; }
-.access-block .empty { padding: 8px 0 0; text-align: left; }
+.access-block .empty { padding: 0 24px 14px 46px; text-align: left; }
 </style>

@@ -29,8 +29,6 @@ type Company = { id: string; name: string }
 
 const props = withDefaults(
   defineProps<{
-  /** Render bare, for a parent that already provides the card and its heading. */
-  headless?: boolean
     personId?: string | null
     companies: Company[]
     title?: string
@@ -235,8 +233,8 @@ watch(
 </script>
 
 <template>
-  <div v-if="visible" :class="headless ? 'bare' : 'card'">
-    <div v-if="!headless" class="card-head">
+  <div v-if="visible" class="card">
+    <div class="card-head">
       <div>
         <h2>{{ title }}</h2>
         <p>Versions are kept; nothing is overwritten. Files open through short-lived links.</p>
@@ -319,7 +317,6 @@ watch(
 </template>
 
 <style scoped>
-.bare { display: block; }
 .doc-row { display: flex; align-items: center; gap: 13px; padding: 13px 24px; border-top: 1px solid #edf0eb; flex-wrap: wrap; }
 .doc-row.archived { opacity: 0.6; }
 .row-text { flex: 1; min-width: 200px; }

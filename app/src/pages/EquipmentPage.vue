@@ -13,7 +13,7 @@ import {
   ownerLabel,
   type AssignmentAction,
 } from '@/lib/equipment'
-import { holderChoice, NOBODY, OTHER_HOLDER } from '@/lib/assetRegister'
+import { holderChoice, matchesSearch, NOBODY, OTHER_HOLDER } from '@/lib/assetRegister'
 import AssetRow, { type RowEdit } from '@/components/equipment/AssetRow.vue'
 import { nextAssetTag, nextInventoryNumber } from '@/lib/assetNumbering'
 
@@ -82,8 +82,16 @@ const filterOptions = computed(() => {
   return pooled ? [{ id: POOL, name: 'Shared — no company' }, ...companies.value] : companies.value
 })
 const shown = computed(() => {
-  const list = filter.value === '' ? assets.value : filter.value === POOL ? assets.value.filter((a) => a.company_id === null) : assets.value.filter((a) => a.company_id === filter.value)
-  return [...list].sort((a, b) => a.asset_tag.localeCompare(b.asset_tag))
+  const byCompany = filter.value === '' ? assets.value : filter.value === POOL ? assets.value.filter((a) => a.company_id === null) : assets.value.filter((a) => a.company_id === filter.value)
+  const byHolder = holderFilter.value === ''
+    ? byCompany
+    : holderFilter.value === NOBODY
+      ? byCompany.filter((a) => !openAssignment(a))
+      : byCompany.filter((a) => openAssignment(a)?.person_id === holderFilter.value)
+  const found = byHolder.filter((a) =>
+    matchesSearch(a, query.value, holderNames.value[openAssignment(a)?.person_id ?? ''] ?? null, typeNames.value[a.type_key] ?? null),
+  )
+  return [...found].sort((a, b) => a.asset_tag.localeCompare(b.asset_tag))
 })
 const openAssignment = (a: Asset) => a.asset_assignments.find((x) => x.returned_at === null) ?? null
 const typeNames = computed(() => Object.fromEntries(types.value.map((t) => [t.key, t.label])))
@@ -105,6 +113,17 @@ const actionsFor = (a: Asset): AssignmentAction[] => assignmentActions(a, openAs
 /** Who a given asset may go to: anyone employed for the pool, the company's people for a company asset. */
 const candidatesForOwner = (ownerId: string): Person[] =>
   ownerId === POOL ? people.value : people.value.filter((p) => p.company_ids.includes(ownerId))
+
+// Only people who actually hold something: a list of everyone employed would
+// be hundreds of names, nearly all of which return nothing.
+const holdersWithAssets = computed(() => {
+  const seen = new Map<string, string>()
+  for (const a of assets.value) {
+    const open = openAssignment(a)
+    if (open?.person_id) seen.set(open.person_id, holderNames.value[open.person_id] ?? '—')
+  }
+  return [...seen.entries()].map(([id, name]) => ({ id, name })).sort((x, y) => x.name.localeCompare(y.name))
+})
 
 const ownedBy = (ownerId: string) =>
   assets.value.filter((a) => (ownerId === POOL ? a.company_id === null : a.company_id === ownerId))
@@ -153,6 +172,8 @@ async function removeAsset(a: Asset): Promise<void> {
 }
 
 
+const query = ref('')
+const holderFilter = ref('')   // '' = anyone, NOBODY = magacin, otherwise a person
 const reserveOther = ref('')
 const candidatesFor = (a: Asset): Person[] => (a.company_id === null ? people.value : people.value.filter((p) => p.company_ids.includes(a.company_id as string)))
 
@@ -367,6 +388,18 @@ onMounted(load)
           <h2>Register</h2>
           <p>Reserved for a person, issued, returned. Status follows the handovers.</p>
         </div>
+        <input
+          v-model="query"
+          class="search"
+          type="search"
+          aria-label="Search equipment"
+          placeholder="Tag, inventory no., model, serial, holder…"
+        />
+        <select v-model="holderFilter" aria-label="Filter by who holds it">
+          <option value="">Anyone</option>
+          <option :value="NOBODY">In magacin</option>
+          <option v-for="h in holdersWithAssets" :key="h.id" :value="h.id">{{ h.name }}</option>
+        </select>
         <CompanyFilter v-model="filter" :companies="filterOptions" all-label="Everywhere" />
       </div>
       <div v-if="loading" class="empty">Loading…</div>
@@ -474,6 +507,8 @@ onMounted(load)
 </template>
 
 <style scoped>
+.search { font: inherit; font-size: 12px; padding: 7px 11px; border: 1px solid var(--line); border-radius: 999px; background: #fff; min-width: 230px; flex: 1; }
+.filters select { font: inherit; font-size: 12px; padding: 7px 10px; border: 1px solid var(--line); border-radius: 999px; background: #fff; }
 .button.danger { color: #a8332b; border-color: #e6c9c6; }
 .page-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-bottom: 22px; }
 .page-sub { margin: 4px 0 0; font-size: 12px; color: var(--muted); max-width: 620px; }

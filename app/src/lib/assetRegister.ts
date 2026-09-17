@@ -90,3 +90,46 @@ export function holderChoice(selected: string, otherText: string): HolderChoice 
   if (!selected) return { kind: 'invalid', message: 'Choose who it is for.' }
   return { kind: 'person', personId: selected }
 }
+
+/**
+ * Whether an asset answers what someone typed.
+ *
+ * Over a register of 191 rows the question is always "where is A070" or "what
+ * does Naum have", so the search looks at everything printed on the row: both
+ * numbers from the label, the model, the type, the serial, and whoever holds it
+ * — including the name the books give when no person is linked, because those
+ * are exactly the rows somebody is hunting for.
+ *
+ * Every word must match, so a second term narrows rather than widens. Typing
+ * more should get you closer to one row, not further from it.
+ */
+export function matchesSearch(
+  asset: {
+    readonly asset_tag: string
+    readonly inventory_number?: string | null
+    readonly model?: string | null
+    readonly type_key?: string | null
+    readonly holder_note?: string | null
+    readonly serial_number?: string | null
+  },
+  query: string,
+  holderName: string | null,
+  typeLabel: string | null,
+): boolean {
+  const words = query.trim().toLowerCase().split(/\s+/).filter((w) => w !== '')
+  if (words.length === 0) return true
+  const haystack = [
+    asset.asset_tag,
+    asset.inventory_number,
+    asset.model,
+    asset.type_key,
+    typeLabel,
+    asset.serial_number,
+    asset.holder_note,
+    holderName,
+  ]
+    .filter((v): v is string => typeof v === 'string' && v !== '')
+    .join(' ')
+    .toLowerCase()
+  return words.every((word) => haystack.includes(word))
+}

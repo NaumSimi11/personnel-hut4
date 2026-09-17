@@ -70,6 +70,18 @@ const returnForm = ref({ hrPersonId: '', reason: '', condition: '' })
 // The form is filled first, then signed: you should know what you are putting
 // your name to before the pad appears.
 const signingReturn = ref(false)
+// One dialog serves both signatures; which one is decided by whether an accept
+// is in flight, so the pad, the statement and the capacity stay in step.
+const signing = computed(() => signingReturn.value || acceptingReturn.value !== null)
+const signingTitle = computed(() =>
+  acceptingReturn.value
+    ? `Accept ${acceptingReturn.value.asset?.asset_tag ?? 'this asset'} back`
+    : `Sign the return of ${returning.value?.asset?.asset_tag ?? 'this asset'}`,
+)
+function closeSigning(): void {
+  signingReturn.value = false
+  acceptingReturn.value = null
+}
 const acceptingReturn = ref<ReturnRow | null>(null)
 
 const companyOfReturn = computed(() =>
@@ -322,36 +334,6 @@ watch(() => `${props.personId}|${props.companies.map((c) => c.id).join(',')}`, (
         </div>
       </form>
 
-      <div v-if="signingReturn && returning" class="inline-form">
-        <div class="form-title">Sign the return of {{ returning.asset?.asset_tag }}</div>
-        <SignaturePad
-          :statement="statements.person"
-          :capacity="capacityFor('person', companyOfReturn)"
-          :suggested-name="auth.personName ?? ''"
-          :busy="busy"
-          @sign="signAndSend"
-        >
-          <template #cancel>
-            <button type="button" class="button secondary small-btn" :disabled="busy" @click="signingReturn = false">Back</button>
-          </template>
-        </SignaturePad>
-      </div>
-
-      <div v-if="acceptingReturn" class="inline-form">
-        <div class="form-title">Accept {{ acceptingReturn.asset?.asset_tag }} back</div>
-        <SignaturePad
-          :statement="statements.hr"
-          :capacity="capacityFor('hr', companyOfReturn)"
-          :suggested-name="auth.personName ?? ''"
-          :busy="busy"
-          @sign="signAndAccept"
-        >
-          <template #cancel>
-            <button type="button" class="button secondary small-btn" :disabled="busy" @click="acceptingReturn = null">Cancel</button>
-          </template>
-        </SignaturePad>
-      </div>
-
       <div v-for="r in forMe" :key="r.id" class="equipment-row awaiting">
         <div class="row-text">
           <strong>{{ r.asset?.asset_tag }} — returned to you</strong>
@@ -379,6 +361,29 @@ watch(() => `${props.personId}|${props.companies.map((c) => c.id).join(',')}`, (
 
       <p v-if="notice" class="inline-note">{{ notice }}</p>
 
+      <!-- Signing belongs in the middle of the screen, not folded into a row
+           halfway down a card: you are putting your name to something, and the
+           statement has to be the only thing in front of you. -->
+      <dialog v-if="signing" class="sign-dialog" open @click.self="closeSigning">
+        <div class="sign-card">
+          <div class="sign-head">
+            <strong>{{ signingTitle }}</strong>
+            <button class="button secondary small-btn" type="button" :disabled="busy" @click="closeSigning">Close</button>
+          </div>
+          <SignaturePad
+            :statement="acceptingReturn ? statements.hr : statements.person"
+            :capacity="capacityFor(acceptingReturn ? 'hr' : 'person', companyOfReturn)"
+            :suggested-name="auth.personName ?? ''"
+            :busy="busy"
+            @sign="acceptingReturn ? signAndAccept($event) : signAndSend($event)"
+          >
+            <template #cancel>
+              <button type="button" class="button secondary small-btn" :disabled="busy" @click="closeSigning">Cancel</button>
+            </template>
+          </SignaturePad>
+        </div>
+      </dialog>
+
       <div v-for="r in requests" :key="r.id" class="equipment-row it">
         <div class="row-text">
           <strong>{{ r.title }}</strong>
@@ -394,6 +399,10 @@ watch(() => `${props.personId}|${props.companies.map((c) => c.id).join(',')}`, (
 </template>
 
 <style scoped>
+.sign-dialog { position: fixed; inset: 0; width: 100%; height: 100%; max-width: none; max-height: none; border: 0; padding: 20px; background: rgba(20, 28, 20, 0.35); display: grid; place-items: center; z-index: 60; }
+.sign-card { background: #fff; border-radius: 14px; padding: 22px; width: min(560px, 100%); max-height: 90vh; overflow: auto; box-shadow: 0 18px 50px rgba(20, 28, 20, 0.18); display: grid; gap: 14px; }
+.sign-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.sign-head strong { font-size: 14px; font-weight: 650; }
 .inline-form { display: grid; gap: 10px; padding: 15px 24px; border-top: 1px solid #edf0eb; background: #f7f9f5; }
 .inline-form label { display: grid; gap: 4px; font-size: 11px; color: var(--muted); }
 .inline-form input, .inline-form select { font: inherit; font-size: 12px; padding: 7px 9px; border: 1px solid var(--line); border-radius: 8px; background: #fff; }

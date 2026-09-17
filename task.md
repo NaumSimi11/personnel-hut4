@@ -57,3 +57,23 @@ in the equipment sidebar page , we need filter ( search by equipment, ) filter b
 
 
 in the return equipment thing we build before, with the sign in, we need top open dialog instead of toogle down up that signing thing. opening dialog, standing int he viewport is much more usable from all perspectives
+
+---
+STATUS (17 Sep, updated as each lands)
+
+DONE
+- leave: tabs full width and responsive
+- leave: day panel responsive (was cramped between 720 and 1080px)
+- leave: past days in the past tense; "8 people were away"
+- leave: a finished leave reads "taken in full", not "8 of 9 · 1 left"
+- leave: clicking a person opens a dialog with both readings
+- hiring: only HR and above in the hiring manager dropdown (3 of 42 at Synami)
+- directory: opens on Active, not Everyone
+- equipment: search by tag, inventory no., model, serial or holder; filter by
+  who holds it (only people who hold something are listed)
+- equipment return: signing is a centred dialog, not an inline expand
+
+LEFT
+- person page: cards not responsive in edit / preview mode
+- equipment preview page: full detail, edit/delete, reassign with a signed
+  document to both sides, service-note history

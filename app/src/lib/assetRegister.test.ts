@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { assetLine, assetNumbers, holderChoice, NOBODY, OTHER_HOLDER } from './assetRegister'
+import { NOBODY, OTHER_HOLDER, assetLine, assetNumbers, holderChoice, matchesSearch } from './assetRegister'
 
 const LOOKUPS = {
   types: { laptop: 'Laptop', vehicle: 'Vehicles' },
@@ -141,5 +141,56 @@ describe('assetLine for a type the list does not cover', () => {
       { type_key: 'laptop', company_id: 'c1', holder_id: null, model: 'Dell', holder_note: null, type_note: 'Docking station' },
       L,
     )).toBe('Laptop · Synami · Dell · magacin')
+  })
+})
+
+describe('matchesSearch', () => {
+  const asset = {
+    asset_tag: 'A070',
+    inventory_number: '121',
+    model: 'Dell VOSTRO 3525',
+    type_key: 'laptop',
+    holder_note: null,
+    serial_number: 'SN-9912',
+  }
+  const hit = (q: string) => matchesSearch(asset, q, 'Naum Simidjioski', 'Laptop')
+
+  it('matches nothing typed', () => {
+    expect(hit('')).toBe(true)
+    expect(hit('   ')).toBe(true)
+  })
+
+  it('finds by either number on the label', () => {
+    expect(hit('A070')).toBe(true)
+    expect(hit('121')).toBe(true)
+  })
+
+  it('finds by model, case and spacing aside', () => {
+    expect(hit('vostro')).toBe(true)
+    expect(hit('DELL')).toBe(true)
+  })
+
+  it('finds by who holds it', () => {
+    expect(hit('naum')).toBe(true)
+    expect(hit('simidjioski')).toBe(true)
+  })
+
+  it('finds by the name the books give when nobody is linked', () => {
+    expect(matchesSearch({ ...asset, holder_note: 'office Struga' }, 'struga', null, 'Laptop')).toBe(true)
+  })
+
+  it('finds by type and serial', () => {
+    expect(hit('laptop')).toBe(true)
+    expect(hit('SN-99')).toBe(true)
+  })
+
+  it('says no when nothing matches', () => {
+    expect(hit('monitor')).toBe(false)
+    expect(hit('zzz')).toBe(false)
+  })
+
+  it('needs every word, so two terms narrow rather than widen', () => {
+    expect(hit('dell naum')).toBe(true)
+    expect(hit('dell ivana')).toBe(false)
   })
 })

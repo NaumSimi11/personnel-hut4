@@ -88,36 +88,43 @@ LEFT
 (nothing from the list above)
 
 ---
-NEXT, in the order I would do them
+NEXT — things I noticed while building, in the order I would do them
 
-1. Nobody has run the E2E suite against any of this. Everything built since
-   the попис import — the register, self-service, signing, contract
-   templates, the asset page, handovers — is verified by unit tests and by
-   me driving the database, not by the browser suite. It is gated behind
-   E2E_ALLOW_PRODUCTION for good reason; it wants a scratch project to run
-   against, not the live one.
+1. 64 pieces of equipment say who has them, but not WHO.
+   When we imported the Excel, 64 rows had a name in the books that did not
+   match anyone in the app. The register shows them as "Petar (from the books,
+   not matched)". So nobody really holds them as far as the app is concerned.
+   Handing one over now fixes it — but nothing tells you which 64 they are.
+   TO DO: a filter on /equipment saying "show me the ones from the books",
+   so somebody can go through them and hand each to the right person.
 
-2. holder_note — 64 assets whose holder came from the books and was never
-   matched to a person. A handover clears it, which is the right cure, but
-   nothing prompts anyone to do it. A filter on the register for "named in
-   the books, not matched to anyone" would let somebody work through them.
+2. Nobody has clicked through this in a browser except me, by hand.
+   We have tests, and I drove the database directly, but the automated
+   browser tests have not been run on ANY of the equipment work — register,
+   requests, signing, contracts, the asset page, handovers.
+   TO DO: run them. Problem: they would run against the live database and
+   leave junk in it, like last time. They want a copy of the database to
+   play in first.
 
-3. A handover that nobody signs sits awaiting forever, and the asset reads
-   as still held by the old person. It wants an age: after a fortnight,
-   show it as stale on the asset page and tell whoever started it. Not an
-   auto-cancel — silently undoing a handover is worse than a stale row.
+3. A handover nobody signs just sits there forever.
+   You hand a laptop to Marko. Marko never signs. Six months later the app
+   still says Ana has it, and there is a request hanging in the air.
+   TO DO: after two weeks, show it as old on the asset page and tell whoever
+   started it. NOT auto-cancel — quietly undoing it is worse.
 
-4. The signed scan comes back as a new version of the generated document,
-   but nothing checks that it ever does. A handover accepted in the app with
-   no signed copy filed is the same gap the return form has. A column on
-   asset_handovers pointing at the document, and a line on the asset page
-   when it is missing.
+4. We make the PDF, but never check that a signed one comes back.
+   The app files a form, you print it, sign it on paper, upload it back.
+   If nobody uploads it, nothing complains. Same gap the return form has.
+   TO DO: on the asset page, say "no signed copy on file" when there is none.
 
-5. There is no page listing handovers. They are visible on the asset and on
-   /me, which is right for the two people involved, but HR has no way to see
-   "what moved this month" without opening assets one at a time. The data is
-   there; it is one read-only page.
+5. HR cannot see what moved this month.
+   Handovers show up on the asset and on the person's page, which is right
+   for the two people involved. But there is no list. To see everything that
+   changed hands you have to open assets one by one.
+   TO DO: one read-only page. The data is already there.
 
-6. equipment_form_data prints everything a person holds, not the one thing
-   the form is about. On a return of a single laptop the form lists the
-   phone too. Correct for an offboarding, misleading for one handover.
+6. The form prints everything the person holds, not the one thing.
+   You hand back one laptop; the PDF lists your laptop AND your phone AND
+   your monitor. That is correct when somebody is leaving the company. It is
+   misleading for a single handover.
+   TO DO: when the form is about one asset, print one asset.

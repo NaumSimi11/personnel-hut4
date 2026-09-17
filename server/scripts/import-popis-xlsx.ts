@@ -20,7 +20,8 @@ import zlib from 'node:zlib'
 import { createClient } from '@supabase/supabase-js'
 import { parseSheet, resolveHolder } from '../../shared/popisImport.js'
 import { parseRowCells, unescapeXml } from '../src/popisXlsxCells.js'
-import { summarizeWrites, writeAsset } from '../src/popisAssetWrite.js'
+import { assertUniqueAssetTags, summarizeWrites, writeSheets } from '../src/popisAssetWrite.js'
+import { supabaseStore } from '../src/popisSupabaseStore.js'
 
 // ----------------------------------------------------------------- xlsx
 
@@ -89,46 +90,6 @@ function db() {
   return createClient(url, key, { auth: { persistSession: false, autoRefreshToken: false } })
 }
 
-/** Adapts a Supabase client to the small AssetStore interface `writeAsset` tests against. */
-function supabaseStore(client) {
-  return {
-    async insertAsset(row) {
-      const { data, error } = await client.from('assets').insert(row).select('id').single()
-      return error ? { id: null, error: { code: error.code, message: error.message } } : { id: data.id, error: null }
-    },
-    async findAssetByTag(companyId, assetTag) {
-      const { data } = await client
-        .from('assets')
-        .select('id')
-        .eq('company_id', companyId)
-        .eq('asset_tag', assetTag)
-        .maybeSingle()
-      if (!data) return null
-      // An assignment with no returned_at is the asset's current holder.
-      const { data: open, error } = await client
-        .from('asset_assignments')
-        .select('person_id')
-        .eq('asset_id', data.id)
-        .is('returned_at', null)
-        .limit(1)
-      // Stop the whole run rather than report "nobody holds it" on a failed
-      // lookup: that answer would let the caller issue the asset a second time.
-      if (error) throw new Error(`could not read assignments of asset ${data.id}: ${error.message}`)
-      return { id: data.id, openAssignment: open?.[0] ? { personId: open[0].person_id } : null }
-    },
-    async insertAssignment(assetId, personId) {
-      const { error } = await client
-        .from('asset_assignments')
-        .insert({ asset_id: assetId, person_id: personId, issued_at: new Date().toISOString() })
-      return { error: error ? { message: error.message } : null }
-    },
-    async markAssigned(assetId) {
-      const { error } = await client.from('assets').update({ status: 'assigned' }).eq('id', assetId)
-      return { error: error ? { message: error.message } : null }
-    },
-  }
-}
-
 async function read(file, out) {
   const files = readZip(fs.readFileSync(file))
   const strings = sharedStrings(files)
@@ -168,9 +129,42 @@ async function read(file, out) {
   process.stdout.write(`\nReview file written to ${out}. Correct it, then run "apply".\n`)
 }
 
+/** The asset row and holder one reviewed sheet item imports as. */
+function toWriteItem(source, sheet, item, index) {
+  // A sheet row without a code still needs a unique tag within its company.
+  // This generated tag is also what makes a re-run resumable (see
+  // popisAssetWrite.ts): it is only stable while this same review file is
+  // reused unedited — reordering or adding items renumbers it, and the
+  // re-run would then create duplicates instead of reconciling.
+  const tag = item.assetTag ?? `${sheet.sheet.replace(/\s+/g, '').toUpperCase()}-${String(index + 1).padStart(4, '0')}`
+  const noteParts = []
+  if (item.holder.kind === 'company') noteParts.push(`Held by ${item.holder.text}`)
+  if (item.holder.kind === 'unresolved') noteParts.push(`Holder from spreadsheet: "${item.holder.text}" (${item.holder.reason})`)
+  if (item.holder.kind === 'person' && item.holder.atCompany) noteParts.push(`Used at ${item.holder.atCompany}`)
+  noteParts.push(`Imported from ${path.basename(source)} (${sheet.sheet})`)
+
+  return {
+    asset: {
+      company_id: sheet.companyId,
+      asset_tag: tag,
+      type_key: item.typeKey,
+      model: item.model,
+      note: noteParts.join(' · ').slice(0, 500),
+    },
+    personId: item.holder.kind === 'person' ? item.holder.personId : null,
+  }
+}
+
+/** Prints what one committed row did, so an interrupted run still has a record of it. */
+function reportRow({ sheet, tag, result }) {
+  const detail = result.outcome === 'failed' ? `: ${result.message}` : result.warning ? ` but ${result.warning}` : ''
+  const outcome = result.outcome === 'failed' ? 'FAILED' : result.outcome
+  const held = result.outcome !== 'failed' && result.assigned ? 'assigned' : 'available'
+  process.stdout.write(`${outcome} ${sheet} ${tag} (${held})${detail}\n`)
+}
+
 async function apply(reviewFile, commit) {
   const review = JSON.parse(fs.readFileSync(reviewFile, 'utf8'))
-  const store = supabaseStore(db())
 
   const unresolved = review.sheets.flatMap((s) => s.items.filter((i) => i.holder.kind === 'unresolved'))
   if (unresolved.length) {
@@ -181,44 +175,24 @@ async function apply(reviewFile, commit) {
     throw new Error(`Refusing: no company matched for sheet(s) ${noCompany.map((s) => s.sheet).join(', ')}. Fix companyId in the review file.`)
   }
 
-  const results = []
-  for (const sheet of review.sheets) {
-    for (const [index, item] of sheet.items.entries()) {
-      // A sheet row without a code still needs a unique tag within its company.
-      // This generated tag is also what makes a re-run resumable (see
-      // popisAssetWrite.ts): it is only stable while this same review file is
-      // reused unedited — reordering or adding items renumbers it, and the
-      // re-run would then create duplicates instead of reconciling.
-      const tag = item.assetTag ?? `${sheet.sheet.replace(/\s+/g, '').toUpperCase()}-${String(index + 1).padStart(4, '0')}`
-      const noteParts = []
-      if (item.holder.kind === 'company') noteParts.push(`Held by ${item.holder.text}`)
-      if (item.holder.kind === 'unresolved') noteParts.push(`Holder from spreadsheet: "${item.holder.text}" (${item.holder.reason})`)
-      if (item.holder.kind === 'person' && item.holder.atCompany) noteParts.push(`Used at ${item.holder.atCompany}`)
-      noteParts.push(`Imported from ${path.basename(review.source)} (${sheet.sheet})`)
+  const sheets = review.sheets.map((sheet) => ({
+    sheet: sheet.sheet,
+    items: sheet.items.map((item, index) => toWriteItem(review.source, sheet, item, index)),
+  }))
+  // The dry run refuses for the same reason the real one would, so the two
+  // passes agree on what is importable before anybody types --commit.
+  assertUniqueAssetTags(sheets)
 
-      const asset = {
-        company_id: sheet.companyId,
-        asset_tag: tag,
-        type_key: item.typeKey,
-        model: item.model,
-        note: noteParts.join(' · ').slice(0, 500),
-      }
-      const personId = item.holder.kind === 'person' ? item.holder.personId : null
-
-      if (!commit) {
+  let results
+  if (commit) {
+    results = await writeSheets(supabaseStore(db()), sheets, reportRow)
+  } else {
+    results = sheets.flatMap((sheet) =>
+      sheet.items.map(({ asset, personId }) => {
         process.stdout.write(`would create ${sheet.sheet} ${asset.asset_tag} ${asset.type_key} "${asset.model}" (${personId ? 'assigned' : 'available'})\n`)
-        results.push({ outcome: 'created', assigned: personId !== null })
-        continue
-      }
-
-      const result = await writeAsset(store, { asset, personId })
-      if (result.outcome === 'failed') {
-        process.stdout.write(`FAILED ${sheet.sheet} ${asset.asset_tag}: ${result.message}\n`)
-      } else if (result.warning) {
-        process.stdout.write(`${result.outcome} ${sheet.sheet} ${asset.asset_tag} but ${result.warning}\n`)
-      }
-      results.push(result)
-    }
+        return { outcome: 'created', assigned: personId !== null }
+      }),
+    )
   }
 
   const summary = summarizeWrites(results)

@@ -72,7 +72,18 @@ export type AssetStore = {
     assetTag: string,
   ): Promise<{ readonly id: string; readonly openAssignment?: OpenAssignment | null } | null>
   insertAssignment(assetId: string, personId: string): Promise<{ readonly error: { readonly message: string } | null }>
-  markAssigned(assetId: string): Promise<{ readonly error: { readonly message: string } | null }>
+  /**
+   * Sets the asset's status to `assigned` and reports the status the row
+   * carries afterwards. `status` is optional only so a test double may leave
+   * it out; a real store must report it, because an UPDATE on `assets` can
+   * report success and still not stick — `app.prepare_asset` puts the old
+   * status back whenever `auth.uid()` is non-null and `app.asset_transition`
+   * is not `'on'`, silently and without an error.
+   */
+  markAssigned(assetId: string): Promise<{
+    readonly error: { readonly message: string } | null
+    readonly status?: string | null
+  }>
 }
 
 const UNIQUE_VIOLATION = '23505' // Postgres SQLSTATE for a unique-constraint hit.
@@ -149,7 +160,96 @@ export async function writeAsset(store: AssetStore, item: WriteItem): Promise<Wr
   if (marked.error) {
     return { outcome: placed.outcome, assigned: false, warning: `could not mark assigned: ${marked.error.message}` }
   }
+  // An UPDATE that reports no error is not proof the status changed, so the
+  // count of assigned assets is only trustworthy if the row is read back.
+  // A wrong number that announces itself can still be repaired by hand.
+  if (marked.status !== undefined && marked.status !== 'assigned') {
+    return {
+      outcome: 'failed',
+      message:
+        `the status update did not take effect — the asset still reads "${marked.status ?? 'unknown'}" ` +
+        `after markAssigned; the likely cause is the app.asset_transition guard in app.prepare_asset, ` +
+        `which puts the old status back on any UPDATE made by an authenticated role`,
+    }
+  }
   return { outcome: placed.outcome, assigned: true }
+}
+
+export type WriteSheet = {
+  readonly sheet: string
+  readonly items: readonly WriteItem[]
+}
+
+/** One row's fate, handed to the caller the moment it lands. */
+export type WriteRow = {
+  readonly sheet: string
+  readonly tag: string
+  readonly result: WriteResult
+}
+
+const quoted = (text: string): string => `"${text}"`
+
+/** The models, in sheet order, that each tag of one sheet is claimed by. */
+function modelsByTag(sheet: WriteSheet): ReadonlyMap<string, readonly string[]> {
+  const claims = new Map<string, readonly string[]>()
+  for (const item of sheet.items) {
+    const seen = claims.get(item.asset.asset_tag) ?? []
+    claims.set(item.asset.asset_tag, [...seen, item.asset.model])
+  }
+  return claims
+}
+
+/**
+ * Refuses a run in which one sheet gives the same asset tag to two items.
+ *
+ * The database's `unique (company_id, asset_tag)` would not reject the second
+ * one as an error the operator can see: `writeAsset` reconciles a duplicate
+ * tag onto the row that already carries it, which is exactly right for a
+ * re-run but silently discards a *different* item's type, model and note —
+ * leaving a register one asset short of what the dry run promised, with only
+ * "reconciled 1" in the summary to show for it. The register is about to be
+ * signed for, so a missing asset must stop the run, not shorten the count.
+ *
+ * Refusing is the only honest answer: the import cannot know which of the two
+ * items should keep the tag. A human gives the other one a tag of its own in
+ * the review file.
+ */
+export function assertUniqueAssetTags(sheets: readonly WriteSheet[]): void {
+  const conflicts = sheets.flatMap((sheet) =>
+    [...modelsByTag(sheet).entries()]
+      .filter(([, models]) => models.length > 1)
+      .map(([tag, models]) => `sheet "${sheet.sheet}" tag "${tag}": ${models.map((m) => quoted(m)).join(' and ')}`),
+  )
+  if (!conflicts.length) return
+  throw new Error(
+    `Refusing: ${conflicts.length} asset tag(s) claimed by more than one item — ${conflicts.join('; ')}. ` +
+      `Each tag names exactly one asset, so every item after the first would be folded onto that asset ` +
+      `and its own type, model and note lost. The import cannot choose which item keeps the tag: ` +
+      `give the others a tag of their own in the review file by hand, then run again.`,
+  )
+}
+
+/**
+ * Writes every item of every sheet, in order, reporting each row through
+ * `onRow` as it lands — a run interrupted half-way still says how far it got,
+ * which is the only record anybody has of a one-off import.
+ */
+export async function writeSheets(
+  store: AssetStore,
+  sheets: readonly WriteSheet[],
+  onRow: (row: WriteRow) => void,
+): Promise<readonly WriteResult[]> {
+  assertUniqueAssetTags(sheets) // before the first write, so a refusal changes nothing
+
+  const results: WriteResult[] = []
+  for (const sheet of sheets) {
+    for (const item of sheet.items) {
+      const result = await writeAsset(store, item)
+      onRow({ sheet: sheet.sheet, tag: item.asset.asset_tag, result })
+      results.push(result)
+    }
+  }
+  return results
 }
 
 export type WriteSummary = {

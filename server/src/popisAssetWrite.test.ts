@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { AssetStore, NewAssetRow, WriteResult } from './popisAssetWrite.js'
-import { summarizeWrites, writeAsset } from './popisAssetWrite.js'
+import { summarizeWrites, writeAsset, writeSheets } from './popisAssetWrite.js'
 
 const SAMPLE_ASSET: NewAssetRow = {
   company_id: 'company-1',
@@ -212,5 +212,101 @@ describe('summarizeWrites', () => {
     const results: readonly WriteResult[] = Object.freeze([{ outcome: 'created' as const, assigned: true }])
     summarizeWrites(results)
     expect(results).toEqual([{ outcome: 'created', assigned: true }])
+  })
+})
+
+describe('writeSheets', () => {
+  const item = (assetTag: string, model: string, typeKey: string) => ({
+    asset: { ...SAMPLE_ASSET, asset_tag: assetTag, model, type_key: typeKey },
+    personId: null,
+  })
+
+  /** A store that would happily write, so an empty call log proves the refusal came first. */
+  function recordingStore(calls: string[]): AssetStore {
+    return {
+      insertAsset: async (row) => {
+        calls.push(`insertAsset:${row.asset_tag}`)
+        return { id: `asset-${row.asset_tag}`, error: null }
+      },
+      findAssetByTag: async () => null,
+      insertAssignment: async () => ({ error: null }),
+      markAssigned: async () => ({ error: null, status: 'assigned' }),
+    }
+  }
+
+  it('refuses before writing anything when two items of a sheet claim the same asset tag', async () => {
+    const calls: string[] = []
+    const sheets = [
+      {
+        sheet: 'Synami',
+        items: [
+          item('B006', 'Desktop PC', 'desktop'),
+          item('B006', 'Laptop anhoch- ( se odnesuva na 2x HDD vgradeni vo serverska oprema )', 'accessory'),
+        ],
+      },
+    ]
+
+    const error = await writeSheets(recordingStore(calls), sheets, () => {}).then(
+      () => null,
+      (thrown: Error) => thrown,
+    )
+
+    expect(error).toBeInstanceOf(Error)
+    expect(error?.message).toContain('Synami')
+    expect(error?.message).toContain('B006')
+    expect(error?.message).toContain('Desktop PC')
+    expect(error?.message).toContain('2x HDD')
+    expect(calls).toEqual([]) // nothing was written
+  })
+
+  it('reports every row as it lands, in sheet order, so a run that dies leaves a record', async () => {
+    const calls: string[] = []
+    const rows: string[] = []
+    const sheets = [
+      { sheet: 'Synami', items: [item('A001', 'Dell', 'laptop')] },
+      { sheet: 'Hut4', items: [item('A002', 'HP', 'laptop')] },
+    ]
+
+    const results = await writeSheets(recordingStore(calls), sheets, (row) =>
+      rows.push(`${row.sheet}:${row.tag}:${row.result.outcome}`),
+    )
+
+    expect(rows).toEqual(['Synami:A001:created', 'Hut4:A002:created'])
+    expect(results).toEqual([
+      { outcome: 'created', assigned: false },
+      { outcome: 'created', assigned: false },
+    ])
+  })
+})
+
+describe('writeAsset status read-back', () => {
+  it('fails the row when markAssigned reports success but the status does not read back as assigned', async () => {
+    const store: AssetStore = {
+      ...unreachable,
+      insertAsset: async () => ({ id: 'asset-1', error: null }),
+      insertAssignment: async () => ({ error: null }),
+      markAssigned: async () => ({ error: null, status: 'available' }),
+    }
+
+    const result = await writeAsset(store, { asset: SAMPLE_ASSET, personId: 'person-1' })
+
+    expect(result.outcome).toBe('failed')
+    const message = 'message' in result ? result.message : ''
+    expect(message).toContain('did not take effect')
+    expect(message).toContain('available')
+    expect(message).toContain('asset_transition')
+  })
+
+  it('accepts the row when the status reads back as assigned', async () => {
+    const store: AssetStore = {
+      ...unreachable,
+      insertAsset: async () => ({ id: 'asset-1', error: null }),
+      insertAssignment: async () => ({ error: null }),
+      markAssigned: async () => ({ error: null, status: 'assigned' }),
+    }
+
+    const result = await writeAsset(store, { asset: SAMPLE_ASSET, personId: 'person-1' })
+
+    expect(result).toEqual({ outcome: 'created', assigned: true })
   })
 })

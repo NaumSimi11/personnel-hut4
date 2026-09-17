@@ -483,6 +483,7 @@ export type Database = {
           serial_number: string | null
           status: string
           type_key: string
+          type_note: string | null
           updated_at: string
         }
         Insert: {
@@ -501,6 +502,7 @@ export type Database = {
           serial_number?: string | null
           status?: string
           type_key: string
+          type_note?: string | null
           updated_at?: string
         }
         Update: {
@@ -519,6 +521,7 @@ export type Database = {
           serial_number?: string | null
           status?: string
           type_key?: string
+          type_note?: string | null
           updated_at?: string
         }
         Relationships: [

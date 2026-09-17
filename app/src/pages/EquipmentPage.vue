@@ -33,6 +33,7 @@ type Asset = {
   inventory_number: string | null
   holder_note: string | null
   type_key: string
+  type_note: string | null
   model: string | null
   serial_number: string | null
   condition: string | null
@@ -57,7 +58,7 @@ const companies = ref<{ id: string; name: string }[]>([])
 const types = ref<{ key: string; label: string }[]>([])
 const filter = ref('')
 const addingAsset = ref(false)
-const assetForm = ref({ ownerId: POOL, ordinal: '', assetTag: '', inventoryNumber: '', typeKey: '', model: '', serialNumber: '', note: '' })
+const assetForm = ref({ ownerId: POOL, ordinal: '', assetTag: '', inventoryNumber: '', typeKey: '', typeNote: '', model: '', serialNumber: '', note: '' })
 const editingAsset = ref<Asset | null>(null)
 const reserving = ref<Asset | null>(null)
 const reservePersonId = ref('')
@@ -99,7 +100,7 @@ const holderNames = computed(() =>
 /** The holding-wide register line: category · company · model · holder, "magacin" when unheld. */
 const registerLine = (a: Asset) =>
   assetLine(
-    { type_key: a.type_key, company_id: a.company_id, holder_id: openAssignment(a)?.person_id ?? null, model: a.model, holder_note: a.holder_note },
+    { type_key: a.type_key, company_id: a.company_id, holder_id: openAssignment(a)?.person_id ?? null, model: a.model, holder_note: a.holder_note, type_note: a.type_note },
     { types: typeNames.value, companies: companyNames.value, holders: holderNames.value },
   )
 function canFor(a: Asset): (cap: string) => boolean {
@@ -128,6 +129,7 @@ function editAsset(a: Asset): void {
     assetTag: a.asset_tag,
     inventoryNumber: a.inventory_number ?? '',
     typeKey: a.type_key,
+    typeNote: a.type_note ?? '',
     model: a.model ?? '',
     serialNumber: a.serial_number ?? '',
     note: a.note ?? '',
@@ -211,6 +213,7 @@ function startAsset(): void {
     assetTag: suggestedTag(owner) ?? '',
     inventoryNumber: suggestedInventory(owner) ?? '',
     typeKey: types.value[0]?.key ?? '',
+    typeNote: '',
     model: '',
     serialNumber: '',
     note: '',
@@ -231,6 +234,7 @@ async function saveAsset(): Promise<void> {
     asset_tag: parsed.data.assetTag,
     inventory_number: parsed.data.inventoryNumber,
     type_key: parsed.data.typeKey,
+    type_note: assetForm.value.typeKey === 'other' ? assetForm.value.typeNote.trim() || null : null,
     model: parsed.data.model || null,
     serial_number: parsed.data.serialNumber || null,
     note: parsed.data.note || null,
@@ -361,6 +365,10 @@ onMounted(load)
             <select id="asset-type" v-model="assetForm.typeKey">
               <option v-for="t in types" :key="t.key" :value="t.key">{{ t.label }}</option>
             </select>
+          </label>
+          <label v-if="assetForm.typeKey === 'other'">
+            <span>What is it</span>
+            <input id="asset-type-note" v-model="assetForm.typeNote" maxlength="60" placeholder="Docking station, projector, printer…" />
           </label>
           <label><span>Model</span><input id="asset-model" v-model="assetForm.model" maxlength="120" /></label>
           <label><span>Serial number</span><input id="asset-serial" v-model="assetForm.serialNumber" maxlength="120" /></label>

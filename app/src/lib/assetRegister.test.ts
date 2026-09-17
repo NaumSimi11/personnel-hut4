@@ -118,3 +118,28 @@ describe('holderChoice', () => {
     expect(holderChoice(NOBODY, '')).toEqual({ kind: 'nobody' })
   })
 })
+
+describe('assetLine for a type the list does not cover', () => {
+  const L = { types: { other: 'Other', laptop: 'Laptop' }, companies: { c1: 'Synami' }, holders: {} }
+
+  it('says what the thing is rather than just "Other"', () => {
+    expect(assetLine(
+      { type_key: 'other', company_id: 'c1', holder_id: null, model: 'Kensington SD4700P', holder_note: null, type_note: 'Docking station' },
+      L,
+    )).toBe('Docking station · Synami · Kensington SD4700P · magacin')
+  })
+
+  it('falls back to Other when nobody said what it is', () => {
+    expect(assetLine(
+      { type_key: 'other', company_id: 'c1', holder_id: null, model: 'Thing', holder_note: null, type_note: null },
+      L,
+    )).toBe('Other · Synami · Thing · magacin')
+  })
+
+  it('ignores a stray note on a type that is not Other', () => {
+    expect(assetLine(
+      { type_key: 'laptop', company_id: 'c1', holder_id: null, model: 'Dell', holder_note: null, type_note: 'Docking station' },
+      L,
+    )).toBe('Laptop · Synami · Dell · magacin')
+  })
+})

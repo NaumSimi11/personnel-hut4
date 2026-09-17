@@ -13,6 +13,8 @@ export type RegisterAsset = {
   readonly model: string | null
   /** Who the imported books say holds it, when no person is linked here. */
   readonly holder_note?: string | null
+  /** What the thing is, when its type is 'other'. */
+  readonly type_note?: string | null
 }
 
 export type RegisterLookups = {
@@ -24,7 +26,11 @@ export type RegisterLookups = {
 export const WAREHOUSE = 'magacin'
 
 export function assetLine(asset: RegisterAsset, lookups: RegisterLookups): string {
-  const type = lookups.types[asset.type_key] ?? asset.type_key
+  // "Other" on its own tells the reader nothing, so whatever was written in its
+  // place is what the register prints.
+  const written = (asset.type_note ?? '').trim()
+  const type =
+    asset.type_key === 'other' && written ? written : (lookups.types[asset.type_key] ?? asset.type_key)
   const company = asset.company_id ? (lookups.companies[asset.company_id] ?? '—') : 'Shared'
   // An asset nobody is assigned to is not necessarily in the warehouse. The
   // imported books often name a holder this system cannot match to a person —

@@ -3,9 +3,9 @@
 # Keep it current: rewrite the `state` and `next` sections at each handoff.
 
 meta:
-  written: 2026-09-17 (updated after slice 050)
+  written: 2026-09-17 (updated after slice 051 — plan 045 complete)
   repo: E:\personnel-hut4 (GitHub NaumSimi11/personnel-hut4, branch main)
-  head: 44fcd2e
+  head: af227da
   origin_main: 5f4c2a5
   unpushed_commits:
     - 630e21b feat: show / hide toggle on every password field (PasswordInput)
@@ -22,6 +22,8 @@ meta:
     - 4fdf2e6 feat: equipment for the holding (slice 049, migration 0042)
     - dbf951a docs: handoff after 049
     - 44fcd2e feat: policies as a library and the welcome note (slice 050, migration 0043)
+    - dd3cfc5 docs: handoff after 050
+    - af227da feat: kudos values, bonuses and the net estimate (slice 051, migration 0044)
     - (one more: docs commit recording this head)
   untracked_leave_alone:
     - "docs/files 1.zip"            # second prototype, maintainer's copy — reviewed, not ours to commit
@@ -50,8 +52,8 @@ workflow_per_slice:
   - after a pull that touches server/package.json: cd server && npm install
 
 state:
-  product: complete HR platform — companies, people (one Add employee dialog, edit details, private card for personal.view holders — 046), employment (transfers, changes, corrections 0037/0038), hiring requests (revisions), jobs, candidates (journey, bulk CVs, files), onboarding/offboarding plans, documents (versions, requests), policies (acknowledge), equipment (per company), IT requests, compensation, payroll periods (gross), leave (full Field Notebook parity: calendar, requests, balances, holidays, corrections, manager desk), notifications on both sides (bell + email via Resend), dashboard by capability (044/0036), kudos wall, platform admins from the UI, password show/hide
-  live_db: migrations 0001–0043 applied (0043 policies + welcome — policies.body, publish_policy(p_body), six seeded drafts, tick_policies, first-day details in companies.settings, welcome_note_render/text/data, send_welcome_note, plans.welcome_sent_at/_to; 0042 equipment pool — assets.company_id nullable, can_see_asset / can_work_asset, starter kit in companies.settings, open_starter_kit / issue_kit_item / add_kit_item, generated_documents queue + record_generated_document, equipment_form_data, tick_return_form; 0041 handover — handover_recipients / handover_sends, raise on plan insert / complete and period former, resend / mark / retry RPCs, tick_handover, companies.it_notification_email, notify_it_request; 0040 checklists — keyed template lines, richer defaults, company_template copy-on-write, upsert/retire/reorder_template_tasks, add_plan_task, cancel_departure, tick_private_details; 0035, 0036 dashboard; 0037 employment corrections; 0038 employee record — create_employee, private national_id + bank_account audited by field name, structure open to employment.edit, correct_employment p_fields, import through create_employee; 0039 review — people_work_email_key unique index, app.check_employee shared rule checker, hire always starts the checklist, candidate email stays personal)
+  product: complete HR platform — companies, people (one Add employee dialog, edit details, private card for personal.view holders — 046), employment (transfers, changes, corrections 0037/0038), hiring requests (revisions), jobs, candidates (journey, bulk CVs, files), onboarding/offboarding plans with per-company checklists (047), the handover matrix (048), equipment for the holding with the starter kit and generated forms (049), policies as a library + the welcome note (050), kudos values + the Kudos page, bonuses and the net estimate (051), documents (versions, requests), IT requests, compensation, payroll periods (gross + estimate), leave (full Field Notebook parity: calendar, requests, balances, holidays, corrections, manager desk), notifications on both sides (bell + email via Resend), dashboard by capability (044/0036), kudos wall, platform admins from the UI, password show/hide
+  live_db: migrations 0001–0044 applied (0044 kudos + bonuses + net — kudos_values, kudos.value_id / posted_by, can_manage_kudos, record_kudos / update_kudos / kudos_overview / save_kudos_value, column-level insert on kudos, payroll_items with add/remove_payroll_item, payroll settings in companies.settings -> 'payroll' with payroll_settings / set_payroll_settings, payroll_lines bonus/gross/tax/deductions/net (audit redacts them all), payroll_periods tax_rate_percent / deductions_flat / reopened_at, prepare sweeps bonuses, reopen releases + recomputes, approve refuses a reopened period; 0043 policies + welcome — policies.body, publish_policy(p_body), six seeded drafts, tick_policies, first-day details in companies.settings, welcome_note_render/text/data, send_welcome_note, plans.welcome_sent_at/_to; 0042 equipment pool — assets.company_id nullable, can_see_asset / can_work_asset, starter kit in companies.settings, open_starter_kit / issue_kit_item / add_kit_item, generated_documents queue + record_generated_document, equipment_form_data, tick_return_form; 0041 handover — handover_recipients / handover_sends, raise on plan insert / complete and period former, resend / mark / retry RPCs, tick_handover, companies.it_notification_email, notify_it_request; 0040 checklists — keyed template lines, richer defaults, company_template copy-on-write, upsert/retire/reorder_template_tasks, add_plan_task, cancel_departure, tick_private_details; 0035, 0036 dashboard; 0037 employment corrections; 0038 employee record — create_employee, private national_id + bank_account audited by field name, structure open to employment.edit, correct_employment p_fields, import through create_employee; 0039 review — people_work_email_key unique index, app.check_employee shared rule checker, hire always starts the checklist, candidate email stays personal)
   deployed: personnel-hut4.vercel.app serves the real app (sign-in verified 16 Sep); env vars are in Vercel already
   accounts:
     can_log_in: 28 (27 carried from Field Notebook with identical bcrypt hashes + Naum)
@@ -74,9 +76,10 @@ decisions_2026_09_16:
   - entry experience is the real gap ("100x better app, worse entry"): one Add employee form, edit where shown, replace all 14 window.prompt/confirm with dialogs, HR (employment.edit) may add departments/locations
 
 next:
-  say_to_start: "go 051"
-  plan: plans/045-simple-hr-flows.md (programme; 046–050 done; 051 is the last slice)
-  slice_051: kudos values, bonuses and net pay as in the prototype — kudos_values holding-wide (name, description, active) seeded with Teamwork, Ownership, Customer focus, Innovation, Integrity; kudos.value_id optional with a pill on the wall; a Kudos admin view (month filter, counts per value, post on someone's behalf with a date, edit, remove — admins / people.view holders); payroll_items (person, company, amount, currency, reason, date, period_id when swept) included as extra lines when a period is prepared, reopening releases them; per company tax_rate_percent + deductions_flat (Settings → Payroll), each prepared line gets bonus / gross / tax / deductions / net, period totals and the CSV carry both, marked "estimate — statutory contributions are the accountant's"; migration 0044. After 051, plan 045 is complete: update its README row to DONE and the development plan's Next section
+  say_to_start: "what's next" — plan 045 is complete (046–051 on main); there is no slice queued. Candidates, in the order docs/development-plan.md lists them: the maintainer's keys and setup, go-live, then payroll for real (replace the 051 estimate with the MK contribution rules once decided; pro-rating), then the blueprint's later items
+  plan: plans/045-simple-hr-flows.md — DONE; plans/051-kudos-bonuses-net-pay.md is the last slice's record
+  reuse_from_051: kudos_overview(p_month) is the one call for the Kudos page; app.kudos_input(p, row) is the shared shape check for record/update; payroll_settings_for(company) is the holding-fallback pattern for any per-company number in companies.settings; prepare_payroll_period's sweep block is where any new payroll item kind would attach; reopen must keep lines and released items consistent (recompute)
+  decisions_in_051: the estimate's base is the recorded amount as it stands (no pro-rating of annual / daily records); a bonus attaches only where the person has a line in the period's currency, otherwise it waits and the prepare notice counts it; the flat deduction applies once per person (first line); reopen releases the bonuses, recomputes the lines without them and blocks approve until prepared again; managing a kudos = admin or people.view where the receiver works (never just being the receiver); retired values are never deleted
   reuse_from_050: app.tick_<line>(person) pattern for self-ticking keyed lines; send_welcome_note is the model for a note that goes through notifications + generated_documents; welcome_note_render is where the text lives if the maintainer asks for wording changes
   reuse_from_049: app.queue_generated_document(kind, person, plan, occasion) + server/src/documentRoutes.ts generatePending — add a renderer per kind (equipmentForms.ts is the pattern; pdfmake with Roboto handles Cyrillic); the delivery kick already calls /api/documents/generate; the Vercel bundle must keep static imports of pdfmake (createRequire is not followed by esbuild)
   reuse_from_048: app.raise_handover(event, person, company, period, plan, occasion) for any new event; app.handover_value(key, person, period) is where a new catalogue field gets its value (starter_kit is the placeholder for 049); deliverNotifications() kicks both queues
@@ -90,7 +93,8 @@ next:
     - Naum's password option (above)
 
 pending_on_maintainer_unrelated_to_045:
-  - git push origin main (15 commits waiting)
+  - git push origin main (17 commits waiting)
+  - decide the real MK payroll rules (contributions, pro-rating) to replace the 051 estimate; set tax rate + flat deduction per company under Settings → Payroll estimate meanwhile
   - RESEND_API_KEY + EMAIL_FROM (invites and notification emails start sending), ANTHROPIC_API_KEY (plan 020 AI assist), Zoho credentials (docs/integrations-zoho.md)
   - invite / carry over the 14 people without accounts
   - real start dates and birth dates for the celebrate block

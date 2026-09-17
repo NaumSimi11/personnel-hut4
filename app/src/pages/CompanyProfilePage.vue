@@ -19,6 +19,7 @@ import PayrollSettingsPanel from '@/components/payroll/PayrollSettingsPanel.vue'
 import WorkflowOwnersPanel from '@/components/WorkflowOwnersPanel.vue'
 import DocumentsCard from '@/components/DocumentsCard.vue'
 import PoliciesPanel from '@/components/PoliciesPanel.vue'
+import ContractTemplatesPanel from '@/components/ContractTemplatesPanel.vue'
 import EquipmentPanel from '@/components/EquipmentPanel.vue'
 import LeaveCalendarPanel from '@/components/leave/LeaveCalendarPanel.vue'
 import NotificationSettingsPanel from '@/components/NotificationSettingsPanel.vue'
@@ -756,6 +757,7 @@ onMounted(load)
         <div v-else-if="activeTab === 'documents'" class="stack">
           <DocumentsCard :companies="documentScope" title="Company documents" />
           <PoliciesPanel :company-id="company.kind === 'holding' ? null : companyId" />
+          <ContractTemplatesPanel :company-id="company.kind === 'holding' ? null : companyId" />
         </div>
 
         <EquipmentPanel v-else-if="activeTab === 'equipment'" :company-id="companyId" />

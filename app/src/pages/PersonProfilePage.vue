@@ -14,6 +14,7 @@ import CompensationCard from '@/components/CompensationCard.vue'
 import LeaveCard from '@/components/LeaveCard.vue'
 import AvatarUpload from '@/components/AvatarUpload.vue'
 import DocumentsCard from '@/components/DocumentsCard.vue'
+import IssueContractCard from '@/components/IssueContractCard.vue'
 import DocumentRequestsCard from '@/components/DocumentRequestsCard.vue'
 import PersonEquipmentCard from '@/components/PersonEquipmentCard.vue'
 import { describeChanges, type Lookups } from '@/lib/employmentChanges'
@@ -614,6 +615,7 @@ onMounted(async () => {
           </div>
 
           <DocumentsCard :person-id="personId" :companies="personCompanies" />
+            <IssueContractCard :person-id="personId" :companies="companies" />
           <DocumentRequestsCard :person-id="personId" :companies="personCompanies" />
           <PrivateDetailsCard :person-id="personId" :company-ids="personCompanyIds" />
         </div>

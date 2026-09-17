@@ -956,6 +956,48 @@ export type Database = {
           },
         ]
       }
+      contract_templates: {
+        Row: {
+          body: string
+          category_key: string
+          company_id: string | null
+          created_at: string
+          id: string
+          published_at: string | null
+          published_by: string | null
+          status: string
+          title: string
+          updated_at: string
+          version: number
+        }
+        Insert: {
+          body: string
+          category_key: string
+          company_id?: string | null
+          created_at?: string
+          id?: string
+          published_at?: string | null
+          published_by?: string | null
+          status?: string
+          title: string
+          updated_at?: string
+          version?: number
+        }
+        Update: {
+          body?: string
+          category_key?: string
+          company_id?: string | null
+          created_at?: string
+          id?: string
+          published_at?: string | null
+          published_by?: string | null
+          status?: string
+          title?: string
+          updated_at?: string
+          version?: number
+        }
+        Relationships: []
+      }
       document_categories: {
         Row: {
           archived_at: string | null
@@ -4281,6 +4323,8 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      contract_values: { Args: { p_employment_id?: string; p_person_id: string }; Returns: Json }
+      publish_contract_template: { Args: { p_body?: string; p_template_id: string; p_title?: string }; Returns: Json }
       accept_equipment_return: { Args: { p_condition?: string; p_return_id: string }; Returns: Json }
       cancel_equipment_return: { Args: { p_return_id: string }; Returns: Json }
       decline_equipment_return: { Args: { p_reason: string; p_return_id: string }; Returns: Json }

@@ -7,14 +7,25 @@
  * the rules be tested without a workbook or a database.
  */
 
+// Anchored at both ends: a heading is the WHOLE cell, not a cell that merely
+// starts with a category word. Without the trailing `$`, an item row whose
+// only populated cell happens to start with "Monitor" (e.g. a model name
+// like "Monitor Dell S2721HS") would be misread as a new heading, dropping
+// that item and re-filing everything after it under the wrong category.
+//
+// The suffix after each root is matched with `\S*`, not `\w*` — `\w` only
+// covers ASCII letters/digits/underscore, and would silently fail to match
+// the Cyrillic plural endings ("Лаптопи", "Монитори") these headings use.
+// `\S*` still stops at the first space, which is what keeps a multi-word
+// model name like "Monitor Dell S2721HS" from matching.
 const HEADING_TYPES: ReadonlyArray<readonly [RegExp, string]> = [
-  [/^лаптоп|^laptop/i, 'laptop'],
-  [/^монитор|^monitor/i, 'monitor'],
-  [/^desktop/i, 'desktop'],
-  [/^софтвер|^software/i, 'software_license'],
-  [/^мобилн|^phone|^telefon/i, 'phone'],
-  [/^возил|^vehicle/i, 'vehicle'],
-  [/^останат|^other/i, 'accessory'],
+  [/^лаптоп\S*$|^laptops?$/i, 'laptop'],
+  [/^монитор\S*$|^monitors?$/i, 'monitor'],
+  [/^desktop(\s+pc)?$/i, 'desktop'],
+  [/^софтвер\S*$|^softwares?$/i, 'software_license'],
+  [/^мобилн\S*(\s+телефон\S*)?$|^phones?$|^telefon\S*$/i, 'phone'],
+  [/^возил\S*$|^vehicles?$/i, 'vehicle'],
+  [/^останат[ои]$|^others?$/i, 'accessory'],
 ]
 
 /** The `type_key` a category heading names, or null if it is not a category. */
@@ -47,7 +58,13 @@ export function resolveHolder(
 ): Holder {
   const text = (raw ?? '').trim()
   if (!text || /^magacin$/i.test(text)) return { kind: 'warehouse' }
-  if (/\bDOOEL\b|\bДООЕЛ\b/i.test(text)) return { kind: 'company', text }
+  // `\b` only treats ASCII letters/digits/underscore as word characters, so
+  // it never forms a boundary around Cyrillic text — `\bДООЕЛ\b` can never
+  // match anything. The Latin alternative keeps its boundaries, since those
+  // correctly stop it matching inside a longer word; the Cyrillic one does
+  // not need them because "ДООЕЛ" isn't a substring of any other Macedonian
+  // company-form word this workbook uses.
+  if (/\bDOOEL\b|ДООЕЛ/i.test(text)) return { kind: 'company', text }
 
   const bracket = text.match(/^(.*?)\s*\(([^)]*)\)\s*$/)
   const name = (bracket ? bracket[1] : text).trim()

@@ -32,6 +32,12 @@ describe('assetTypeForHeading', () => {
     expect(assetTypeForHeading('1. Мите Марков')).toBeNull()
     expect(assetTypeForHeading('')).toBeNull()
   })
+
+  it('does not treat a cell that merely starts with a category word as a heading', () => {
+    // "Monitor Dell S2721HS" is an item's model name, not a heading — it
+    // must match the WHOLE cell to count, not just a prefix of it.
+    expect(assetTypeForHeading('Monitor Dell S2721HS')).toBeNull()
+  })
 })
 
 const PEOPLE = [
@@ -60,6 +66,15 @@ describe('resolveHolder', () => {
   it('recognises a company holding its own asset', () => {
     expect(resolveHolder('Synami DOOEL', PEOPLE)).toEqual({ kind: 'company', text: 'Synami DOOEL' })
     expect(resolveHolder('Liquiditas DOOEL', PEOPLE)).toEqual({ kind: 'company', text: 'Liquiditas DOOEL' })
+  })
+
+  it('recognises a company written in Cyrillic, where \\b never bounds the script', () => {
+    // \b only treats ASCII letters/digits as word characters, so it never
+    // forms a boundary around Cyrillic — a Cyrillic-only pattern with \b on
+    // both sides can never match anything and must not be trusted here.
+    expect(resolveHolder('Синами ДООЕЛ Скопје', PEOPLE)).toEqual({
+      kind: 'company', text: 'Синами ДООЕЛ Скопје',
+    })
   })
 
   it('matches a person by name, ignoring case', () => {
@@ -155,5 +170,23 @@ describe('parseSheet', () => {
 
   it('returns nothing for a sheet with no categories at all', () => {
     expect(parseSheet([row('Some notes'), row('a', 'b')])).toEqual([])
+  })
+
+  it('does not lose an item row whose only cell starts with a category word, nor mis-file rows after it', () => {
+    // "Monitor Dell S2721HS" reduces to a single populated cell once blanks
+    // are dropped. A prefix-matching heading detector would misread it as a
+    // new "monitor" heading, dropping this item and re-filing everything
+    // that follows under a heading that was never actually there.
+    const items = parseSheet([
+      row('Монитори'),
+      row('Шифра', 'Основно средство', 'Корисник'),
+      row(null, 'Monitor Dell S2721HS', null),
+      row('M020', 'Monitor Dell U2719D', 'Kristina Cvetanov'),
+    ])
+    expect(items).toHaveLength(2)
+    expect(items[0]).toMatchObject({ typeKey: 'monitor', assetTag: null, model: 'Monitor Dell S2721HS' })
+    expect(items[1]).toMatchObject({
+      typeKey: 'monitor', assetTag: 'M020', model: 'Monitor Dell U2719D', holderText: 'Kristina Cvetanov',
+    })
   })
 })

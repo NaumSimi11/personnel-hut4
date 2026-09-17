@@ -36,6 +36,7 @@ async function signOut() {
         <router-link :to="{ name: 'onboarding' }">Onboarding</router-link>
         <router-link :to="{ name: 'offboarding' }">Offboarding</router-link>
         <router-link :to="{ name: 'leave' }">Leave</router-link>
+        <router-link v-if="auth.canAnywhere('it.view')" :to="{ name: 'equipment' }" data-testid="nav-equipment">Equipment</router-link>
         <router-link :to="{ name: 'my-workspace' }">My workspace</router-link>
         <router-link :to="{ name: 'notifications' }" class="bell" data-testid="nav-notifications">
           <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 11V7a4 4 0 0 1 8 0v4l1.5 1.5H2.5z" /><path d="M6.5 14a1.5 1.5 0 0 0 3 0" /></svg>

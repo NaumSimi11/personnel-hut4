@@ -102,3 +102,43 @@ export function itRequestActions(status: string, can: (cap: string) => boolean):
   if (assign) out.push({ to: 'cancelled', label: 'Cancel' })
   return out
 }
+
+// ------------------------------------------- the holding pool + starter kit (plan 049)
+
+/** An asset belongs to a company, or to the holding's pool when it has none. */
+export function ownerLabel(companyId: string | null, companies: Record<string, string>): string {
+  if (companyId === null) return 'Holding pool'
+  return companies[companyId] ?? 'Company'
+}
+
+export type KitItem = { item: string; issued_at: string | null; asset_id: string | null }
+
+/** The kit items on an onboarding IT request (requested_systems), junk dropped. */
+export function kitItems(raw: unknown): KitItem[] {
+  if (!Array.isArray(raw)) return []
+  return raw.flatMap((x) => {
+    if (!x || typeof x !== 'object' || typeof (x as { item?: unknown }).item !== 'string') return []
+    const o = x as { item: string; issued_at?: unknown; asset_id?: unknown }
+    return [{ item: o.item, issued_at: typeof o.issued_at === 'string' ? o.issued_at : null, asset_id: typeof o.asset_id === 'string' ? o.asset_id : null }]
+  })
+}
+
+export function kitProgress(items: KitItem[]): { issued: number; total: number } {
+  return { issued: items.filter((i) => i.issued_at !== null).length, total: items.length }
+}
+
+const KIT_MAX = 40
+
+/** A kit list as the database keeps it: trimmed, case-insensitively unique, capped. */
+export function tidyKit(items: string[]): string[] {
+  const seen = new Set<string>()
+  return items
+    .map((i) => i.trim())
+    .filter((i) => {
+      const key = i.toLowerCase()
+      if (!i || seen.has(key)) return false
+      seen.add(key)
+      return true
+    })
+    .slice(0, KIT_MAX)
+}

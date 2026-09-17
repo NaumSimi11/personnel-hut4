@@ -3,6 +3,7 @@ import { computed, onMounted, ref, watch } from 'vue'
 import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/stores/auth'
 import { useDialogStore } from '@/stores/dialogs'
+import { deliverNotifications } from '@/lib/notificationsApi'
 import {
   RETURN_STATUSES,
   assetInput,
@@ -207,7 +208,7 @@ function act(asset: Asset, action: AssignmentAction): void {
   }
   const open = openAssignment(asset)
   if (!open) return
-  if (action.key === 'issue') void run('Issue', () => supabase.rpc('issue_asset', { p_assignment_id: open.id }))
+  if (action.key === 'issue') void run('Issue', () => supabase.rpc('issue_asset', { p_assignment_id: open.id })).then((ok) => { if (ok) void deliverNotifications() })
   if (action.key === 'cancel') void run('Cancel reservation', () => supabase.rpc('cancel_reservation', { p_assignment_id: open.id }))
 }
 

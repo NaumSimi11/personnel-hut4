@@ -469,7 +469,7 @@ export type Database = {
       assets: {
         Row: {
           asset_tag: string
-          company_id: string
+          company_id: string | null
           condition: string | null
           created_at: string
           custom: Json
@@ -484,7 +484,7 @@ export type Database = {
         }
         Insert: {
           asset_tag: string
-          company_id: string
+          company_id: string | null
           condition?: string | null
           created_at?: string
           custom?: Json
@@ -499,7 +499,7 @@ export type Database = {
         }
         Update: {
           asset_tag?: string
-          company_id?: string
+          company_id?: string | null
           condition?: string | null
           created_at?: string
           custom?: Json
@@ -1585,6 +1585,54 @@ export type Database = {
             referencedColumns: ["key"]
           },
         ]
+      }
+      generated_documents: {
+        Row: {
+          attempts: number
+          company_id: string
+          created_at: string
+          dedupe_key: string
+          document_id: string | null
+          error: string | null
+          id: string
+          kind: string
+          person_id: string
+          plan_id: string | null
+          requested_by: string | null
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          attempts?: number
+          company_id: string
+          created_at?: string
+          dedupe_key: string
+          document_id?: string | null
+          error?: string | null
+          id?: string
+          kind: string
+          person_id: string
+          plan_id?: string | null
+          requested_by?: string | null
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          attempts?: number
+          company_id?: string
+          created_at?: string
+          dedupe_key?: string
+          document_id?: string | null
+          error?: string | null
+          id?: string
+          kind?: string
+          person_id?: string
+          plan_id?: string | null
+          requested_by?: string | null
+          status?: string
+          updated_at?: string
+        }
+        Relationships: []
       }
       grant_capabilities: {
         Row: {
@@ -4048,6 +4096,7 @@ export type Database = {
         }
         Returns: Json
       }
+      add_kit_item: { Args: { p_item: string; p_request_id: string }; Returns: Json }
       adjust_leave_balance: {
         Args: {
           p_company_id: string
@@ -4160,6 +4209,10 @@ export type Database = {
         Returns: Json
       }
       issue_asset: { Args: { p_assignment_id: string }; Returns: Json }
+      issue_kit_item: {
+        Args: { p_asset_id?: string; p_index: number; p_request_id: string }
+        Returns: Json
+      }
       leave_balance: {
         Args: { p_company_id: string; p_person_id: string; p_year: number }
         Returns: Json
@@ -4275,6 +4328,8 @@ export type Database = {
         Args: { p_path?: string; p_person_id: string }
         Returns: Json
       }
+      set_starter_kit: { Args: { p_company_id: string; p_items: string[] }; Returns: Json }
+      starter_kit: { Args: { p_company_id: string }; Returns: Json }
       set_leave_entitlement: {
         Args: {
           p_company_id: string

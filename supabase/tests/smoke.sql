@@ -4130,4 +4130,184 @@ begin
   assert n.title like 'IT request for Nora Newhire: Second monitor', 'the title: ' || n.title;
 end $$;
 
+-- ================================================================ 0042
+-- Equipment for the holding: the pool is seen and worked by anyone with
+-- the IT capabilities anywhere and goes to anyone employed anywhere; a
+-- company asset keeps its gate; the leaver's return tasks include the
+-- pool; the starter kit opens a request per hire and ticks the line; the
+-- forms are queued for the server and the signed return ticks its line.
+insert into public.assets (id, company_id, asset_tag, type_key, model) values
+  ('a0000000-0000-0000-0000-0000000000f1', null, 'POOL-001', 'laptop', 'ThinkPad X1'),
+  ('a0000000-0000-0000-0000-0000000000f2', '10000000-0000-0000-0000-00000000000a', 'A-ONLY-01', 'laptop', 'MacBook');
+
+-- Bea (Company HR in B: no IT capabilities) sees neither; give her IT in B.
+insert into public.grant_capabilities (grant_id, capability_key) values
+  ('40000000-0000-0000-0000-000000000003', 'it.view'),
+  ('40000000-0000-0000-0000-000000000003', 'it.assign'),
+  ('40000000-0000-0000-0000-000000000003', 'it.complete');
+set app.test_uid = '00000000-0000-0000-0000-000000000005';
+set role authenticated;
+do $$
+declare r jsonb; v_assignment uuid; v_alex uuid := '20000000-0000-0000-0000-000000000001';
+begin
+  assert (select count(*) from public.assets where asset_tag = 'POOL-001') = 1, 'the pool is visible with it.view anywhere';
+  assert (select count(*) from public.assets where asset_tag = 'A-ONLY-01') = 0, 'a company asset stays behind its gate';
+  -- The pool laptop goes to Alex, employed in A, though Bea holds IT only in B.
+  r := public.reserve_asset('a0000000-0000-0000-0000-0000000000f1', v_alex, 'From the pool');
+  v_assignment := (r->>'assignment_id')::uuid;
+  perform public.issue_asset(v_assignment);
+  assert (select status from public.assets where id = 'a0000000-0000-0000-0000-0000000000f1') = 'assigned', 'issued from the pool';
+  -- A company asset of A is not hers to work.
+  begin
+    perform public.reserve_asset('a0000000-0000-0000-0000-0000000000f2', v_alex);
+    raise exception 'FAIL: worked a company asset without it.assign there';
+  exception when insufficient_privilege then null;
+  end;
+  -- A pool asset cannot go to someone with no employment.
+  begin
+    perform public.reserve_asset('a0000000-0000-0000-0000-0000000000f1', '20000000-0000-0000-0000-0000000000c1');
+    raise exception 'FAIL: reserved an already-assigned asset';
+  exception when raise_exception then
+    if sqlerrm not like '%only an available asset%' then raise; end if;
+  end;
+end $$;
+reset role;
+-- The handover form is queued for the server (the queue is read by tasks.view / it.view in the person's company; Bea has neither in A).
+do $$
+begin
+  assert exists (select 1 from public.generated_documents where kind = 'equipment_handover' and person_id = '20000000-0000-0000-0000-000000000001' and status = 'pending'),
+    'the handover form is queued on issue';
+end $$;
+
+-- The pool asset can be added to the register by anyone with it.assign anywhere; the tag is unique within the pool.
+set app.test_uid = '00000000-0000-0000-0000-000000000005';
+set role authenticated;
+insert into public.assets (company_id, asset_tag, type_key, model) values (null, 'POOL-002', 'monitor', 'Dell 27');
+do $$
+begin
+  begin
+    insert into public.assets (company_id, asset_tag, type_key) values (null, 'POOL-002', 'monitor');
+    raise exception 'FAIL: duplicate pool tag accepted';
+  exception when unique_violation then null;
+  end;
+  -- The same tag may exist in a company (nulls-not-distinct only ties the pool to itself).
+  insert into public.assets (company_id, asset_tag, type_key) values ('10000000-0000-0000-0000-00000000000b', 'POOL-002', 'monitor');
+end $$;
+reset role;
+
+-- Starter kit: the holding default when the company has none; the company's own when set.
+set app.test_uid = '00000000-0000-0000-0000-000000000004';  -- Ada
+set role authenticated;
+do $$
+declare r jsonb;
+begin
+  r := public.starter_kit('10000000-0000-0000-0000-00000000000b');
+  assert jsonb_array_length(r->'items') = 7 and not (r->>'own')::boolean, 'the holding default kit: ' || r::text;
+  r := public.set_starter_kit('10000000-0000-0000-0000-00000000000b', array['Laptop', 'Badge', ' Headset ', 'Laptop']);
+  assert r->'items' = '["Badge", "Headset", "Laptop"]'::jsonb, 'trimmed, deduplicated, sorted: ' || r::text;
+  r := public.starter_kit('10000000-0000-0000-0000-00000000000b');
+  assert (r->>'own')::boolean, 'the company has its own kit now';
+end $$;
+reset role;
+set app.test_uid = '00000000-0000-0000-0000-000000000003';  -- Omar: no it.assign
+set role authenticated;
+do $$
+begin
+  begin
+    perform public.set_starter_kit('10000000-0000-0000-0000-00000000000b', array['Nothing']);
+    raise exception 'FAIL: kit set without it.assign';
+  exception when insufficient_privilege then null;
+  end;
+end $$;
+reset role;
+
+-- A hire in B opens the kit request with B's three items; issuing them all ticks the line.
+set app.test_uid = '00000000-0000-0000-0000-000000000005';
+set role authenticated;
+do $$
+declare r jsonb; v_plan uuid; v_person uuid; v_req record;
+begin
+  r := public.create_employee(jsonb_build_object('full_name', 'Kit Starter', 'work_email', 'kit@b.test',
+    'company_id', '10000000-0000-0000-0000-00000000000b', 'job_title', 'Clerk', 'start_date', current_date + 5));
+  v_plan := (r->>'plan_id')::uuid; v_person := (r->>'person_id')::uuid;
+  select * into v_req from public.it_requests where person_id = v_person and kind = 'onboarding';
+  assert v_req.id is not null and jsonb_array_length(v_req.requested_systems) = 3, 'the kit request carries the company items: ' || coalesce(v_req.requested_systems::text, 'none');
+  assert v_req.plan_task_id = (select id from public.plan_tasks where plan_id = v_plan and task_key = 'starter_kit'), 'tied to the starter kit line';
+  assert (select status from public.plan_tasks where plan_id = v_plan and task_key = 'starter_kit') = 'open', 'line open';
+  -- The handover's starter_kit value reads the kit.
+  assert app.handover_value('starter_kit', v_person, (r->>'employment_period_id')::uuid) = 'Badge —, Headset —, Laptop —', 'kit summary: ' || coalesce(app.handover_value('starter_kit', v_person, (r->>'employment_period_id')::uuid), 'null');
+  -- Issue the badge, then the laptop with the pool monitor as the asset (a registered item), then add and issue an extra.
+  r := public.issue_kit_item(v_req.id, 0);
+  assert not (r->>'done')::boolean, 'one of three';
+  assert (select status from public.it_requests where id = v_req.id) = 'in_progress', 'the request is in progress';
+  r := public.issue_kit_item(v_req.id, 2, (select id from public.assets where asset_tag = 'POOL-002' and company_id is null));
+  assert (select status from public.assets where asset_tag = 'POOL-002' and company_id is null) = 'assigned', 'naming an asset issues it to the person';
+  begin
+    perform public.issue_kit_item(v_req.id, 0);
+    raise exception 'FAIL: issued an item twice';
+  exception when invalid_parameter_value then null;
+  end;
+  r := public.add_kit_item(v_req.id, 'Docking station');
+  assert jsonb_array_length(r->'items') = 4, 'the extra item';
+  r := public.issue_kit_item(v_req.id, 1);
+  assert not (r->>'done')::boolean, 'the extra still open';
+  r := public.issue_kit_item(v_req.id, 3);
+  assert (r->>'done')::boolean, 'every item issued';
+  assert (select status from public.it_requests where id = v_req.id) = 'done', 'the request is done';
+  assert (select status from public.plan_tasks where plan_id = v_plan and task_key = 'starter_kit') = 'done', 'the line ticked itself';
+  assert app.handover_value('starter_kit', v_person, (r->>'employment_period_id')::uuid) like '%Docking station ✓%', 'the summary shows the ticks';
+end $$;
+reset role;
+
+-- Departure: the return tasks list the pool laptop Alex holds; the return form is queued; the signed scan ticks the line.
+set app.test_uid = '00000000-0000-0000-0000-000000000004';  -- Ada
+set role authenticated;
+do $$
+declare r jsonb; v_plan uuid; v_alex uuid := '20000000-0000-0000-0000-000000000001'; v_doc uuid; v_period uuid := '30000000-0000-0000-0000-000000000001';
+begin
+  r := public.schedule_departure(v_period, current_date + 60, current_date + 58, 'Leaving');
+  v_plan := (r->>'plan_id')::uuid;
+  assert exists (select 1 from public.plan_tasks where plan_id = v_plan and asset_id = 'a0000000-0000-0000-0000-0000000000f1'), 'the pool laptop is on the return list';
+  assert exists (select 1 from public.generated_documents where kind = 'equipment_return' and person_id = v_alex and plan_id = v_plan and status = 'pending'), 'the return form is queued';
+  assert (select status from public.plan_tasks where plan_id = v_plan and task_key = 'return_form') = 'open', 'the return-form line is open';
+end $$;
+reset role;
+-- The server records the generated file (service role), then HR uploads the signed scan as version 2.
+do $$
+declare q uuid; r jsonb; v_alex uuid := '20000000-0000-0000-0000-000000000001'; d jsonb; v_doc uuid; v_plan uuid;
+begin
+  select id into q from public.generated_documents where kind = 'equipment_return' and person_id = v_alex and status = 'pending';
+  d := public.equipment_form_data(q);
+  assert d->'person'->>'name' = 'Alex Director' and jsonb_array_length(d->'assets') = 1 and d->'assets'->0->>'tag' = 'POOL-001', 'the form data: ' || d::text;
+  r := public.record_generated_document(q, '10000000-0000-0000-0000-00000000000a/' || v_alex || '/return.pdf', 12345, 'Equipment return form');
+  v_doc := (r->>'document_id')::uuid;
+  assert (select status from public.generated_documents where id = q) = 'done', 'the queue row is done';
+  assert (select category_key from public.documents where id = v_doc) = 'equipment_return' and (select version from public.documents where id = v_doc) = 1, 'version 1 recorded';
+  assert (select uploaded_by from public.documents where id = v_doc) = '20000000-0000-0000-0000-000000000004', 'the requester is the uploader';
+  -- A regenerated form archives the old one and is version 1 again — never mistaken for the signed scan.
+  update public.generated_documents set status = 'pending', dedupe_key = dedupe_key || ':again' where id = q;
+  r := public.record_generated_document(q, '10000000-0000-0000-0000-00000000000a/' || v_alex || '/return2.pdf', 12345, 'Equipment return form');
+  assert (select archived_at from public.documents where id = v_doc) is not null, 'the previous unsigned form is archived';
+  v_doc := (r->>'document_id')::uuid;
+  assert (select version from public.documents where id = v_doc) = 1, 'the fresh form is version 1';
+  perform set_config('app.smoke_return_doc', v_doc::text, false);
+end $$;
+set app.test_uid = '00000000-0000-0000-0000-000000000004';
+set role authenticated;
+insert into public.documents (company_id, person_id, category_key, title, storage_path, visibility, supersedes_id)
+  values ('10000000-0000-0000-0000-00000000000a', '20000000-0000-0000-0000-000000000001', 'equipment_return', 'Equipment return form (signed)',
+          '10000000-0000-0000-0000-00000000000a/20000000-0000-0000-0000-000000000001/return-signed.pdf', 'person_and_hr',
+          current_setting('app.smoke_return_doc')::uuid);
+do $$
+declare v_plan uuid;
+begin
+  select id into v_plan from public.plans where employment_period_id = '30000000-0000-0000-0000-000000000001' and kind = 'offboarding' and status = 'in_progress';
+  assert (select status from public.plan_tasks where plan_id = v_plan and task_key = 'return_form') = 'done', 'the signed scan ticked the line';
+  -- Undo the departure so the fixtures stay as later blocks expect.
+  perform public.cancel_departure('30000000-0000-0000-0000-000000000001', 'smoke');
+end $$;
+reset role;
+set app.test_uid = '';
+delete from public.grant_capabilities where grant_id = '40000000-0000-0000-0000-000000000003' and capability_key in ('it.view', 'it.assign', 'it.complete');
+
 select 'SMOKE TESTS PASSED' as result;

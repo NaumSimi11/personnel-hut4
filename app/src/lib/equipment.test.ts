@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { assetInput, assetStatusLabel, assignmentActions, itRequestActions, itRequestInput, parseSystems } from './equipment'
+import { assetInput, assetStatusLabel, assignmentActions, itRequestActions, itRequestInput, parseSystems, kitItems, kitProgress, ownerLabel, tidyKit } from './equipment'
 
 describe('assetInput', () => {
   it('needs a tag and a type; the rest is optional', () => {
@@ -44,5 +44,26 @@ describe('itRequestActions', () => {
     expect(itRequestActions('blocked', can(['it.assign'])).map((a) => a.to)).toEqual(['in_progress', 'done', 'cancelled'])
     expect(itRequestActions('done', can(['it.assign']))).toEqual([])
     expect(assetStatusLabel('assigned')).toBe('Assigned')
+  })
+})
+
+describe('the holding pool and the starter kit (plan 049)', () => {
+  it('names the pool and a company on an asset', () => {
+    expect(ownerLabel(null, { c1: 'Snowball' })).toBe('Holding pool')
+    expect(ownerLabel('c1', { c1: 'Snowball' })).toBe('Snowball')
+    expect(ownerLabel('cx', { c1: 'Snowball' })).toBe('Company')
+  })
+  it('reads the kit items off a request and counts what is issued', () => {
+    const items = kitItems([{ item: 'Laptop', issued_at: '2026-01-01T00:00:00Z', asset_id: 'a1' }, { item: 'Badge', issued_at: null, asset_id: null }, 'junk'])
+    expect(items).toEqual([
+      { item: 'Laptop', issued_at: '2026-01-01T00:00:00Z', asset_id: 'a1' },
+      { item: 'Badge', issued_at: null, asset_id: null },
+    ])
+    expect(kitProgress(items)).toEqual({ issued: 1, total: 2 })
+    expect(kitItems(null)).toEqual([])
+  })
+  it('keeps a kit list tidy: trimmed, deduplicated, at most 40', () => {
+    expect(tidyKit([' Laptop ', 'Badge', 'laptop', '', 'Badge'])).toEqual(['Laptop', 'Badge'])
+    expect(tidyKit(Array.from({ length: 45 }, (_, i) => `Item ${i}`))).toHaveLength(40)
   })
 })

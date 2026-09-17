@@ -8,6 +8,7 @@ import { friendlyDepartureError } from '@/lib/departure'
 import { progress, type ChecklistKind, type ChecklistTask, type Phase } from '@/lib/checklists'
 import ChecklistTasks from '@/components/checklists/ChecklistTasks.vue'
 import HandoverCard from '@/components/handover/HandoverCard.vue'
+import StarterKitCard from '@/components/equipment/StarterKitCard.vue'
 import { deliverNotifications } from '@/lib/notificationsApi'
 
 /**
@@ -193,6 +194,15 @@ onMounted(async () => {
           @changed="loadTasks"
         />
       </div>
+
+      <StarterKitCard
+        v-if="plan.kind === 'onboarding' && plan.person && auth.can(plan.company_id, 'it.view')"
+        class="handover"
+        :plan-id="plan.id"
+        :person-id="plan.person.id"
+        :company-id="plan.company_id"
+        @changed="loadTasks"
+      />
 
       <HandoverCard
         v-if="plan.person && auth.can(plan.company_id, 'tasks.view')"

@@ -113,6 +113,11 @@ export const router = createRouter({
           component: () => import('@/pages/LeavePage.vue'),
         },
         {
+          path: 'equipment',
+          name: 'equipment',
+          component: () => import('@/pages/EquipmentPage.vue'),
+        },
+        {
           path: 'people/:personId',
           name: 'person',
           component: () => import('@/pages/PersonProfilePage.vue'),

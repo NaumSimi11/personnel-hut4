@@ -1,0 +1,126 @@
+// Static imports so esbuild inlines pdfmake and the font into the Vercel bundle.
+import pdfmakeInstance from 'pdfmake'
+import roboto from 'pdfmake/build/fonts/Roboto.js'
+
+/**
+ * The equipment forms (plan 049): a handover form when equipment is issued
+ * and a return form when a departure is scheduled, rendered on the server
+ * with pdfmake (pure JS — runs on a Vercel function without a browser)
+ * from what the database says the person holds. Headings carry both
+ * languages the holding works in; the signed scan comes back as a new
+ * version of the same document.
+ */
+
+export type EquipmentFormData = {
+  kind: 'equipment_handover' | 'equipment_return'
+  person: { name: string; position: string | null; start_date: string | null; last_working_date: string | null }
+  company: { name: string; legal_name: string | null }
+  assets: { tag: string; type: string; model: string | null; serial: string | null; condition: string | null; issued_at: string | null }[]
+  kit: { item: string; issued_at: string | null; asset_id: string | null }[]
+}
+
+const TITLES: Record<EquipmentFormData['kind'], string> = {
+  equipment_handover: 'Equipment handover form · Записник за предавање опрема',
+  equipment_return: 'Equipment return form · Записник за враќање опрема',
+}
+
+export function formTitle(kind: EquipmentFormData['kind']): string {
+  return TITLES[kind]
+}
+
+type PdfMake = {
+  virtualfs: { writeFileSync: (name: string, content: string, encoding: string) => void }
+  addFonts: (fonts: Record<string, Record<string, string>>) => void
+  setLocalAccessPolicy: (cb: (path: string) => boolean) => void
+  setUrlAccessPolicy: (cb: (url: string) => boolean) => void
+  createPdf: (doc: Record<string, unknown>) => { getBuffer: () => Promise<Uint8Array> }
+}
+
+let engine: PdfMake | null = null
+
+/** pdfmake with the bundled Roboto (Latin + Cyrillic) in its virtual file system; set up once. */
+function pdfmake(): PdfMake {
+  if (engine) return engine
+  const instance = pdfmakeInstance as unknown as PdfMake
+  const font = roboto as unknown as { vfs: Record<string, { data: string } | string>; fonts: Record<string, Record<string, string>> }
+  for (const [name, entry] of Object.entries(font.vfs)) {
+    instance.virtualfs.writeFileSync(name, typeof entry === 'string' ? entry : entry.data, 'base64')
+  }
+  instance.addFonts(font.fonts)
+  instance.setLocalAccessPolicy(() => false)
+  instance.setUrlAccessPolicy(() => false)
+  engine = instance
+  return engine
+}
+
+function day(iso: string | null): string {
+  return iso ? iso.slice(0, 10) : '—'
+}
+
+export async function renderEquipmentForm(data: EquipmentFormData): Promise<Buffer> {
+  const isReturn = data.kind === 'equipment_return'
+  const today = new Date().toISOString().slice(0, 10)
+  const assetRows = data.assets.length
+    ? data.assets.map((a) => [a.tag, a.type, a.model ?? '—', a.serial ?? '—', a.condition ?? '—', isReturn ? '' : day(a.issued_at)])
+    : [[{ text: 'No registered equipment · Нема регистрирана опрема', colSpan: 6, italics: true, color: '#666' }, '', '', '', '', '']]
+  const kitRows = data.kit.length ? data.kit.map((k) => [k.item, k.issued_at ? day(k.issued_at) : '—']) : []
+
+  const doc = {
+    pageSize: 'A4',
+    pageMargins: [48, 56, 48, 56],
+    defaultStyle: { font: 'Roboto', fontSize: 10 },
+    content: [
+      { text: data.company.legal_name ?? data.company.name, fontSize: 9, color: '#666' },
+      { text: TITLES[data.kind], fontSize: 16, bold: true, margin: [0, 4, 0, 14] },
+      {
+        columns: [
+          { width: '50%', stack: [{ text: 'Employee · Вработен', fontSize: 8, color: '#666' }, { text: data.person.name, bold: true }, { text: data.person.position ?? '' }] },
+          {
+            width: '50%',
+            stack: [
+              { text: isReturn ? 'Last working day · Последен работен ден' : 'Date · Датум', fontSize: 8, color: '#666' },
+              { text: isReturn ? day(data.person.last_working_date) : today, bold: true },
+              { text: `Company · Компанија: ${data.company.name}` },
+            ],
+          },
+        ],
+        margin: [0, 0, 0, 16],
+      },
+      { text: isReturn ? 'Equipment to return · Опрема за враќање' : 'Equipment issued · Предадена опрема', bold: true, margin: [0, 0, 0, 6] },
+      {
+        table: {
+          headerRows: 1,
+          widths: ['auto', 'auto', '*', 'auto', 'auto', 'auto'],
+          body: [
+            ['Tag · Ознака', 'Type · Тип', 'Model · Модел', 'Serial · Сериски', 'Condition · Состојба', isReturn ? 'Returned · Вратено' : 'Issued · Издадено'].map((h) => ({ text: h, bold: true, fontSize: 8 })),
+            ...assetRows,
+          ],
+        },
+        layout: 'lightHorizontalLines',
+        margin: [0, 0, 0, 14],
+      },
+      ...(kitRows.length && !isReturn
+        ? [
+            { text: 'Starter kit · Почетен пакет', bold: true, margin: [0, 0, 0, 6] },
+            { table: { headerRows: 1, widths: ['*', 'auto'], body: [[{ text: 'Item · Ставка', bold: true, fontSize: 8 }, { text: 'Issued · Издадено', bold: true, fontSize: 8 }], ...kitRows] }, layout: 'lightHorizontalLines', margin: [0, 0, 0, 14] },
+          ]
+        : []),
+      {
+        text: isReturn
+          ? 'The employee returns the equipment listed above in the condition noted. · Вработениот ја враќа наведената опрема во наведената состојба.'
+          : 'The employee confirms receipt of the equipment listed above and undertakes to return it on request or on leaving. · Вработениот потврдува прием на наведената опрема и се обврзува да ја врати на барање или при заминување.',
+        fontSize: 9,
+        margin: [0, 8, 0, 28],
+      },
+      {
+        columns: [
+          { width: '50%', stack: [{ text: '______________________________' }, { text: 'Employee · Вработен', fontSize: 8, color: '#666' }] },
+          { width: '50%', stack: [{ text: '______________________________' }, { text: 'IT / Company · ИТ / Компанија', fontSize: 8, color: '#666' }] },
+        ],
+      },
+      { text: `Generated by Personnel on ${today}`, fontSize: 7, color: '#999', margin: [0, 24, 0, 0] },
+    ],
+  }
+  const bytes = await pdfmake().createPdf(doc).getBuffer()
+  return Buffer.from(bytes)
+}

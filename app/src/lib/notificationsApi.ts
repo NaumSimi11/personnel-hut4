@@ -26,10 +26,15 @@ async function kick(path: string): Promise<DeliveryReport | null> {
   }
 }
 
-/** The notification queue, and the handover queue behind it (plan 048) — one kick sends both. */
+/** The notification queue, the handover queue (048) and the document generator (049) — one kick works all three. */
 export async function deliverNotifications(): Promise<DeliveryReport | null> {
-  const [notifications] = await Promise.all([kick('/api/notifications/deliver'), kick('/api/handover/deliver')])
+  const [notifications] = await Promise.all([kick('/api/notifications/deliver'), kick('/api/handover/deliver'), kick('/api/documents/generate')])
   return notifications
+}
+
+/** The document generator alone (plan 049): after issuing equipment. */
+export function generateDocuments(): Promise<DeliveryReport | null> {
+  return kick('/api/documents/generate')
 }
 
 /** The handover queue alone (plan 048): after Resend / Retry on a send. */

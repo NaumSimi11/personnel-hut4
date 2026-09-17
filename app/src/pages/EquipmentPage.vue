@@ -68,10 +68,17 @@ const companyNames = computed(() => Object.fromEntries(companies.value.map((c) =
 const canAssignAnywhere = computed(() => auth.canAnywhere('it.assign'))
 // Where the viewer may add: the pool (it.assign anywhere) and each company where they hold it.assign.
 const ownerOptions = computed(() => [
-  ...(canAssignAnywhere.value ? [{ id: POOL, name: 'Holding pool' }] : []),
+  ...(canAssignAnywhere.value ? [{ id: POOL, name: 'Shared — no company' }] : []),
   ...companies.value.filter((c) => auth.can(c.id, 'it.assign')),
 ])
-const filterOptions = computed(() => [{ id: POOL, name: 'Holding pool' }, ...companies.value])
+// The pool is not a company — it is an asset that belongs to no single one, so
+// that a shared laptop can go to anyone at any company. Listing it beside the
+// real companies while it is empty reads as a sixth company that filters to
+// nothing, so it only appears once something is actually in it.
+const filterOptions = computed(() => {
+  const pooled = assets.value.some((a) => a.company_id === null)
+  return pooled ? [{ id: POOL, name: 'Shared — no company' }, ...companies.value] : companies.value
+})
 const shown = computed(() => {
   const list = filter.value === '' ? assets.value : filter.value === POOL ? assets.value.filter((a) => a.company_id === null) : assets.value.filter((a) => a.company_id === filter.value)
   return [...list].sort((a, b) => a.asset_tag.localeCompare(b.asset_tag))

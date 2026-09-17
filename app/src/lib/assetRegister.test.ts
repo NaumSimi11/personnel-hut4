@@ -22,11 +22,11 @@ describe('assetLine', () => {
     )).toBe('Laptop · Synami · HP ProBook · magacin')
   })
 
-  it('names the holding pool for an asset no company owns', () => {
+  it('says Shared for an asset no company owns', () => {
     expect(assetLine(
       { type_key: 'vehicle', company_id: null, holder_id: null, model: 'Van' },
       LOOKUPS,
-    )).toBe('Vehicles · Holding pool · Van · magacin')
+    )).toBe('Vehicles · Shared · Van · magacin')
   })
 
   it('falls back to the key for a type it does not know', () => {

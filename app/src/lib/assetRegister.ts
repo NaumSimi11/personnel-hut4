@@ -25,7 +25,7 @@ export const WAREHOUSE = 'magacin'
 
 export function assetLine(asset: RegisterAsset, lookups: RegisterLookups): string {
   const type = lookups.types[asset.type_key] ?? asset.type_key
-  const company = asset.company_id ? (lookups.companies[asset.company_id] ?? '—') : 'Holding pool'
+  const company = asset.company_id ? (lookups.companies[asset.company_id] ?? '—') : 'Shared'
   // An asset nobody is assigned to is not necessarily in the warehouse. The
   // imported books often name a holder this system cannot match to a person —
   // a diminutive, initials, or a place. Saying "magacin" there would claim the

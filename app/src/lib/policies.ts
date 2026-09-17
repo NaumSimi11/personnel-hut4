@@ -80,6 +80,7 @@ export function policyObjectPath(companyId: string | null, policyId: string, mim
 export const policyInput = z.object({
   title: z.string().trim().min(2, 'Enter the policy title.').max(160),
   summary: z.string().trim().max(500, 'Keep the summary under 500 characters.'),
+  body: z.string().trim().max(20000, 'Keep the text under 20,000 characters.').default(''),
 })
 
 export type PolicyRow = {
@@ -94,6 +95,7 @@ export type PolicyRow = {
   original_name: string | null
   mime_type: string | null
   summary: string | null
+  body: string | null
   created_at: string
 }
 
@@ -110,18 +112,21 @@ export function acknowledgementState(
 }
 
 /** Create the draft row first (RLS decides), then store the file and attach it. */
+/** A draft with its text, its file, or both (plan 050: a policy need not be a PDF). */
 export async function createPolicy(input: {
   companyId: string | null
   title: string
   summary: string
-  file: File
+  body?: string
+  file: File | null
 }): Promise<PolicyRow> {
   const { data: created, error: rowError } = await supabase
     .from('policies')
-    .insert({ company_id: input.companyId, title: input.title, summary: input.summary || null })
+    .insert({ company_id: input.companyId, title: input.title, summary: input.summary || null, body: input.body || null })
     .select('*')
     .maybeSingle()
   if (rowError || !created) throw new Error(friendlyPolicyError(rowError?.message ?? 'row-level security'))
+  if (!input.file) return created as PolicyRow
   const path = policyObjectPath(input.companyId, created.id, input.file.type)
   const { error: uploadError } = await supabase.storage
     .from(POLICY_BUCKET)
@@ -164,14 +169,15 @@ export async function replaceDraftFile(policy: PolicyRow, file: File): Promise<v
   if (policy.storage_path) await supabase.storage.from(POLICY_BUCKET).remove([policy.storage_path])
 }
 
-/** Publish: a draft as it is, or a published policy as a new version with the new file. */
-export async function publishPolicy(policy: PolicyRow, file: File | null): Promise<void> {
+/** Publish: a draft as it is, or a published policy as a new version with the new file or the new text. */
+export async function publishPolicy(policy: PolicyRow, file: File | null, body?: string): Promise<void> {
   const path = file ? await storePolicyFile(policy, file) : null
   const { error } = await supabase.rpc('publish_policy', {
     p_policy_id: policy.id,
     p_storage_path: path ?? undefined,
     p_original_name: file ? file.name.slice(0, 200) : undefined,
     p_mime_type: file?.type,
+    p_body: body?.trim() || undefined,
   })
   if (error) {
     if (path) await supabase.storage.from(POLICY_BUCKET).remove([path])

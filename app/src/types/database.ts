@@ -3453,6 +3453,8 @@ export type Database = {
           start_date: string
           status: string
           template_id: string | null
+          welcome_sent_at: string | null
+          welcome_sent_to: string | null
           updated_at: string
         }
         Insert: {
@@ -3468,6 +3470,8 @@ export type Database = {
           start_date: string
           status?: string
           template_id?: string | null
+          welcome_sent_at?: string | null
+          welcome_sent_to?: string | null
           updated_at?: string
         }
         Update: {
@@ -3483,6 +3487,8 @@ export type Database = {
           start_date?: string
           status?: string
           template_id?: string | null
+          welcome_sent_at?: string | null
+          welcome_sent_to?: string | null
           updated_at?: string
         }
         Relationships: [
@@ -3558,6 +3564,7 @@ export type Database = {
       }
       policies: {
         Row: {
+          body: string | null
           company_id: string | null
           created_at: string
           id: string
@@ -3573,6 +3580,7 @@ export type Database = {
           version: number
         }
         Insert: {
+          body?: string | null
           company_id?: string | null
           created_at?: string
           id?: string
@@ -3588,6 +3596,7 @@ export type Database = {
           version?: number
         }
         Update: {
+          body?: string | null
           company_id?: string | null
           created_at?: string
           id?: string
@@ -4199,6 +4208,7 @@ export type Database = {
         Args: { p_note: string; p_request_id: string }
         Returns: Json
       }
+      first_day_details: { Args: { p_company_id: string }; Returns: Json }
       handover_fields: { Args: never; Returns: Json }
       import_field_notebook: {
         Args: { p_commit?: boolean; p_payload: Json }
@@ -4243,6 +4253,7 @@ export type Database = {
       }
       publish_policy: {
         Args: {
+          p_body?: string
           p_mime_type?: string
           p_original_name?: string
           p_policy_id: string
@@ -4328,6 +4339,8 @@ export type Database = {
         Args: { p_path?: string; p_person_id: string }
         Returns: Json
       }
+      send_welcome_note: { Args: { p_plan_id: string; p_to?: string }; Returns: Json }
+      set_first_day_details: { Args: { p: Json; p_company_id: string }; Returns: Json }
       set_starter_kit: { Args: { p_company_id: string; p_items: string[] }; Returns: Json }
       starter_kit: { Args: { p_company_id: string }; Returns: Json }
       set_leave_entitlement: {
@@ -4360,6 +4373,7 @@ export type Database = {
         Returns: Json
       }
       upsert_template_task: { Args: { p: Json }; Returns: Json }
+      welcome_note_text: { Args: { p_plan_id: string }; Returns: Json }
     }
     Enums: {
       [_ in never]: never

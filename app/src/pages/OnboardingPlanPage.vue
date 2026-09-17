@@ -9,6 +9,7 @@ import { progress, type ChecklistKind, type ChecklistTask, type Phase } from '@/
 import ChecklistTasks from '@/components/checklists/ChecklistTasks.vue'
 import HandoverCard from '@/components/handover/HandoverCard.vue'
 import StarterKitCard from '@/components/equipment/StarterKitCard.vue'
+import WelcomeNoteCard from '@/components/welcome/WelcomeNoteCard.vue'
 import { deliverNotifications } from '@/lib/notificationsApi'
 
 /**
@@ -194,6 +195,14 @@ onMounted(async () => {
           @changed="loadTasks"
         />
       </div>
+
+      <WelcomeNoteCard
+        v-if="plan.kind === 'onboarding' && auth.can(plan.company_id, 'tasks.view')"
+        class="handover"
+        :plan-id="plan.id"
+        :company-id="plan.company_id"
+        @changed="loadTasks"
+      />
 
       <StarterKitCard
         v-if="plan.kind === 'onboarding' && plan.person && auth.can(plan.company_id, 'it.view')"

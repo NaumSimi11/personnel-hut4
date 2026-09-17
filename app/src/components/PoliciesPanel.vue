@@ -36,7 +36,9 @@ const policies = ref<PolicyRow[]>([])
 const acknowledged = ref<Record<string, number>>({})
 const headcount = ref<number | null>(null)
 const adding = ref(false)
-const form = ref({ title: '', summary: '' })
+const form = ref({ title: '', summary: '', body: '' })
+const reading = ref<PolicyRow | null>(null)
+const newText = ref<Record<string, string>>({})
 const fileInput = ref<HTMLInputElement | null>(null)
 const fileInputs = ref<Record<string, HTMLInputElement | null>>({})
 
@@ -84,19 +86,15 @@ async function load(): Promise<void> {
 }
 
 function startAdd(): void {
-  form.value = { title: '', summary: '' }
+  form.value = { title: '', summary: '', body: '' }
   error.value = null
   notice.value = null
   adding.value = true
 }
 
 async function saveDraft(): Promise<void> {
-  const file = fileInput.value?.files?.[0]
-  if (!file) {
-    error.value = 'Attach the policy document.'
-    return
-  }
-  const fileProblem = validatePolicyFile(file)
+  const file = fileInput.value?.files?.[0] ?? null
+  const fileProblem = file ? validatePolicyFile(file) : null
   if (fileProblem) {
     error.value = fileProblem
     return
@@ -106,16 +104,42 @@ async function saveDraft(): Promise<void> {
     error.value = parsed.error.issues[0]?.message ?? 'Check the form.'
     return
   }
+  if (!file && !parsed.data.body) {
+    error.value = 'Write the policy here or attach its file.'
+    return
+  }
   busy.value = true
   error.value = null
   try {
-    await createPolicy({ companyId: props.companyId, title: parsed.data.title, summary: parsed.data.summary, file })
+    await createPolicy({ companyId: props.companyId, title: parsed.data.title, summary: parsed.data.summary, body: parsed.data.body, file })
     adding.value = false
     notice.value = 'Draft saved. Publish it when it is ready to be read.'
     await load()
   } catch (e) {
     error.value = e instanceof Error ? e.message : 'Could not save the policy.'
     console.error('Policy draft failed:', error.value)
+  } finally {
+    busy.value = false
+  }
+}
+
+/** A published text policy gets a new version from new text (a file policy from a new file, below). */
+async function publishNewText(policy: PolicyRow): Promise<void> {
+  const text = (newText.value[policy.id] ?? '').trim()
+  if (text.length < 2) {
+    error.value = 'Write the new text first.'
+    return
+  }
+  busy.value = true
+  error.value = null
+  notice.value = null
+  try {
+    await publishPolicy(policy, null, text)
+    newText.value = { ...newText.value, [policy.id]: '' }
+    notice.value = 'Published as a new version. Everyone will need to acknowledge it again.'
+    await load()
+  } catch (e) {
+    error.value = e instanceof Error ? e.message : 'Could not publish.'
   } finally {
     busy.value = false
   }
@@ -249,6 +273,10 @@ watch(() => props.companyId, load)
           <span>Summary</span>
           <input id="pol-summary" v-model="form.summary" placeholder="One line on what it covers (optional)" />
         </label>
+        <label class="wide">
+          <span>Text (write it here, or attach a file above)</span>
+          <textarea id="pol-body" v-model="form.body" rows="6" maxlength="20000" placeholder="The policy itself, in plain words."></textarea>
+        </label>
         <div class="form-actions">
           <button type="button" class="button secondary small-btn" :disabled="busy" @click="adding = false">Cancel</button>
           <button type="submit" class="button small-btn" :disabled="busy">{{ busy ? 'Saving…' : 'Save draft' }}</button>
@@ -270,6 +298,7 @@ watch(() => props.companyId, load)
         </div>
         <div class="actions">
           <button v-if="p.storage_path" class="button secondary small-btn" type="button" @click="open(p)">Open</button>
+          <button v-else-if="p.body" class="button secondary small-btn" type="button" :data-testid="`read-${p.id}`" @click="reading = reading?.id === p.id ? null : p">{{ reading?.id === p.id ? 'Hide' : 'Read' }}</button>
           <template v-if="canPublish && p.status !== 'archived'">
             <button v-if="p.status === 'draft'" class="button small-btn" type="button" :disabled="busy" @click="publishDraft(p)">
               Publish
@@ -289,6 +318,11 @@ watch(() => props.companyId, load)
             <button class="button secondary small-btn" type="button" :disabled="busy" @click="archive(p)">Archive</button>
           </template>
         </div>
+        <div v-if="reading?.id === p.id && p.body" class="body-text wide-row" :data-testid="`body-${p.id}`">{{ p.body }}</div>
+        <div v-if="canPublish && p.status === 'published' && !p.storage_path" class="wide-row new-text">
+          <textarea v-model="newText[p.id]" rows="3" maxlength="20000" :placeholder="`New text for the next version of ${p.title}`" :aria-label="`New text for ${p.title}`"></textarea>
+          <button class="button small-btn" type="button" :disabled="busy" @click="publishNewText(p)">Publish new text</button>
+        </div>
       </div>
     </template>
   </div>
@@ -297,6 +331,11 @@ watch(() => props.companyId, load)
 <style scoped>
 .policy-row { display: flex; align-items: center; gap: 13px; padding: 13px 24px; border-top: 1px solid #edf0eb; flex-wrap: wrap; }
 .policy-row.archived { opacity: 0.6; }
+.wide-row { flex-basis: 100%; }
+.body-text { white-space: pre-wrap; font-size: 12px; line-height: 1.55; padding: 10px 12px; background: #fafbf8; border: 1px solid #edf0eb; border-radius: 8px; }
+.new-text { display: flex; gap: 8px; align-items: flex-start; }
+.new-text textarea { flex: 1; border: 1px solid #dce3d7; padding: 8px 10px; font-size: 12px; font-family: inherit; }
+.pol-form textarea { width: 100%; border: 1px solid #dce3d7; padding: 8px 10px; font-size: 12px; font-family: inherit; }
 .row-text { flex: 1; min-width: 200px; }
 .row-text strong { display: block; font-size: 12px; font-weight: 550; }
 .row-text small { display: block; font-size: 11px; color: var(--muted); margin-top: 4px; }

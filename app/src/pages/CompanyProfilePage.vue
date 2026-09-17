@@ -23,6 +23,7 @@ import NotificationSettingsPanel from '@/components/NotificationSettingsPanel.vu
 import ChecklistTemplatePanel from '@/components/checklists/ChecklistTemplatePanel.vue'
 import HandoverSettingsPanel from '@/components/handover/HandoverSettingsPanel.vue'
 import StarterKitPanel from '@/components/equipment/StarterKitPanel.vue'
+import FirstDayPanel from '@/components/welcome/FirstDayPanel.vue'
 import ActivityPanel from '@/components/ActivityPanel.vue'
 import InviteAccessDialog from '@/components/InviteAccessDialog.vue'
 import TransferDialog, { type TransferTarget } from '@/components/TransferDialog.vue'
@@ -770,6 +771,7 @@ onMounted(load)
           <ChecklistTemplatePanel :company-id="companyId" :company-name="company.name" />
           <HandoverSettingsPanel :company-id="companyId" :company-name="company.name" />
           <StarterKitPanel :company-id="companyId" :company-name="company.name" />
+          <FirstDayPanel :company-id="companyId" :company-name="company.name" />
           <template v-if="auth.isAdmin">
             <WorkflowOwnersPanel :company-id="companyId" />
             <NotificationSettingsPanel :company-id="companyId" />

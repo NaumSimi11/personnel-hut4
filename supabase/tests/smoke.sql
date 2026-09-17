@@ -4310,4 +4310,212 @@ reset role;
 set app.test_uid = '';
 delete from public.grant_capabilities where grant_id = '40000000-0000-0000-0000-000000000003' and capability_key in ('it.view', 'it.assign', 'it.complete');
 
+-- ================================================================ 0043
+-- The policy library, text policies, the self-ticking "Policies
+-- acknowledged" line, first-day details and the welcome note.
+do $$
+begin
+  assert (select count(*) from public.policies where company_id is null and status = 'draft' and body is not null
+          and title in ('Code of Conduct', 'Time off & leave', 'Remote & hybrid work', 'IT & data security', 'Anti-harassment & equal opportunity', 'Expenses & reimbursement')) = 6,
+    'the six drafts are seeded holding-wide with a body';
+end $$;
+
+-- Ada (admin) publishes a holding-wide text policy without a file; a policy with neither is refused.
+set app.test_uid = '00000000-0000-0000-0000-000000000004';
+set role authenticated;
+do $$
+declare v_code uuid; v_empty uuid; r jsonb;
+begin
+  select id into v_code from public.policies where company_id is null and title = 'Code of Conduct';
+  r := public.publish_policy(v_code);
+  assert (r->>'status') = 'published' and (r->>'version')::int = 1, 'a text policy publishes without a file: ' || r::text;
+  insert into public.policies (company_id, title) values (null, 'Empty policy') returning id into v_empty;
+  begin
+    perform public.publish_policy(v_empty);
+    raise exception 'FAIL: published with neither text nor file';
+  exception when raise_exception then
+    if sqlerrm not like '%Attach the policy document or write its text%' then raise; end if;
+  end;
+  -- A new version of a text policy needs new text.
+  begin
+    perform public.publish_policy(v_code);
+    raise exception 'FAIL: republished with nothing new';
+  exception when raise_exception then
+    if sqlerrm not like '%new file or write the new text%' then raise; end if;
+  end;
+  r := public.publish_policy(v_code, null, null, null, 'Version two of the code.');
+  assert (r->>'version')::int = 2 and (select body from public.policies where id = v_code) = 'Version two of the code.', 'a new body is a new version';
+  -- A published policy's text is not edited in place.
+  begin
+    update public.policies set body = 'sneaky' where id = v_code;
+    raise exception 'FAIL: edited a published policy''s text in place';
+  exception when raise_exception then
+    if sqlerrm not like '%Publish a new version%' then raise; end if;
+  end;
+  delete from public.policies where id = v_empty;
+end $$;
+reset role;
+
+-- First-day details: Bea (tasks.assign in B) sets B's; the holding's is the fallback elsewhere.
+set app.test_uid = '00000000-0000-0000-0000-000000000004';
+set role authenticated;
+select public.set_first_day_details((select id from public.companies where kind = 'holding' limit 1), '{"where": "Reception, floor 2", "when": "09:00", "ask_for": "Reception", "bring": "ID card"}'::jsonb);
+reset role;
+set app.test_uid = '00000000-0000-0000-0000-000000000005';
+set role authenticated;
+do $$
+declare r jsonb;
+begin
+  r := public.first_day_details('10000000-0000-0000-0000-00000000000b');
+  assert not (r->>'own')::boolean and r->'details'->>'where' = 'Reception, floor 2', 'the holding fallback: ' || r::text;
+  r := public.set_first_day_details('10000000-0000-0000-0000-00000000000b', '{"where": "B Office, Skopje", "when": "  08:30 ", "ask_for": "", "bring": "Passport"}'::jsonb);
+  assert r->'details' = '{"bring": "Passport", "when": "08:30", "where": "B Office, Skopje"}'::jsonb, 'trimmed, blanks dropped: ' || r::text;
+  r := public.first_day_details('10000000-0000-0000-0000-00000000000b');
+  assert (r->>'own')::boolean, 'B has its own now';
+end $$;
+reset role;
+set app.test_uid = '00000000-0000-0000-0000-000000000003';  -- Omar
+set role authenticated;
+do $$
+begin
+  begin
+    perform public.set_first_day_details('10000000-0000-0000-0000-00000000000b', '{"where": "x"}'::jsonb);
+    raise exception 'FAIL: first-day details set without tasks.assign';
+  exception when insufficient_privilege then null;
+  end;
+end $$;
+reset role;
+
+-- The welcome note for a hire in B: the text, the send, the tick; then the acknowledgement tick.
+set app.test_uid = '00000000-0000-0000-0000-000000000005';
+set role authenticated;
+do $$
+declare r jsonb; n jsonb; v_plan uuid; v_person uuid; v_period uuid;
+begin
+  r := public.create_employee(jsonb_build_object('full_name', 'Welcome Starter', 'preferred_name', 'Wel', 'work_email', 'welcome@b.test',
+    'personal_email', 'wel.home@example.test', 'company_id', '10000000-0000-0000-0000-00000000000b', 'job_title', 'Analyst',
+    'department_id', 'd0000000-0000-0000-0000-0000000000b1', 'manager_id', '20000000-0000-0000-0000-000000000005', 'start_date', current_date + 14));
+  v_plan := (r->>'plan_id')::uuid; v_person := (r->>'person_id')::uuid; v_period := (r->>'employment_period_id')::uuid;
+  n := public.welcome_note_text(v_plan);
+  assert (n->>'subject') = 'Welcome to ' || (select name from public.companies where id = '10000000-0000-0000-0000-00000000000b') || ', Wel', 'the subject: ' || (n->>'subject');
+  assert (n->>'text') like 'Dear Wel,%' and (n->>'text') like '%as Analyst in Operations B, starting on ' || to_char(current_date + 14, 'DD FMMonth YYYY') || '. Your manager%'
+     and (n->>'text') like '%Your manager will be Bea HR%', 'the greeting and the facts: ' || (n->>'text');
+  assert (n->>'text') like '%Where: B Office, Skopje%' and (n->>'text') like '%Please bring: Passport%', 'the first-day details';
+  assert (n->>'text') like '%• Code of Conduct — How we treat each other%', 'the published policies are listed';
+  assert (n->>'text') not like '%Time off & leave%', 'drafts are not';
+  assert (n->>'sent_at') is null, 'not sent yet';
+  -- Send to the personal address (the default).
+  r := public.send_welcome_note(v_plan);
+  assert (r->>'to') = 'wel.home@example.test' and (r->>'status') = 'pending', 'sent to the personal address: ' || r::text;
+  assert (select status from public.plan_tasks where plan_id = v_plan and task_key = 'welcome_note') = 'done', 'the welcome line ticked';
+  assert (select welcome_sent_to from public.plans where id = v_plan) = 'personal', 'the plan remembers';
+  -- Again, to the work address.
+  r := public.send_welcome_note(v_plan, 'work');
+  assert (r->>'to') = 'welcome@b.test', 'the work address on demand';
+  -- The policies line: open until the last applicable policy is acknowledged.
+  assert (select status from public.plan_tasks where plan_id = v_plan and task_key = 'policies') = 'open', 'policies line open';
+end $$;
+reset role;
+-- The notifications (self-only RLS: read as superuser) and the PDF queue; its data carries the note.
+do $$
+declare q uuid; d jsonb; v_person uuid := (select id from public.people where work_email = 'welcome@b.test');
+begin
+  assert exists (select 1 from public.notifications where person_id = v_person and kind = 'welcome.note' and email_to = 'wel.home@example.test' and email_status = 'pending'),
+    'a notification row carries the note to the personal address';
+  assert (select count(*) from public.notifications where person_id = v_person and kind = 'welcome.note') = 2, 're-sending is allowed';
+  select id into q from public.generated_documents where kind = 'welcome_note' and person_id = (select id from public.people where work_email = 'welcome@b.test') order by created_at desc limit 1;
+  assert q is not null, 'the welcome note PDF is queued';
+  d := public.welcome_note_data(q);
+  assert (d->>'company') = (select name from public.companies where id = '10000000-0000-0000-0000-00000000000b') and (d->>'text') like 'Dear Wel,%', 'the PDF data: ' || left(d::text, 120);
+end $$;
+
+-- No personal address: skipped, and said so.
+set app.test_uid = '00000000-0000-0000-0000-000000000005';
+set role authenticated;
+do $$
+declare r jsonb; v_plan uuid;
+begin
+  r := public.create_employee(jsonb_build_object('full_name', 'No Address', 'company_id', '10000000-0000-0000-0000-00000000000b', 'job_title', 'Clerk', 'start_date', current_date + 3));
+  v_plan := (r->>'plan_id')::uuid;
+  r := public.send_welcome_note(v_plan);
+  assert (r->>'status') = 'skipped' and (r->>'note') like 'No personal email%', 'no address → skipped and said: ' || r::text;
+  assert (select status from public.plan_tasks where plan_id = v_plan and task_key = 'welcome_note') = 'done', 'still ticked — the note exists in the app and as a PDF';
+end $$;
+reset role;
+
+-- The person acknowledges: a company policy counts only for that company; the holding's for everyone.
+set app.test_uid = '00000000-0000-0000-0000-000000000004';  -- Ada publishes a B-only policy and an A-only one
+set role authenticated;
+do $$
+declare v_b uuid; v_a uuid;
+begin
+  insert into public.policies (company_id, title, body) values ('10000000-0000-0000-0000-00000000000b', 'B house rules', 'Rules of B.') returning id into v_b;
+  perform public.publish_policy(v_b);
+  insert into public.policies (company_id, title, body) values ('10000000-0000-0000-0000-00000000000a', 'A house rules', 'Rules of A.') returning id into v_a;
+  perform public.publish_policy(v_a);
+end $$;
+reset role;
+-- Welcome Starter (no account in the smoke) — acknowledge as the service would for them: insert directly.
+do $$
+declare v_person uuid := (select id from public.people where work_email = 'welcome@b.test'); v_plan uuid;
+begin
+  select id into v_plan from public.plans where person_id = v_person and kind = 'onboarding';
+  insert into public.policy_acknowledgements (policy_id, person_id, version)
+    select id, v_person, version from public.policies where company_id is null and status = 'published';
+  assert (select status from public.plan_tasks where plan_id = v_plan and task_key = 'policies') = 'open', 'the holding''s alone is not enough while B''s is unread';
+  insert into public.policy_acknowledgements (policy_id, person_id, version)
+    select id, v_person, version from public.policies where company_id = '10000000-0000-0000-0000-00000000000b' and status = 'published';
+  assert (select status from public.plan_tasks where plan_id = v_plan and task_key = 'policies') = 'done', 'every applicable policy read → the line ticks (A''s does not apply)';
+end $$;
+-- A new version of a holding policy: the ticked line stays (history); a fresh checklist would wait for it.
+set app.test_uid = '00000000-0000-0000-0000-000000000004';
+set role authenticated;
+select public.publish_policy((select id from public.policies where company_id is null and title = 'Code of Conduct'), null, null, null, 'Version three.');
+reset role;
+set app.test_uid = '';
+do $$
+declare v_person uuid := (select id from public.people where work_email = 'welcome@b.test'); v_plan uuid;
+begin
+  select id into v_plan from public.plans where person_id = v_person and kind = 'onboarding';
+  assert (select status from public.plan_tasks where plan_id = v_plan and task_key = 'policies') = 'done', 'a ticked line stays ticked';
+end $$;
+delete from public.policy_acknowledgements where policy_id in (select id from public.policies where title in ('B house rules', 'A house rules'));
+delete from public.policies where title in ('B house rules', 'A house rules');
+
+-- 0041's gate, reviewed: Omar with tasks.assign but no personal.view cannot redirect a trusted
+-- recipient that carries the national ID; he may still change its label.
+insert into public.access_grants (id, person_id, company_id)
+  select '40000000-0000-0000-0000-000000000043', '20000000-0000-0000-0000-000000000003', '10000000-0000-0000-0000-00000000000b'
+  where not exists (select 1 from public.access_grants where person_id = '20000000-0000-0000-0000-000000000003' and company_id = '10000000-0000-0000-0000-00000000000b');
+create temp table omar_b_added as
+  select g.id as grant_id, c.cap as capability_key
+  from public.access_grants g, (values ('tasks.view'), ('tasks.assign')) c(cap)
+  where g.person_id = '20000000-0000-0000-0000-000000000003' and g.company_id = '10000000-0000-0000-0000-00000000000b'
+    and not exists (select 1 from public.grant_capabilities gc where gc.grant_id = g.id and gc.capability_key = c.cap);
+insert into public.grant_capabilities (grant_id, capability_key) select grant_id, capability_key from omar_b_added;
+set app.test_uid = '00000000-0000-0000-0000-000000000003';
+set role authenticated;
+do $$
+declare v_acc uuid; r jsonb;
+begin
+  select id into v_acc from public.handover_recipients where company_id = '10000000-0000-0000-0000-00000000000b' and label = 'Accountant B';
+  begin
+    perform public.save_handover_recipient(jsonb_build_object('id', v_acc, 'company_id', '10000000-0000-0000-0000-00000000000b', 'label', 'Accountant B',
+      'kind', 'email', 'email', 'thief@elsewhere.test', 'events', jsonb_build_array('hire_confirmed'),
+      'fields', jsonb_build_array('name', 'national_id', 'bank_account', 'start_date'), 'trusted', true));
+    raise exception 'FAIL: redirected sensitive fields without personal.view';
+  exception when insufficient_privilege then
+    if sqlerrm not like '%changing who receives it%' then raise; end if;
+  end;
+  r := public.save_handover_recipient(jsonb_build_object('id', v_acc, 'company_id', '10000000-0000-0000-0000-00000000000b', 'label', 'Accountant B (books)',
+    'kind', 'email', 'email', 'books@b.test', 'events', jsonb_build_array('hire_confirmed'),
+    'fields', jsonb_build_array('name', 'national_id', 'bank_account', 'start_date'), 'trusted', true));
+  assert (select label from public.handover_recipients where id = v_acc) = 'Accountant B (books)', 'the label may change with the target kept';
+end $$;
+reset role;
+set app.test_uid = '';
+delete from public.grant_capabilities gc using omar_b_added a where gc.grant_id = a.grant_id and gc.capability_key = a.capability_key;
+drop table omar_b_added;
+delete from public.access_grants where id = '40000000-0000-0000-0000-000000000043';
+
 select 'SMOKE TESTS PASSED' as result;

@@ -40,6 +40,15 @@ async function cleanup(): Promise<void> {
   const db = serviceClient()
   const { data: people } = await db.from('people').select('id').eq('full_name', PERSON)
   for (const p of people ?? []) {
+    // Later slices hang more off a person: sends (048), documents and queues (049), notes (050).
+    await db.from('notifications').delete().eq('person_id', p.id)
+    await db.from('handover_sends').delete().eq('person_id', p.id)
+    const { data: docs } = await db.from('documents').select('storage_path').eq('person_id', p.id)
+    if (docs?.length) await db.storage.from('employee-documents').remove(docs.map((d) => d.storage_path))
+    await db.from('generated_documents').delete().eq('person_id', p.id)
+    await db.from('documents').delete().eq('person_id', p.id)
+    await db.from('it_requests').delete().eq('person_id', p.id)
+    await db.from('asset_assignments').delete().eq('person_id', p.id)
     const { data: plans } = await db.from('plans').select('id').eq('person_id', p.id)
     const planIds = (plans ?? []).map((x) => x.id)
     if (planIds.length) await db.from('plan_tasks').delete().in('plan_id', planIds)

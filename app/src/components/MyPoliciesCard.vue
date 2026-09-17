@@ -18,6 +18,7 @@ const policies = ref<(PolicyRow & { company: { name: string } | null })[]>([])
 const acks = ref<AcknowledgementLite[]>([])
 
 const state = (p: PolicyRow) => acknowledgementState(p, acks.value)
+const reading = ref<string | null>(null)
 const sorted = computed(() =>
   [...policies.value].sort((a, b) => Number(state(a) === 'acknowledged') - Number(state(b) === 'acknowledged') || a.title.localeCompare(b.title)),
 )
@@ -97,6 +98,7 @@ onMounted(load)
         </div>
         <div class="actions">
           <button v-if="p.storage_path" class="button secondary small-btn" type="button" @click="open(p)">Open</button>
+          <button v-else-if="p.body" class="button secondary small-btn" type="button" :data-testid="`my-read-${p.id}`" @click="reading = reading === p.id ? null : p.id">{{ reading === p.id ? 'Hide' : 'Read' }}</button>
           <button
             v-if="state(p) !== 'acknowledged'"
             class="button small-btn"
@@ -107,12 +109,14 @@ onMounted(load)
             I have read this
           </button>
         </div>
+        <div v-if="reading === p.id && p.body" class="body-text" :data-testid="`my-body-${p.id}`">{{ p.body }}</div>
       </div>
     </template>
   </div>
 </template>
 
 <style scoped>
+.body-text { flex-basis: 100%; white-space: pre-wrap; font-size: 12px; line-height: 1.55; padding: 10px 12px; background: #fafbf8; border: 1px solid #edf0eb; border-radius: 8px; }
 .policy-row { display: flex; align-items: center; gap: 13px; padding: 13px 24px; border-top: 1px solid #edf0eb; flex-wrap: wrap; }
 .policy-row.pending, .policy-row.outdated { background: #fbf7ea; }
 .row-text { flex: 1; min-width: 200px; }

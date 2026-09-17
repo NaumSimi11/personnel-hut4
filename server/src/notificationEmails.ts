@@ -16,7 +16,8 @@ export function renderNotificationEmail(n: NotificationLike, appBaseUrl: string 
     subject: n.title,
     html: [
       `<p><strong>${escapeHtml(n.title)}</strong></p>`,
-      n.body ? `<p>${escapeHtml(n.body)}</p>` : '',
+      // A multi-line body (the welcome note, plan 050) keeps its paragraphs and lines.
+      ...(n.body ? n.body.split(/\n{2,}/).map((para) => `<p>${escapeHtml(para).replace(/\n/g, '<br>')}</p>`) : []),
       href ? `<p><a href="${escapeHtml(href)}">Open in Personnel</a></p>` : '',
       `<p style="color:#6b7a72;font-size:12px">You receive this because it concerns you in Personnel.</p>`,
     ]

@@ -42,6 +42,12 @@ async function cleanup(): Promise<void> {
   const { data: people } = await db.from('people').select('id').eq('full_name', PERSON)
   for (const p of people ?? []) {
     await db.from('handover_sends').delete().eq('person_id', p.id)
+    await db.from('notifications').delete().eq('person_id', p.id)
+    await db.from('it_requests').delete().eq('person_id', p.id)
+    const { data: docsToDrop } = await db.from('documents').select('storage_path').eq('person_id', p.id)
+    if (docsToDrop?.length) await db.storage.from('employee-documents').remove(docsToDrop.map((d) => d.storage_path))
+    await db.from('generated_documents').delete().eq('person_id', p.id)
+    await db.from('documents').delete().eq('person_id', p.id)
     const { data: plans } = await db.from('plans').select('id').eq('person_id', p.id)
     const planIds = (plans ?? []).map((x) => x.id)
     if (planIds.length) await db.from('plan_tasks').delete().in('plan_id', planIds)

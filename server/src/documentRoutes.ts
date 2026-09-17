@@ -3,6 +3,7 @@ import { createClient } from '@supabase/supabase-js'
 import { env } from './env.js'
 import { identityFromToken, serviceDb } from './supabaseAdmin.js'
 import { formTitle, renderEquipmentForm, type EquipmentFormData } from './equipmentForms.js'
+import { renderWelcomeNote, type WelcomeNoteData } from './welcomeNote.js'
 
 /**
  * POST /api/documents/generate — makes the documents the database queued
@@ -18,7 +19,7 @@ import { formTitle, renderEquipmentForm, type EquipmentFormData } from './equipm
 const BATCH = 20
 const MAX_ATTEMPTS = 5
 const BUCKET = 'employee-documents'
-const KINDS = ['equipment_handover', 'equipment_return'] as const
+const KINDS = ['equipment_handover', 'equipment_return', 'welcome_note'] as const
 let running = false
 
 type QueueRow = { id: string; kind: (typeof KINDS)[number]; person_id: string; company_id: string; plan_id: string | null; attempts: number }
@@ -42,14 +43,24 @@ export async function generatePending(token: string): Promise<{ made: number; fa
   const result = { made: 0, failed: 0 }
   for (const q of (rows ?? []) as QueueRow[]) {
     try {
-      const { data: form, error: dataErr } = await db.rpc('equipment_form_data', { p_queue_id: q.id })
-      if (dataErr || !form) throw new Error(dataErr?.message ?? 'no form data')
-      const pdf = await renderEquipmentForm(form as EquipmentFormData)
+      let pdf: Buffer
+      let title: string
+      if (q.kind === 'welcome_note') {
+        const { data: note, error: dataErr } = await db.rpc('welcome_note_data', { p_queue_id: q.id })
+        if (dataErr || !note) throw new Error(dataErr?.message ?? 'no note data')
+        const data = note as WelcomeNoteData
+        pdf = await renderWelcomeNote(data)
+        title = data.subject
+      } else {
+        const { data: form, error: dataErr } = await db.rpc('equipment_form_data', { p_queue_id: q.id })
+        if (dataErr || !form) throw new Error(dataErr?.message ?? 'no form data')
+        pdf = await renderEquipmentForm(form as EquipmentFormData)
+        title = formTitle(q.kind)
+      }
       const documentId = crypto.randomUUID()
       const path = `${q.company_id}/${q.person_id}/${documentId}.pdf`
       const { error: upErr } = await db.storage.from(BUCKET).upload(path, pdf, { contentType: 'application/pdf' })
       if (upErr) throw new Error(upErr.message)
-      const title = formTitle(q.kind)
       const { error: recErr } = await db.rpc('record_generated_document', { p_queue_id: q.id, p_storage_path: path, p_size_bytes: pdf.length, p_title: title })
       if (recErr) {
         await db.storage.from(BUCKET).remove([path])

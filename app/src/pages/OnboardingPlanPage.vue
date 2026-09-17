@@ -2,10 +2,13 @@
 import { computed, onMounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import { supabase } from '@/lib/supabase'
+import { useAuthStore } from '@/stores/auth'
 import { useDialogStore } from '@/stores/dialogs'
 import { friendlyDepartureError } from '@/lib/departure'
 import { progress, type ChecklistKind, type ChecklistTask, type Phase } from '@/lib/checklists'
 import ChecklistTasks from '@/components/checklists/ChecklistTasks.vue'
+import HandoverCard from '@/components/handover/HandoverCard.vue'
+import { deliverNotifications } from '@/lib/notificationsApi'
 
 /**
  * One person's checklist, either kind (plan 047): the lines as checkboxes,
@@ -29,6 +32,7 @@ type PlanDetail = {
 }
 
 const route = useRoute()
+const auth = useAuthStore()
 const dialogs = useDialogStore()
 const planId = route.params.planId as string
 
@@ -113,6 +117,7 @@ async function finishPlan(): Promise<void> {
     return
   }
   finishSuccess.value = 'Onboarding marked complete.'
+  void deliverNotifications()
   await loadPlan()
 }
 
@@ -189,6 +194,16 @@ onMounted(async () => {
         />
       </div>
 
+      <HandoverCard
+        v-if="plan.person && auth.can(plan.company_id, 'tasks.view')"
+        class="handover"
+        :plan-id="plan.id"
+        :person-id="plan.person.id"
+        :company-id="plan.company_id"
+        :kind="plan.kind"
+        @changed="loadTasks"
+      />
+
       <div v-if="plan.status === 'completed' || canFinish" class="card footer-card">
         <div class="card-body">
           <p v-if="finishError" class="error-note" role="alert">{{ finishError }}</p>
@@ -212,6 +227,7 @@ onMounted(async () => {
 .plan-meta { margin: 4px 0 8px; font-size: 11px; color: var(--muted); }
 .profile-link { font-size: 11px; }
 .footer-card { margin-top: 18px; }
+.handover { margin-top: 18px; }
 .success-note { padding: 12px 15px; border-radius: 9px; background: var(--green-soft); color: var(--green); font-size: 12px; line-height: 1.5; margin: 0 0 12px; }
 .actions { display: flex; justify-content: flex-end; }
 </style>

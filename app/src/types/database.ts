@@ -659,6 +659,7 @@ export type Database = {
           director_person_id: string | null
           hr_contact_person_id: string | null
           hr_notification_email: string | null
+          it_notification_email: string | null
           id: string
           kind: string
           leave_carry_over_until: string
@@ -688,6 +689,7 @@ export type Database = {
           director_person_id?: string | null
           hr_contact_person_id?: string | null
           hr_notification_email?: string | null
+          it_notification_email?: string | null
           id?: string
           kind?: string
           leave_carry_over_until?: string
@@ -717,6 +719,7 @@ export type Database = {
           director_person_id?: string | null
           hr_contact_person_id?: string | null
           hr_notification_email?: string | null
+          it_notification_email?: string | null
           id?: string
           kind?: string
           leave_carry_over_until?: string
@@ -1667,6 +1670,126 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      handover_recipients: {
+        Row: {
+          active: boolean
+          company_id: string | null
+          created_at: string
+          email: string | null
+          events: string[]
+          fields: string[]
+          id: string
+          kind: string
+          label: string
+          person_id: string | null
+          role_key: string | null
+          sort_order: number
+          trusted: boolean
+          updated_at: string
+        }
+        Insert: {
+          active?: boolean
+          company_id?: string | null
+          created_at?: string
+          email?: string | null
+          events?: string[]
+          fields?: string[]
+          id?: string
+          kind: string
+          label: string
+          person_id?: string | null
+          role_key?: string | null
+          sort_order?: number
+          trusted?: boolean
+          updated_at?: string
+        }
+        Update: {
+          active?: boolean
+          company_id?: string | null
+          created_at?: string
+          email?: string | null
+          events?: string[]
+          fields?: string[]
+          id?: string
+          kind?: string
+          label?: string
+          person_id?: string | null
+          role_key?: string | null
+          sort_order?: number
+          trusted?: boolean
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      handover_sends: {
+        Row: {
+          attempts: number
+          company_id: string
+          created_at: string
+          dedupe_key: string
+          employment_period_id: string | null
+          error: string | null
+          event: string
+          fields: Json
+          id: string
+          marked_by: string | null
+          missing: string[]
+          person_id: string
+          plan_id: string | null
+          recipient_id: string | null
+          recipient_label: string
+          sent_at: string | null
+          status: string
+          stripped: string[]
+          to_email: string | null
+          updated_at: string
+        }
+        Insert: {
+          attempts?: number
+          company_id: string
+          created_at?: string
+          dedupe_key: string
+          employment_period_id?: string | null
+          error?: string | null
+          event: string
+          fields?: Json
+          id?: string
+          marked_by?: string | null
+          missing?: string[]
+          person_id: string
+          plan_id?: string | null
+          recipient_id?: string | null
+          recipient_label: string
+          sent_at?: string | null
+          status?: string
+          stripped?: string[]
+          to_email?: string | null
+          updated_at?: string
+        }
+        Update: {
+          attempts?: number
+          company_id?: string
+          created_at?: string
+          dedupe_key?: string
+          employment_period_id?: string | null
+          error?: string | null
+          event?: string
+          fields?: Json
+          id?: string
+          marked_by?: string | null
+          missing?: string[]
+          person_id?: string
+          plan_id?: string | null
+          recipient_id?: string | null
+          recipient_label?: string
+          sent_at?: string | null
+          status?: string
+          stripped?: string[]
+          to_email?: string | null
+          updated_at?: string
+        }
+        Relationships: []
       }
       hiring_requests: {
         Row: {
@@ -4027,6 +4150,7 @@ export type Database = {
         Args: { p_note: string; p_request_id: string }
         Returns: Json
       }
+      handover_fields: { Args: never; Returns: Json }
       import_field_notebook: {
         Args: { p_commit?: boolean; p_payload: Json }
         Returns: Json
@@ -4040,6 +4164,7 @@ export type Database = {
         Args: { p_company_id: string; p_person_id: string; p_year: number }
         Returns: Json
       }
+      mark_handover_sent: { Args: { p_id: string }; Returns: Json }
       mark_notifications_read: { Args: { p_ids?: string[] }; Returns: number }
       mark_payroll_exported: { Args: { p_period_id: string }; Returns: Json }
       prepare_payroll_period: {
@@ -4119,11 +4244,15 @@ export type Database = {
         Returns: Json
       }
       roll_leave_year: { Args: { p_year: number }; Returns: number }
+      remove_handover_recipient: { Args: { p_id: string }; Returns: Json }
       reorder_template_tasks: {
         Args: { p_ids: string[]; p_template_id: string }
         Returns: Json
       }
+      resend_handover: { Args: { p_id: string }; Returns: Json }
       retire_template_task: { Args: { p_id: string }; Returns: Json }
+      retry_handover: { Args: { p_id: string }; Returns: Json }
+      save_handover_recipient: { Args: { p: Json }; Returns: Json }
       schedule_departure: {
         Args: {
           p_employment_period_id: string

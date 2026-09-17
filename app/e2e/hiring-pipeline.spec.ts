@@ -192,5 +192,6 @@ test('approved request → prepare job → candidate pipeline → confirm hire',
     .select('id')
     .eq('plan_id', plan!.id)
   expect(tasksErr).toBeNull()
-  expect(tasks?.length).toBe(5)
+  // The holding's onboarding default (0040) has 11 lines; a company copy may differ.
+  expect(tasks?.length).toBeGreaterThanOrEqual(8)
 })

@@ -3,6 +3,7 @@ import { computed, ref, watch } from 'vue'
 import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/stores/auth'
 import { todayDb } from '@/lib/compensation'
+import { deliverNotifications } from '@/lib/notificationsApi'
 import type { Json } from '@/types/database'
 import {
   addDepartment as addDepartmentRow,
@@ -178,6 +179,8 @@ async function submit(): Promise<void> {
   }
   const created = data as CreateResult & { person_id: string }
   result.value = { personId: created.person_id, planId: created.plan_id, line: successLine(created) }
+  // The hire raised its handover sends; send what can go now.
+  void deliverNotifications()
   emit('created')
 }
 

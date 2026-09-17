@@ -21,6 +21,7 @@ import EquipmentPanel from '@/components/EquipmentPanel.vue'
 import LeaveCalendarPanel from '@/components/leave/LeaveCalendarPanel.vue'
 import NotificationSettingsPanel from '@/components/NotificationSettingsPanel.vue'
 import ChecklistTemplatePanel from '@/components/checklists/ChecklistTemplatePanel.vue'
+import HandoverSettingsPanel from '@/components/handover/HandoverSettingsPanel.vue'
 import ActivityPanel from '@/components/ActivityPanel.vue'
 import InviteAccessDialog from '@/components/InviteAccessDialog.vue'
 import TransferDialog, { type TransferTarget } from '@/components/TransferDialog.vue'
@@ -766,6 +767,7 @@ onMounted(load)
 
         <div v-else-if="activeTab === 'settings'" class="stack">
           <ChecklistTemplatePanel :company-id="companyId" :company-name="company.name" />
+          <HandoverSettingsPanel :company-id="companyId" :company-name="company.name" />
           <template v-if="auth.isAdmin">
             <WorkflowOwnersPanel :company-id="companyId" />
             <NotificationSettingsPanel :company-id="companyId" />

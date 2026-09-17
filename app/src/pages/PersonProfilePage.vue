@@ -20,6 +20,7 @@ import { describeChanges, type Lookups } from '@/lib/employmentChanges'
 import { departureState, friendlyDepartureError } from '@/lib/departure'
 import { tenureLabel } from '@/lib/tenure'
 import { todayDb } from '@/lib/compensation'
+import { deliverNotifications } from '@/lib/notificationsApi'
 
 type Employment = {
   id: string
@@ -213,6 +214,7 @@ function onDepartureScheduled(result: { planId: string; alreadyScheduled: boolea
   notice.value = result.alreadyScheduled
     ? 'Departure dates updated; the existing offboarding plan continues.'
     : 'Departure scheduled and the offboarding plan started.'
+  void deliverNotifications()
   void load()
 }
 
@@ -259,6 +261,7 @@ async function markAsFormer(emp: Employment): Promise<void> {
     open > 0
       ? `Now former. ${open} offboarding ${open === 1 ? 'task is' : 'tasks are'} still open.`
       : 'Now former. The offboarding plan is complete.'
+  void deliverNotifications()
   await load()
 }
 

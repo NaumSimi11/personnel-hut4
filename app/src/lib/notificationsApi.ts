@@ -8,12 +8,12 @@ import { supabase } from '@/lib/supabase'
  */
 export type DeliveryReport = { sent: number; failed: number; skipped: number; pending: number; configured?: boolean; busy?: boolean }
 
-export async function deliverNotifications(): Promise<DeliveryReport | null> {
+async function kick(path: string): Promise<DeliveryReport | null> {
   try {
     const { data } = await supabase.auth.getSession()
     const token = data.session?.access_token
     if (!token) return null
-    const response = await fetch('/api/notifications/deliver', {
+    const response = await fetch(path, {
       method: 'POST',
       headers: { Authorization: `Bearer ${token}` },
       signal: AbortSignal.timeout(20_000),
@@ -21,9 +21,20 @@ export async function deliverNotifications(): Promise<DeliveryReport | null> {
     if (!response.ok) return null
     return (await response.json()) as DeliveryReport
   } catch (e) {
-    console.warn('Notification delivery kick failed:', e instanceof Error ? e.message : e)
+    console.warn(`Delivery kick ${path} failed:`, e instanceof Error ? e.message : e)
     return null
   }
+}
+
+/** The notification queue, and the handover queue behind it (plan 048) — one kick sends both. */
+export async function deliverNotifications(): Promise<DeliveryReport | null> {
+  const [notifications] = await Promise.all([kick('/api/notifications/deliver'), kick('/api/handover/deliver')])
+  return notifications
+}
+
+/** The handover queue alone (plan 048): after Resend / Retry on a send. */
+export function deliverHandover(): Promise<DeliveryReport | null> {
+  return kick('/api/handover/deliver')
 }
 
 /** One sentence for a notice, the way the old HR said it. */

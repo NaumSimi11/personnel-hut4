@@ -3956,4 +3956,178 @@ end $$;
 reset role;
 set app.test_uid = '';
 
+-- ================================================================ 0041
+-- The handover: one send per recipient per event with exactly that
+-- recipient's fields; sensitive fields only to trusted recipients and only
+-- placed by those who may see them; missing fields and addresses named;
+-- resend after filling; manual green; the checklist line ticks itself; a
+-- cancelled departure cancels pending sends; IT requests notify.
+do $$
+begin
+  assert (select count(*) from public.handover_recipients where company_id is null and active) = 3, 'three holding defaults';
+  assert (select count(*) from jsonb_array_elements(public.handover_fields())) = 20, 'the catalogue';
+end $$;
+
+-- Company B: an IT owner and an IT address; Bea (Company HR: tasks.assign + personal.view, no salary.view).
+insert into public.workflow_owners (company_id, role_key, person_id) values
+  ('10000000-0000-0000-0000-00000000000b', 'it_owner', '20000000-0000-0000-0000-000000000005')
+  on conflict (company_id, role_key) do update set person_id = excluded.person_id;
+update public.companies set it_notification_email = 'it@b.test' where id = '10000000-0000-0000-0000-00000000000b';
+
+set app.test_uid = '00000000-0000-0000-0000-000000000005';
+set role authenticated;
+do $$
+declare r jsonb; v_acc uuid;
+begin
+  -- Bea may not touch the holding default.
+  begin
+    perform public.save_handover_recipient(jsonb_build_object('label', 'Nope', 'kind', 'email', 'email', 'x@y.test'));
+    raise exception 'FAIL: HR changed the holding default';
+  exception when insufficient_privilege then null;
+  end;
+  -- Bea configures B's own accountant with the bank account (personal.view: allowed) …
+  r := public.save_handover_recipient(jsonb_build_object('company_id', '10000000-0000-0000-0000-00000000000b', 'label', 'Accountant B',
+    'kind', 'email', 'email', 'books@b.test', 'events', jsonb_build_array('hire_confirmed', 'marked_former'),
+    'fields', jsonb_build_array('name', 'national_id', 'bank_account', 'start_date'), 'trusted', true));
+  v_acc := (r->>'id')::uuid;
+  -- … but not the salary (no salary.view) …
+  begin
+    perform public.save_handover_recipient(jsonb_build_object('id', v_acc, 'company_id', '10000000-0000-0000-0000-00000000000b', 'label', 'Accountant B',
+      'kind', 'email', 'email', 'books@b.test', 'events', jsonb_build_array('hire_confirmed'),
+      'fields', jsonb_build_array('name', 'national_id', 'bank_account', 'salary'), 'trusted', true));
+    raise exception 'FAIL: salary placed without salary.view';
+  exception when insufficient_privilege then
+    if sqlerrm not like '%salary.view%' then raise; end if;
+  end;
+  -- … and never a sensitive field on an untrusted recipient.
+  begin
+    perform public.save_handover_recipient(jsonb_build_object('company_id', '10000000-0000-0000-0000-00000000000b', 'label', 'Loose',
+      'kind', 'email', 'email', 'loose@b.test', 'events', jsonb_build_array('hire_confirmed'),
+      'fields', jsonb_build_array('national_id'), 'trusted', false));
+    raise exception 'FAIL: a sensitive field on an untrusted recipient';
+  exception when invalid_parameter_value then null;
+  end;
+  -- IT for B: the role, with the national ID configured on an untrusted recipient is refused; without it fine.
+  r := public.save_handover_recipient(jsonb_build_object('company_id', '10000000-0000-0000-0000-00000000000b', 'label', 'IT B',
+    'kind', 'role', 'role_key', 'it_owner', 'events', jsonb_build_array('hire_confirmed', 'departure_scheduled'),
+    'fields', jsonb_build_array('name', 'work_email', 'position', 'start_date', 'equipment_held'), 'trusted', false));
+  -- The manager pseudo-role.
+  r := public.save_handover_recipient(jsonb_build_object('company_id', '10000000-0000-0000-0000-00000000000b', 'label', 'Manager B',
+    'kind', 'role', 'role_key', 'manager', 'events', jsonb_build_array('hire_confirmed'),
+    'fields', jsonb_build_array('name', 'position'), 'trusted', false));
+  begin
+    perform public.save_handover_recipient(jsonb_build_object('company_id', '10000000-0000-0000-0000-00000000000b', 'label', 'Bad role',
+      'kind', 'role', 'role_key', 'ceo', 'events', jsonb_build_array('hire_confirmed'), 'fields', jsonb_build_array('name')));
+    raise exception 'FAIL: an unknown role accepted';
+  exception when invalid_parameter_value then null;
+  end;
+end $$;
+reset role;
+
+-- A hire in B with no bank account: one send per recipient; the accountant is missing the bank account,
+-- IT is pending with only its fields, the manager (none set) is missing the address.
+set app.test_uid = '00000000-0000-0000-0000-000000000005';
+set role authenticated;
+do $$
+declare r jsonb; v_person uuid; v_plan uuid; v_period uuid; s record;
+begin
+  r := public.create_employee(jsonb_build_object('full_name', 'Handed Over', 'work_email', 'handed@b.test',
+    'company_id', '10000000-0000-0000-0000-00000000000b', 'job_title', 'Analyst', 'start_date', current_date + 10,
+    'private', jsonb_build_object('national_id', '0101990450088')));
+  v_person := (r->>'person_id')::uuid; v_plan := (r->>'plan_id')::uuid; v_period := (r->>'employment_period_id')::uuid;
+  assert (select count(*) from public.handover_sends where plan_id = v_plan and event = 'hire_confirmed') = 3, 'one send per recipient';
+  select * into s from public.handover_sends where plan_id = v_plan and recipient_label = 'Accountant B';
+  assert s.status = 'missing' and s.missing = array['Bank account'], 'the accountant is missing the bank account: ' || s.missing::text;
+  assert s.to_email = 'books@b.test', 'the address is resolved';
+  assert s.fields ? 'national_id' and s.fields ? 'name' and not (s.fields ? 'salary') and not (s.fields ? 'work_email'),
+    'exactly the accountant''s fields: ' || s.fields::text;
+  assert (s.fields -> 'national_id' ->> 'value') = '0101990450088', 'the value itself';
+  select * into s from public.handover_sends where plan_id = v_plan and recipient_label = 'IT B';
+  assert s.status = 'pending' and s.to_email = 'it@b.test', 'IT goes to the company IT address: ' || s.to_email;
+  assert not (s.fields ? 'national_id'), 'IT never gets the national ID';
+  assert s.stripped = '{}', 'nothing was configured that IT may not have';
+  select * into s from public.handover_sends where plan_id = v_plan and recipient_label = 'Manager B';
+  assert s.status = 'missing' and s.missing[1] = 'Address for Manager B', 'no manager set → address missing: ' || s.missing::text;
+  -- The checklist line is not ticked while anything is red.
+  assert (select status from public.plan_tasks where plan_id = v_plan and task_key = 'handover') = 'open', 'handover line open';
+  -- Fill the bank account and resend: pending now, with the value.
+  update public.person_private_details set bank_account = '{"bank": "NLB", "account_number": "210000000000888"}'::jsonb where person_id = v_person;
+  r := public.resend_handover((select id from public.handover_sends where plan_id = v_plan and recipient_label = 'Accountant B'));
+  assert (r->>'status') = 'pending', 'resend after filling: ' || r::text;
+  select * into s from public.handover_sends where plan_id = v_plan and recipient_label = 'Accountant B';
+  assert (s.fields -> 'bank_account' ->> 'value') = 'NLB · 210000000000888' and s.missing = '{}', 'the snapshot carries the account now';
+  -- Set a manager, resend: the manager's address resolves.
+  perform public.correct_employment(v_period, current_date + 10, null, null, null, jsonb_build_object('manager_id', '20000000-0000-0000-0000-000000000005'));
+  r := public.resend_handover((select id from public.handover_sends where plan_id = v_plan and recipient_label = 'Manager B'));
+  assert (r->>'status') = 'pending' and (select to_email from public.handover_sends where plan_id = v_plan and recipient_label = 'Manager B') = 'bea@b.test',
+    'the manager''s address resolves: ' || r::text;
+  -- Mark the three as sent by hand: the line ticks itself.
+  perform public.mark_handover_sent(id) from public.handover_sends where plan_id = v_plan and event = 'hire_confirmed';
+  assert (select count(*) from public.handover_sends where plan_id = v_plan and event = 'hire_confirmed' and status = 'manual') = 3, 'all manual';
+  assert (select marked_by from public.handover_sends where plan_id = v_plan and recipient_label = 'IT B') = '20000000-0000-0000-0000-000000000005', 'who marked it';
+  assert (select status from public.plan_tasks where plan_id = v_plan and task_key = 'handover') = 'done', 'the handover line ticked itself';
+  -- Retry is only for a failed send.
+  begin
+    perform public.retry_handover((select id from public.handover_sends where plan_id = v_plan and recipient_label = 'IT B'));
+    raise exception 'FAIL: retried a send that had not failed';
+  exception when invalid_parameter_value then null;
+  end;
+  -- Departure scheduled: IT hears with the equipment held (none); cancelling cancels the pending send.
+  r := public.schedule_departure(v_period, current_date + 40, current_date + 38, 'Leaving');
+  assert (select count(*) from public.handover_sends where event = 'departure_scheduled' and person_id = v_person) = 1, 'IT alone hears of the departure';
+  assert (select status from public.handover_sends where event = 'departure_scheduled' and person_id = v_person) = 'pending', 'pending';
+  perform public.cancel_departure(v_period, 'Stays');
+  assert (select status from public.handover_sends where event = 'departure_scheduled' and person_id = v_person) = 'cancelled', 'a cancelled departure cancels its sends';
+  -- Marked former: the accountant hears (with the end date).
+  r := public.schedule_departure(v_period, current_date + 40, current_date + 38, 'Leaving after all');
+  perform public.complete_departure(v_period);
+  select * into s from public.handover_sends where event = 'marked_former' and person_id = v_person and recipient_label = 'Accountant B';
+  assert s.status = 'pending' and (s.fields -> 'start_date' ->> 'value') is not null, 'the accountant hears of the leaver: ' || s.fields::text;
+end $$;
+reset role;
+
+-- Omar (no tasks.assign in B, no tasks.view) sees no sends and may not work them.
+select set_config('app.smoke_send', (select s.id::text from public.handover_sends s join public.people p on p.id = s.person_id where p.work_email = 'handed@b.test' limit 1), false);
+set app.test_uid = '00000000-0000-0000-0000-000000000003';
+set role authenticated;
+do $$
+begin
+  assert (select count(*) from public.handover_sends s join public.people p on p.id = s.person_id where p.work_email = 'handed@b.test') = 0, 'sends are HR''s to read';
+  begin
+    perform public.mark_handover_sent(current_setting('app.smoke_send')::uuid);
+    raise exception 'FAIL: worked a send without tasks.assign';
+  exception when insufficient_privilege then null;
+  end;
+end $$;
+reset role;
+set app.test_uid = '';
+
+-- The audit never carries a snapshot value or an address.
+do $$
+begin
+  assert (select count(*) from public.activity_log where entity_type = 'handover_sends') > 0, 'sends are audited';
+  assert not exists (select 1 from public.activity_log where entity_type in ('handover_sends', 'handover_recipients')
+                     and (coalesce(after::text, '') like '%210000000000888%' or coalesce(after::text, '') like '%0101990450088%'
+                          or coalesce(after::text, '') like '%books@b.test%')),
+    'the audit never carries a value or an address';
+end $$;
+
+-- IT requests join the notification layer: created → the IT owner at the company IT address.
+set app.test_uid = '00000000-0000-0000-0000-000000000001';  -- Alex, HR-ish in B via the 0026 grant (employment.edit) — requests need it.view? use admin
+reset role;
+set app.test_uid = '00000000-0000-0000-0000-000000000004';  -- Ada
+set role authenticated;
+insert into public.it_requests (company_id, person_id, kind, title)
+  values ('10000000-0000-0000-0000-00000000000b', (select id from public.people where work_email = 'nora@b.test'), 'manual', 'Second monitor');
+reset role;
+set app.test_uid = '';
+do $$
+declare n record;
+begin
+  select * into n from public.notifications where kind = 'it.requested' order by created_at desc limit 1;
+  assert n.person_id = '20000000-0000-0000-0000-000000000005', 'the IT owner is told';
+  assert n.email_to = 'it@b.test', 'at the company IT address: ' || coalesce(n.email_to, 'null');
+  assert n.title like 'IT request for Nora Newhire: Second monitor', 'the title: ' || n.title;
+end $$;
+
 select 'SMOKE TESTS PASSED' as result;

@@ -13,6 +13,8 @@ import {
   type ReturnAction,
 } from '@/lib/equipment'
 import { useDialogStore } from '@/stores/dialogs'
+import SignaturePad from '@/components/SignaturePad.vue'
+import { capacityFor, returnStatements, type SignatureInput } from '@shared/signature'
 
 /**
  * What one person holds and what IT is doing for them (plan 029): open
@@ -65,6 +67,15 @@ const asking = ref(false)
 const askForm = ref({ companyId: '', title: '', note: '' })
 const returning = ref<Held | null>(null)
 const returnForm = ref({ hrPersonId: '', reason: '', condition: '' })
+// The form is filled first, then signed: you should know what you are putting
+// your name to before the pad appears.
+const signingReturn = ref(false)
+const acceptingReturn = ref<ReturnRow | null>(null)
+
+const companyOfReturn = computed(() =>
+  companyName(returning.value?.asset?.company_id ?? acceptingReturn.value?.company_id ?? '') || 'the company',
+)
+const statements = computed(() => returnStatements(companyOfReturn.value))
 
 /** A return in flight for an asset, so its row can say so instead of offering Return again. */
 const openReturnFor = (assetId: string) =>
@@ -118,35 +129,65 @@ async function openReturn(h: Held): Promise<void> {
   const companyId = h.asset?.company_id
   if (!companyId) return
   const { data } = await supabase.rpc('hr_people', { p_company_id: companyId })
-  hrPeople.value = (data ?? []) as HrPerson[]
+  // Never offer yourself: you cannot hand equipment back to yourself.
+  hrPeople.value = ((data ?? []) as HrPerson[]).filter((h) => h.id !== auth.personId)
   returnForm.value.hrPersonId = hrPeople.value[0]?.id ?? ''
 }
 
-async function submitReturn(): Promise<void> {
-  if (!returning.value) return
+function reviewReturn(): void {
   const parsed = returnRequestInput.safeParse(returnForm.value)
   if (!parsed.success) {
     error.value = parsed.error.issues[0]?.message ?? 'Check the form.'
     return
   }
+  error.value = null
+  signingReturn.value = true
+}
+
+async function signAndSend(sig: SignatureInput): Promise<void> {
+  if (!returning.value) return
+  const parsed = returnRequestInput.safeParse(returnForm.value)
+  if (!parsed.success) return
   const ok = await run('Start return', async () =>
     await supabase.rpc('start_equipment_return', {
       p_asset_id: returning.value!.asset_id,
       p_hr_person_id: parsed.data.hrPersonId,
+      p_sign_name: sig.name,
+      p_sign_method: sig.method,
+      p_sign_image: sig.image ?? undefined,
       p_reason: parsed.data.reason || undefined,
       p_condition: parsed.data.condition || undefined,
     }),
   )
   if (ok) {
     returning.value = null
-    notice.value = 'Sent. It is not returned until HR accepts and the form carries both names.'
+    signingReturn.value = false
+    notice.value = 'Signed and sent. It is not returned until HR signs the same form.'
+  }
+}
+
+async function signAndAccept(sig: SignatureInput): Promise<void> {
+  const r = acceptingReturn.value
+  if (!r) return
+  const ok = await run('Accept return', async () =>
+    await supabase.rpc('accept_equipment_return', {
+      p_return_id: r.id,
+      p_sign_name: sig.name,
+      p_sign_method: sig.method,
+      p_sign_image: sig.image ?? undefined,
+    }),
+  )
+  if (ok) {
+    acceptingReturn.value = null
+    notice.value = `${r.asset?.asset_tag ?? 'The asset'} is back in magacin. The form carries both names.`
   }
 }
 
 async function actOnReturn(r: ReturnRow, action: ReturnAction): Promise<void> {
   if (action.key === 'accept') {
-    const ok = await run('Accept return', async () => await supabase.rpc('accept_equipment_return', { p_return_id: r.id }))
-    if (ok) notice.value = `${r.asset?.asset_tag ?? 'The asset'} is back in magacin.`
+    // HR signs the same form; accepting without a name on it would leave the
+    // person's signature facing nothing.
+    acceptingReturn.value = r
     return
   }
   if (action.key === 'decline') {
@@ -261,7 +302,7 @@ watch(() => `${props.personId}|${props.companies.map((c) => c.id).join(',')}`, (
         </div>
       </form>
 
-      <form v-if="returning" class="inline-form" novalidate @submit.prevent="submitReturn">
+      <form v-if="returning" class="inline-form" novalidate @submit.prevent="reviewReturn">
         <div class="form-title">Returning {{ returning.asset?.asset_tag }}</div>
         <label>
           <span>Send to</span>
@@ -273,13 +314,43 @@ watch(() => `${props.personId}|${props.companies.map((c) => c.id).join(',')}`, (
         <label><span>Condition</span><input v-model="returnForm.condition" maxlength="120" placeholder="As issued" /></label>
         <label><span>Why you are returning it</span><input v-model="returnForm.reason" maxlength="500" /></label>
         <p class="inline-note">
-          You are signing that you handed this back. It stays yours until HR accepts and the form carries both names.
+          It stays yours until HR signs the same form.
         </p>
         <div class="form-actions">
           <button type="button" class="button secondary small-btn" :disabled="busy" @click="returning = null">Cancel</button>
-          <button type="submit" class="button small-btn" :disabled="busy || !hrPeople.length">Sign and send</button>
+          <button type="submit" class="button small-btn" :disabled="busy || !hrPeople.length">Review and sign</button>
         </div>
       </form>
+
+      <div v-if="signingReturn && returning" class="inline-form">
+        <div class="form-title">Sign the return of {{ returning.asset?.asset_tag }}</div>
+        <SignaturePad
+          :statement="statements.person"
+          :capacity="capacityFor('person', companyOfReturn)"
+          :suggested-name="auth.personName ?? ''"
+          :busy="busy"
+          @sign="signAndSend"
+        >
+          <template #cancel>
+            <button type="button" class="button secondary small-btn" :disabled="busy" @click="signingReturn = false">Back</button>
+          </template>
+        </SignaturePad>
+      </div>
+
+      <div v-if="acceptingReturn" class="inline-form">
+        <div class="form-title">Accept {{ acceptingReturn.asset?.asset_tag }} back</div>
+        <SignaturePad
+          :statement="statements.hr"
+          :capacity="capacityFor('hr', companyOfReturn)"
+          :suggested-name="auth.personName ?? ''"
+          :busy="busy"
+          @sign="signAndAccept"
+        >
+          <template #cancel>
+            <button type="button" class="button secondary small-btn" :disabled="busy" @click="acceptingReturn = null">Cancel</button>
+          </template>
+        </SignaturePad>
+      </div>
 
       <div v-for="r in forMe" :key="r.id" class="equipment-row awaiting">
         <div class="row-text">

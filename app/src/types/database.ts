@@ -445,6 +445,39 @@ export type Database = {
           },
         ]
       }
+      asset_notes: {
+        Row: {
+          about_person_id: string | null
+          asset_id: string
+          body: string
+          created_at: string
+          happened_on: string
+          id: string
+          kind: string
+          written_by: string | null
+        }
+        Insert: {
+          about_person_id?: string | null
+          asset_id: string
+          body: string
+          created_at?: string
+          happened_on?: string
+          id?: string
+          kind?: string
+          written_by?: string | null
+        }
+        Update: {
+          about_person_id?: string | null
+          asset_id?: string
+          body?: string
+          created_at?: string
+          happened_on?: string
+          id?: string
+          kind?: string
+          written_by?: string | null
+        }
+        Relationships: []
+      }
       asset_types: {
         Row: {
           archived_at: string | null

@@ -103,7 +103,8 @@ const line = computed(() =>
     <template v-if="!editing">
       <div class="row-text">
         <strong>
-          <span v-if="asset.ordinal !== null" class="muted">{{ asset.ordinal }}. </span>{{ assetNumbers(asset) }}
+          <span v-if="asset.ordinal !== null" class="muted">{{ asset.ordinal }}. </span>
+          <router-link class="tag-link" :to="{ name: 'asset', params: { assetId: asset.id } }">{{ assetNumbers(asset) }}</router-link>
         </strong>
         <small class="register-line">{{ line }}</small>
         <small>
@@ -158,6 +159,8 @@ const line = computed(() =>
 .asset-row.editing { background: #f7f9f5; align-items: flex-start; }
 .row-text { flex: 1; min-width: 220px; }
 .row-text strong { display: block; font-size: 12px; font-weight: 550; }
+.tag-link { color: inherit; text-decoration: none; }
+.tag-link:hover { text-decoration: underline; }
 .row-text small { display: block; font-size: 11px; color: var(--muted); margin-top: 4px; }
 .register-line { color: var(--ink) !important; font-weight: 500; }
 .muted { font-weight: 400; color: var(--muted); }

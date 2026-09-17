@@ -119,6 +119,11 @@ export const router = createRouter({
           component: () => import('@/pages/EquipmentPage.vue'),
         },
         {
+          path: 'equipment/:assetId',
+          name: 'asset',
+          component: () => import('@/pages/AssetPage.vue'),
+        },
+        {
           path: 'kudos',
           name: 'kudos',
           component: () => import('@/pages/KudosPage.vue'),

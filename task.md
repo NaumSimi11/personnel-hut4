@@ -73,7 +73,10 @@ DONE
   who holds it (only people who hold something are listed)
 - equipment return: signing is a centred dialog, not an inline expand
 
+- person page: edit forms fold on their own width, not the window's
+- equipment preview page: full detail, delete, and a service history
+
 LEFT
-- person page: cards not responsive in edit / preview mode
-- equipment preview page: full detail, edit/delete, reassign with a signed
-  document to both sides, service-note history
+- equipment preview page: reassigning from the page itself, with a signed
+  document to both sides. The return flow already does this in reverse, so it
+  is that flow pointed the other way rather than new machinery.

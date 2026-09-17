@@ -2,6 +2,7 @@
 import { computed, onMounted, ref } from 'vue'
 import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/stores/auth'
+import { useDialogStore } from '@/stores/dialogs'
 import { deliverNotifications } from '@/lib/notificationsApi'
 import CompanyFilter from '@/components/CompanyFilter.vue'
 import {
@@ -28,6 +29,7 @@ type Asset = {
   id: string
   company_id: string | null
   asset_tag: string
+  ordinal: number | null
   inventory_number: string | null
   holder_note: string | null
   type_key: string
@@ -44,6 +46,7 @@ type Person = { id: string; full_name: string; company_ids: string[] }
 const POOL = '__pool__'
 
 const auth = useAuthStore()
+const dialogs = useDialogStore()
 const loading = ref(true)
 const busy = ref(false)
 const error = ref<string | null>(null)
@@ -54,7 +57,8 @@ const companies = ref<{ id: string; name: string }[]>([])
 const types = ref<{ key: string; label: string }[]>([])
 const filter = ref('')
 const addingAsset = ref(false)
-const assetForm = ref({ ownerId: POOL, assetTag: '', inventoryNumber: '', typeKey: '', model: '', serialNumber: '', note: '' })
+const assetForm = ref({ ownerId: POOL, ordinal: '', assetTag: '', inventoryNumber: '', typeKey: '', model: '', serialNumber: '', note: '' })
+const editingAsset = ref<Asset | null>(null)
 const reserving = ref<Asset | null>(null)
 const reservePersonId = ref('')
 const returning = ref<Asset | null>(null)
@@ -100,6 +104,41 @@ const ownedBy = (ownerId: string) =>
   assets.value.filter((a) => (ownerId === POOL ? a.company_id === null : a.company_id === ownerId))
 const suggestedTag = (ownerId: string) => nextAssetTag(ownedBy(ownerId).map((a) => a.asset_tag))
 const suggestedInventory = (ownerId: string) => nextInventoryNumber(ownedBy(ownerId).map((a) => a.inventory_number))
+const suggestedOrdinal = (ownerId: string) => {
+  const used = ownedBy(ownerId).map((a) => a.ordinal).filter((n): n is number => typeof n === 'number')
+  return used.length ? Math.max(...used) + 1 : null
+}
+
+/** Opens the same form on an existing asset, so adding and editing stay one thing. */
+function editAsset(a: Asset): void {
+  error.value = null
+  notice.value = null
+  editingAsset.value = a
+  addingAsset.value = true
+  assetForm.value = {
+    ownerId: a.company_id ?? POOL,
+    ordinal: a.ordinal === null ? '' : String(a.ordinal),
+    assetTag: a.asset_tag,
+    inventoryNumber: a.inventory_number ?? '',
+    typeKey: a.type_key,
+    model: a.model ?? '',
+    serialNumber: a.serial_number ?? '',
+    note: a.note ?? '',
+  }
+}
+
+async function removeAsset(a: Asset): Promise<void> {
+  const sure = await dialogs.confirmAction({
+    title: `Delete ${a.asset_tag}?`,
+    hint: `${a.model ?? 'This asset'} and its whole history go with it. This cannot be undone.`,
+    confirmLabel: 'Delete asset',
+    cancelLabel: 'Keep it',
+  })
+  if (!sure) return
+  const ok = await run('Delete asset', () => supabase.from('assets').delete().eq('id', a.id))
+  if (ok) notice.value = `${a.asset_tag} deleted.`
+}
+
 
 const reserveOther = ref('')
 const candidatesFor = (a: Asset): Person[] => (a.company_id === null ? people.value : people.value.filter((p) => p.company_ids.includes(a.company_id as string)))
@@ -161,6 +200,7 @@ function startAsset(): void {
     ownerId: owner,
     // Where the company's own series got to. Only a suggestion — the label on
     // the box is the authority, and whoever knows better overwrites it.
+    ordinal: String(suggestedOrdinal(owner) ?? ''),
     assetTag: suggestedTag(owner) ?? '',
     inventoryNumber: suggestedInventory(owner) ?? '',
     typeKey: types.value[0]?.key ?? '',
@@ -178,23 +218,31 @@ async function saveAsset(): Promise<void> {
     error.value = parsed.error.issues[0]?.message ?? 'Check the form.'
     return
   }
-  const ok = await run('Asset insert', async () => {
-    const { data, error: err } = await supabase
-      .from('assets')
-      .insert({
-        company_id: assetForm.value.ownerId === POOL ? null : assetForm.value.ownerId,
-        asset_tag: parsed.data.assetTag,
-        inventory_number: assetForm.value.inventoryNumber.trim() || null,
-        type_key: parsed.data.typeKey,
-        model: parsed.data.model || null,
-        serial_number: parsed.data.serialNumber || null,
-        note: parsed.data.note || null,
-      })
-      .select('id')
-      .maybeSingle()
+  const fields = {
+    company_id: assetForm.value.ownerId === POOL ? null : assetForm.value.ownerId,
+    ordinal: parsed.data.ordinal,
+    asset_tag: parsed.data.assetTag,
+    inventory_number: parsed.data.inventoryNumber,
+    type_key: parsed.data.typeKey,
+    model: parsed.data.model || null,
+    serial_number: parsed.data.serialNumber || null,
+    note: parsed.data.note || null,
+  }
+  const target = editingAsset.value
+
+  const ok = await run(target ? 'Save asset' : 'Asset insert', async () => {
+    if (target) {
+      const { error: err } = await supabase.from('assets').update(fields).eq('id', target.id)
+      return { error: err }
+    }
+    const { data, error: err } = await supabase.from('assets').insert(fields).select('id').maybeSingle()
     return { error: err ?? (data ? null : { message: 'row-level security' }) }
   })
-  if (ok) addingAsset.value = false
+  if (ok) {
+    notice.value = target ? `${fields.asset_tag} saved.` : `${fields.asset_tag} added.`
+    addingAsset.value = false
+    editingAsset.value = null
+  }
 }
 
 function act(asset: Asset, action: AssignmentAction): void {
@@ -295,6 +343,7 @@ onMounted(load)
               <option v-for="o in ownerOptions" :key="o.id" :value="o.id">{{ o.name }}</option>
             </select>
           </label>
+          <label><span>ред. бр.</span><input id="asset-ordinal" v-model="assetForm.ordinal" inputmode="numeric" maxlength="6" /></label>
           <label><span>Шифра (asset tag)</span><input id="asset-tag" v-model="assetForm.assetTag" maxlength="60" /></label>
           <label>
             <span>Инв. бр. (inventory number)</span>
@@ -310,8 +359,8 @@ onMounted(load)
           <label><span>Serial number</span><input id="asset-serial" v-model="assetForm.serialNumber" maxlength="120" /></label>
           <label><span>Note</span><input id="asset-note" v-model="assetForm.note" /></label>
           <div class="form-actions">
-            <button type="button" class="button secondary small-btn" :disabled="busy" @click="addingAsset = false">Cancel</button>
-            <button type="submit" class="button small-btn" :disabled="busy">Save asset</button>
+            <button type="button" class="button secondary small-btn" :disabled="busy" @click="addingAsset = false; editingAsset = null">Cancel</button>
+            <button type="submit" class="button small-btn" :disabled="busy">{{ editingAsset ? 'Save changes' : 'Save asset' }}</button>
           </div>
         </form>
 
@@ -353,7 +402,7 @@ onMounted(load)
         <div v-if="!shown.length" class="empty">No assets here.</div>
         <div v-for="a in shown" :key="a.id" class="asset-row" :class="a.status" :data-testid="`asset-${a.asset_tag}`">
           <div class="row-text">
-            <strong>{{ assetNumbers(a) }}</strong>
+            <strong><span v-if="a.ordinal !== null" class="muted">{{ a.ordinal }}. </span>{{ assetNumbers(a) }}</strong>
             <small class="register-line">{{ registerLine(a) }}</small>
             <small>
               <span class="badge" :class="a.company_id === null ? 'blue' : ''">{{ ownerLabel(a.company_id, companyNames) }}</span>
@@ -364,6 +413,8 @@ onMounted(load)
             </small>
           </div>
           <div class="actions">
+            <button v-if="canFor(a)('it.assign')" class="button secondary small-btn" type="button" :disabled="busy" @click="editAsset(a)">Edit</button>
+            <button v-if="canFor(a)('it.assign')" class="button secondary small-btn danger" type="button" :disabled="busy" @click="removeAsset(a)">Delete</button>
             <button v-for="action in actionsFor(a)" :key="action.key" class="button small-btn" :class="{ secondary: action.key === 'cancel' }" type="button" :disabled="busy" @click="act(a, action)">
               {{ action.label }}
             </button>
@@ -375,6 +426,7 @@ onMounted(load)
 </template>
 
 <style scoped>
+.button.danger { color: #a8332b; border-color: #e6c9c6; }
 .page-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-bottom: 22px; }
 .page-sub { margin: 4px 0 0; font-size: 12px; color: var(--muted); max-width: 620px; }
 .notice { padding: 10px 14px; border-radius: 9px; background: #edf5ed; color: #3e744e; font-size: 12px; margin-bottom: 12px; }

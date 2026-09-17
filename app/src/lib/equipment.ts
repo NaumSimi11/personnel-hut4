@@ -8,7 +8,17 @@ import { z } from 'zod'
  */
 
 export const assetInput = z.object({
+  // ред. бр. and Инв. бр. are optional because the sheets disagree: Synami
+  // keeps both, Hut 4 keeps neither, Liquiditas has no such columns. A company
+  // that does not use one leaves it empty.
+  ordinal: z
+    .string()
+    .trim()
+    .regex(/^\d*$/, 'ред. бр. is a number.')
+    .optional()
+    .transform((v) => (v ? Number(v) : null)),
   assetTag: z.string().trim().min(2, 'Enter the asset tag.').max(60),
+  inventoryNumber: z.string().trim().max(60).optional().transform((v) => v || null),
   typeKey: z.string().min(1, 'Choose the asset type.'),
   model: z.string().trim().max(120),
   serialNumber: z.string().trim().max(120),

@@ -479,6 +479,7 @@ export type Database = {
           location_id: string | null
           model: string | null
           note: string | null
+          ordinal: number | null
           serial_number: string | null
           status: string
           type_key: string
@@ -496,6 +497,7 @@ export type Database = {
           location_id?: string | null
           model?: string | null
           note?: string | null
+          ordinal?: number | null
           serial_number?: string | null
           status?: string
           type_key: string
@@ -513,6 +515,7 @@ export type Database = {
           location_id?: string | null
           model?: string | null
           note?: string | null
+          ordinal?: number | null
           serial_number?: string | null
           status?: string
           type_key?: string

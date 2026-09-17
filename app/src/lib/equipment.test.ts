@@ -67,3 +67,31 @@ describe('the holding pool and the starter kit (plan 049)', () => {
     expect(tidyKit(Array.from({ length: 45 }, (_, i) => `Item ${i}`))).toHaveLength(40)
   })
 })
+
+describe('assetInput with every column the sheets use', () => {
+  const base = {
+    assetTag: 'A085',
+    typeKey: 'laptop',
+    model: 'Dell Vostro',
+    serialNumber: '',
+    locationId: '',
+    note: '',
+  }
+
+  it('takes ред. бр. and Инв. бр. when a company keeps them', () => {
+    const parsed = assetInput.safeParse({ ...base, ordinal: '53', inventoryNumber: '121' })
+    expect(parsed.success).toBe(true)
+    if (parsed.success) expect(parsed.data).toMatchObject({ ordinal: 53, inventoryNumber: '121' })
+  })
+
+  it('leaves them empty for a company that keeps neither', () => {
+    const parsed = assetInput.safeParse({ ...base, ordinal: '', inventoryNumber: '' })
+    expect(parsed.success).toBe(true)
+    if (parsed.success) expect(parsed.data).toMatchObject({ ordinal: null, inventoryNumber: null })
+  })
+
+  it('refuses a ред. бр. that is not a number', () => {
+    const parsed = assetInput.safeParse({ ...base, ordinal: 'fifty', inventoryNumber: '' })
+    expect(parsed.success).toBe(false)
+  })
+})

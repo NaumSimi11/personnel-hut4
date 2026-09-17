@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { assetTypeForHeading, resolveHolder } from '../../shared/popisImport.js'
+import { assetTypeForHeading, parseSheet, resolveHolder } from '../../shared/popisImport.js'
 
 describe('assetTypeForHeading', () => {
   it('maps the Macedonian headings the workbook uses', () => {
@@ -92,5 +92,68 @@ describe('resolveHolder', () => {
     expect(resolveHolder('Ivan Ivanov', PEOPLE)).toEqual({
       kind: 'unresolved', text: 'Ivan Ivanov', reason: 'ambiguous',
     })
+  })
+})
+
+const row = (...cells: (string | null)[]) => ({ cells })
+
+describe('parseSheet', () => {
+  it('attributes each item to the heading above it', () => {
+    const items = parseSheet([
+      row('Лаптопи'),
+      row('ред. бр.', 'Шифра', 'Основно средство', 'Корисник', 'Забелешка'),
+      row('1', 'A001', 'Dell Latitude 5590', 'magacin', '√'),
+      row('Монитори'),
+      row('1', 'M010', 'Monitor Dell S2721HS', 'Keith Attard', '√'),
+    ])
+    expect(items).toHaveLength(2)
+    expect(items[0]).toMatchObject({ typeKey: 'laptop', assetTag: 'A001', model: 'Dell Latitude 5590', holderText: 'magacin' })
+    expect(items[1]).toMatchObject({ typeKey: 'monitor', assetTag: 'M010', model: 'Monitor Dell S2721HS', holderText: 'Keith Attard' })
+  })
+
+  it('skips the header row rather than importing it as an asset', () => {
+    // "Основно средство" is a column title; it appeared as a holder in a
+    // naive first pass over this workbook.
+    const items = parseSheet([
+      row('Лаптопи'),
+      row('Шифра', 'Основно средство', 'Забелешка', 'Корисник'),
+      row('1', 'Laptop Dell XPs 13 9310', '√', 'Kristina Cvetanov'),
+    ])
+    expect(items).toHaveLength(1)
+    expect(items[0].model).toBe('Laptop Dell XPs 13 9310')
+  })
+
+  it('ignores the tick, which records the last count and not the asset', () => {
+    const items = parseSheet([
+      row('Лаптопи'),
+      row('Шифра', 'Основно средство', 'Корисник', 'Забелешка'),
+      row('1', 'A001', 'HP ProBook', 'magacin', '√'),
+    ])
+    expect(JSON.stringify(items[0])).not.toContain('√')
+  })
+
+  it('ignores the closing blocks after the list', () => {
+    const items = parseSheet([
+      row('Лаптопи'),
+      row('Шифра', 'Основно средство', 'Корисник'),
+      row('1', 'A001', 'HP ProBook', 'magacin'),
+      row('Пописна комисија за основни средства', 'Потпис:'),
+      row('1. Мите Марков'),
+      row('Скопје, 31.12.2024'),
+    ])
+    expect(items).toHaveLength(1)
+  })
+
+  it('reads a sheet with no code column, leaving the tag empty', () => {
+    const items = parseSheet([
+      row('Laptops'),
+      row('Barcode', 'Model', 'User'),
+      row('0000001', 'Berin Trade Mark', 'Liquiditas DOOEL'),
+    ])
+    expect(items[0]).toMatchObject({ assetTag: '0000001', model: 'Berin Trade Mark', holderText: 'Liquiditas DOOEL' })
+  })
+
+  it('returns nothing for a sheet with no categories at all', () => {
+    expect(parseSheet([row('Some notes'), row('a', 'b')])).toEqual([])
   })
 })

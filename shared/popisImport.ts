@@ -95,7 +95,13 @@ const TICK = /^[√✓v]$/i
 /** Column titles, which vary in order across the three sheets. */
 const HEADER_WORDS = /^(ред\.?\s*бр\.?|шифра|основно средство|корисник|забелешка|инв\.?\s*бр\.?|barcode|model|user)$/i
 const ORDINAL = /^\d+\.?$/
-const CLOSING = /пописна комисија|потпис|скопје,|^\d+\.\s/i
+// Macedonian marks the definite article as a suffix on the noun itself
+// ("пописна" → "пописната"), not a separate word, so a bare two-word phrase
+// match misses the sheets that write the definite form. Matching the stem
+// with a suffix allowed is the correct fix, not a broadening — it still
+// requires the following word "комисија" immediately after, so it cannot
+// drift onto an unrelated cell that merely starts with "пописна".
+const CLOSING = /пописна\S*\s+комисија|потпис|скопје,|^\d+\.\s/i
 // A cell that looks like an asset tag: letters-then-digits (A001), or a
 // barcode padded to five digits or more. Liquiditas pads its barcodes to
 // seven digits — "0000001" — which would also match ORDINAL above, so this

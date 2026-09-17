@@ -159,6 +159,25 @@ describe('parseSheet', () => {
     expect(items).toHaveLength(1)
   })
 
+  it('ignores the attestation paragraph even in its definite-article form', () => {
+    // Macedonian suffixes the definite article onto the noun itself —
+    // "пописна" becomes "пописната" — so the two words are no longer
+    // adjacent as bare stems. A CLOSING pattern that only matches
+    // "пописна комисија" verbatim misses this real sentence, and the
+    // commission's own sign-off paragraph gets imported as an asset.
+    const items = parseSheet([
+      row('Лаптопи'),
+      row('Шифра', 'Основно средство', 'Корисник'),
+      row('1', 'A001', 'HP ProBook', 'magacin'),
+      row(
+        'Пописната комисија за основни средства  констатира дека состојбата на средствата  ' +
+          'се совпаѓа со евидентираните средства согласно сметководствената евиденција на фактурите.',
+      ),
+    ])
+    expect(items).toHaveLength(1)
+    expect(items[0].model).toBe('HP ProBook')
+  })
+
   it('reads a sheet with no code column, leaving the tag empty', () => {
     const items = parseSheet([
       row('Laptops'),

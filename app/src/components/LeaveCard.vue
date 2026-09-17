@@ -36,7 +36,9 @@ export type Balance = {
   carry_over_remaining: number
 }
 
-const props = withDefaults(defineProps<{ personId: string; personName?: string; title?: string }>(), {
+const props = withDefaults(defineProps<{
+  /** Render bare, for a parent that already provides the card and its heading. */
+  headless?: boolean; personId: string; personName?: string; title?: string }>(), {
   personName: '',
   title: 'Leave',
 })
@@ -142,8 +144,8 @@ defineExpose({ reload: load })
 </script>
 
 <template>
-  <div v-if="visible" class="card">
-    <div class="card-head">
+  <div v-if="visible" :class="headless ? 'bare' : 'card'">
+    <div v-if="!headless" class="card-head">
       <div>
         <h2>{{ title }}</h2>
         <p>{{ year }} balances per employment; requests go to whoever approves leave in that company.</p>
@@ -197,6 +199,7 @@ defineExpose({ reload: load })
 </template>
 
 <style scoped>
+.bare { display: block; }
 .head-actions { display: flex; gap: 8px; flex-wrap: wrap; }
 .in-card, .notice { margin: 14px 24px 0; }
 .notice { padding: 10px 14px; border-radius: 9px; background: #edf5ed; color: #3e744e; font-size: 12px; }

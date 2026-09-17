@@ -46,7 +46,9 @@ type Record_ = {
   created_at: string
 }
 
-const props = withDefaults(defineProps<{ personId: string; periods: Period[]; title?: string }>(), {
+const props = withDefaults(defineProps<{
+  /** Render bare, for a parent that already provides the card and its heading. */
+  headless?: boolean; personId: string; periods: Period[]; title?: string }>(), {
   title: 'Compensation',
 })
 
@@ -205,8 +207,8 @@ watch(() => props.periods.map((p) => p.id).join(','), load)
 </script>
 
 <template>
-  <div v-if="visible" class="card">
-    <div class="card-head">
+  <div v-if="visible" :class="headless ? 'bare' : 'card'">
+    <div v-if="!headless" class="card-head">
       <div>
         <h2>{{ title }}</h2>
         <p>Changes are proposed by one person and approved by another; history is never overwritten.</p>
@@ -306,6 +308,7 @@ watch(() => props.periods.map((p) => p.id).join(','), load)
 </template>
 
 <style scoped>
+.bare { display: block; }
 .period { border-top: 1px solid #edf0eb; }
 .period-title { padding: 12px 24px 0; font-size: 11px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; }
 .comp-current { padding: 15px 24px; }

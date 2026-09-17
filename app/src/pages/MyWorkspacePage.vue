@@ -4,6 +4,7 @@ import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/stores/auth'
 import { departureState } from '@/lib/departure'
 import CompensationCard from '@/components/CompensationCard.vue'
+import CollapsibleSection from '@/components/CollapsibleSection.vue'
 import LeaveCard from '@/components/LeaveCard.vue'
 import AvatarUpload from '@/components/AvatarUpload.vue'
 import DocumentsCard from '@/components/DocumentsCard.vue'
@@ -266,8 +267,7 @@ onMounted(load)
       <p v-if="error" class="error-note" role="alert">{{ error }}</p>
       <div v-if="loading" class="empty">Loading your workspace…</div>
 
-      <div v-else class="grid-two">
-        <div class="left-column">
+      <div v-else class="stack">
           <MyRequestsCard />
           <MyPoliciesCard />
           <div v-if="plan" class="card plan-card">
@@ -288,13 +288,7 @@ onMounted(load)
             </div>
           </div>
 
-          <div class="card tasks-card">
-            <div class="card-head">
-              <div>
-                <h2>My tasks</h2>
-                <p>Onboarding tasks assigned to you that are still open.</p>
-              </div>
-            </div>
+          <CollapsibleSection title="My tasks" hint="Onboarding tasks assigned to you that are still open." :count="myTasks.length">
             <p v-if="taskError" class="error-note" role="alert">{{ taskError }}</p>
             <div v-if="!myTasks.length" class="empty">No tasks assigned to you.</div>
             <div v-for="t in myTasks" :key="t.id" class="task-row">
@@ -319,14 +313,9 @@ onMounted(load)
                 </router-link>
               </div>
             </div>
-          </div>
-        </div>
+          </CollapsibleSection>
 
-        <div class="right-column">
-          <div class="card">
-            <div class="card-head">
-              <h2>My profile</h2>
-            </div>
+          <CollapsibleSection title="My profile" hint="Your contact details and current employment.">
             <div class="card-body">
               <p class="profile-line"><strong>{{ person?.full_name ?? '—' }}</strong></p>
               <p class="profile-line">{{ person?.work_email ?? '—' }}</p>
@@ -340,9 +329,9 @@ onMounted(load)
                 </p>
               </template>
             </div>
-            <div class="card-head">
-              <h2>Employment history</h2>
-            </div>
+          </CollapsibleSection>
+
+          <CollapsibleSection title="Employment history" hint="Every period recorded for you." :count="employments.length">
             <div v-if="!employments.length" class="empty">No employment recorded.</div>
             <div v-for="emp in employments" :key="emp.id" class="emp-row">
               <div class="row-text">
@@ -353,17 +342,24 @@ onMounted(load)
                 {{ emp.status.replace('_', ' ') }}
               </span>
             </div>
-          </div>
+          </CollapsibleSection>
 
-          <LeaveCard v-if="auth.personId" :person-id="auth.personId" title="My leave" />
-          <CompensationCard v-if="auth.personId" :person-id="auth.personId" :periods="employments" title="My compensation" />
-          <DocumentsCard v-if="auth.personId" :person-id="auth.personId" :companies="myCompanies" title="My documents" />
-          <PersonEquipmentCard v-if="auth.personId" :person-id="auth.personId" :companies="myCompanies" title="My equipment" />
+          <CollapsibleSection v-if="auth.personId" title="My leave" hint="Days taken, days left, and requests you have made.">
 
-          <div class="card">
-            <div class="card-head">
-              <h2>My access</h2>
-            </div>
+            <LeaveCard :person-id="auth.personId"  headless />
+
+          </CollapsibleSection>
+          <CollapsibleSection v-if="auth.personId" title="My compensation" hint="Your pay as recorded, and its history.">
+            <CompensationCard :person-id="auth.personId"  :periods="employments" headless />
+          </CollapsibleSection>
+          <CollapsibleSection v-if="auth.personId" title="My documents" hint="Contracts, handover forms and anything filed about you.">
+            <DocumentsCard :person-id="auth.personId"  :companies="myCompanies" headless />
+          </CollapsibleSection>
+          <CollapsibleSection v-if="auth.personId" title="My equipment" hint="What you hold, and any IT request of yours.">
+            <PersonEquipmentCard :person-id="auth.personId"  :companies="myCompanies" headless />
+          </CollapsibleSection>
+
+          <CollapsibleSection title="My access" hint="What you may see and do, company by company." :count="grants.length">
             <div class="card-body">
               <p v-if="auth.isAdmin" class="inline-note">
                 You are a platform admin: full access across every company.
@@ -382,12 +378,9 @@ onMounted(load)
                 </ul>
               </div>
             </div>
-          </div>
+          </CollapsibleSection>
 
-          <div class="card">
-            <div class="card-head">
-              <h2>My projects</h2>
-            </div>
+          <CollapsibleSection title="My projects" hint="Where you are assigned." :count="projects.length">
             <div v-if="!projects.length" class="empty">No project assignments synced.</div>
             <div v-for="p in projects" :key="p.id" class="emp-row">
               <div class="row-text">
@@ -398,8 +391,7 @@ onMounted(load)
               </div>
               <span class="badge">{{ p.project?.status ?? '—' }}</span>
             </div>
-          </div>
-        </div>
+          </CollapsibleSection>
       </div>
     </template>
   </div>
@@ -409,10 +401,7 @@ onMounted(load)
 .page-head { margin-bottom: 22px; }
 .me-head { display: flex; align-items: center; gap: 22px; flex-wrap: wrap; }
 .page-sub { margin: 0; font-size: 12px; color: var(--muted); }
-.grid-two { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(260px, 1fr); gap: 22px; }
-@media (max-width: 900px) { .grid-two { grid-template-columns: 1fr; } }
-.left-column { display: grid; gap: 22px; align-content: start; }
-.right-column { display: grid; gap: 22px; align-content: start; }
+.stack { display: grid; gap: 14px; align-content: start; max-width: 940px; }
 .task-row {
   display: flex;
   align-items: center;

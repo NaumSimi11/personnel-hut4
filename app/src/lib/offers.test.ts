@@ -51,19 +51,31 @@ describe('offerActions', () => {
   const me = 'p-me'
   const can = (caps: string[]) => (cap: string) => caps.includes(cap)
 
-  it('lets a reviewer submit a draft, and approve only if they did not draft it', () => {
+  it('lets a reviewer submit a draft', () => {
     expect(offerActions({ status: 'draft', created_by: me }, me, can(['candidates.review']))).toEqual([
       { to: 'in_approval', label: 'Submit for approval' },
       { to: 'withdrawn', label: 'Withdraw offer' },
     ])
-    expect(offerActions({ status: 'in_approval', created_by: me }, me, can(['offer.approve']))).toEqual([])
-    // The author waiting on approval can still withdraw — never stuck.
-    expect(offerActions({ status: 'in_approval', created_by: me }, me, can(['candidates.review']))).toEqual([
-      { to: 'withdrawn', label: 'Withdraw offer' },
+  })
+
+  it('lets whoever holds offer.approve approve, including the person who drafted it', () => {
+    // The holding decided one person may carry an offer the whole way. Who
+    // approved is still recorded on the offer, so author-approved-their-own is
+    // visible in the record rather than prevented.
+    expect(offerActions({ status: 'in_approval', created_by: me }, me, can(['offer.approve']))).toEqual([
+      { to: 'approved', label: 'Approve' },
+      { to: 'draft', label: 'Send back' },
     ])
     expect(offerActions({ status: 'in_approval', created_by: 'other' }, me, can(['offer.approve']))).toEqual([
       { to: 'approved', label: 'Approve' },
       { to: 'draft', label: 'Send back' },
+    ])
+  })
+
+  it('still offers nothing but a withdrawal to someone who cannot approve', () => {
+    // Approving takes offer.approve; candidates.review alone is not enough.
+    expect(offerActions({ status: 'in_approval', created_by: me }, me, can(['candidates.review']))).toEqual([
+      { to: 'withdrawn', label: 'Withdraw offer' },
     ])
   })
 

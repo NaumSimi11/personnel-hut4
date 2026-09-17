@@ -59,9 +59,6 @@ const can = (cap: string) => auth.can(props.companyId, cap)
 const live = computed(() => offers.value.find((o) => !['declined', 'withdrawn'].includes(o.status)) ?? null)
 const history = computed(() => offers.value.filter((o) => o.id !== live.value?.id))
 const canDraft = computed(() => props.canReview && !live.value && ['interview', 'offer'].includes(props.stage))
-const isOwnInApproval = computed(
-  () => live.value?.status === 'in_approval' && live.value.created_by !== null && live.value.created_by === auth.personId,
-)
 
 function actionsFor(o: Offer) {
   return offerActions(o, auth.personId, can)
@@ -287,7 +284,6 @@ defineExpose({ reload: load, liveTerms: () => (live.value ? terms(live.value) : 
         </div>
         <span class="badge" :class="badgeClass(live.status)">{{ offerStatusLabel(live.status) }}</span>
       </div>
-      <p v-if="isOwnInApproval" class="inline-note">You drafted this offer, so you cannot approve it — someone with offer approval has to.</p>
       <div class="actions left">
         <button
           v-for="a in actionsFor(live)"

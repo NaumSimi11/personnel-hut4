@@ -80,7 +80,13 @@ export function offerActions(
       if (review) actions.push({ to: 'in_approval', label: 'Submit for approval' })
       break
     case 'in_approval':
-      if (can('offer.approve') && offer.created_by !== personId) {
+      // The holding's decision (September 2026): one person may carry an offer
+      // the whole way, including approving one they drafted. The separation of
+      // author and approver was dropped because a company of this size often
+      // has only one person holding offer.approve. `approved_by` still records
+      // who approved, so an offer approved by its own author is visible in the
+      // record rather than prevented.
+      if (can('offer.approve')) {
         actions.push({ to: 'approved', label: 'Approve' }, { to: 'draft', label: 'Send back' })
       }
       break

@@ -23,10 +23,9 @@ possibly real email. So:
   leave it alone.
 - Use `@example.test` addresses for anyone you invent, never a real inbox.
 
-**You need two accounts.** One of the steps — approving an offer — deliberately
-refuses to let the person who wrote the offer approve it. Testing alone, you will
-hit a wall at step 3.6. Ask a colleague who holds `offer.approve` to be your
-second pair of hands, or accept that you cannot complete that one step.
+**One account is enough.** Approving an offer used to refuse the person who
+drafted it; since September 2026 the author may approve their own offer, so you
+can run this whole guide alone. Who approved is still recorded on the offer.
 
 **What to have open:** the app, and a notepad for step numbers that misbehave.
 
@@ -237,19 +236,17 @@ Then move them along, one button at a time:
 `Save interview` → `Write scorecard` → `Submit scorecard`.
 ✅ Scorecards stay hidden from other interviewers until submitted.
 
-### 3.6 The offer — where you need a second person
+### 3.6 The offer
 
 **Interviews & Offer** tab → `Prepare offer` → `Draft offer` → fill salary,
 currency, start date, employment type → `Save terms` → `Submit for approval`.
 
 ✅ An **offer strip** shows where you are:
 `01 Drafted → 02 In approval → 03 Approved → 04 Extended → 05 Accepted`
-✅ You should see: *"You drafted this offer, so you cannot approve it — someone
-with offer approval has to."*
 
-**Now your colleague signs in** and presses `Approve`.
+Press `Approve` yourself — you drafted it, and that is now allowed.
 
-Back to you: `Mark as extended` → `Candidate accepted`.
+Then `Mark as extended` → `Candidate accepted`.
 
 ✅ The strip reaches `05 Accepted`.
 
@@ -431,7 +428,12 @@ order, so do not delete by hand from the database.
 - **`office` is not a person.** In the imported data, 42 items are held by
   "office" — a location. The import deliberately refuses to guess a person from
   it.
-- **You cannot approve your own offer.** By design (step 3.6).
+- **You can now approve your own offer.** This was deliberately forbidden until
+  September 2026; the rule was dropped because one person often holds
+  `offer.approve` alone. `offers.approved_by` still records who approved.
+- **Payroll still keeps the two roles apart.** The person who prepares a payroll
+  period cannot approve it. That control was left in place — only offers
+  changed.
 - **The попис — the annual count — does not exist yet.** It is the next slice of
   work. Nothing in this guide tests it.
 

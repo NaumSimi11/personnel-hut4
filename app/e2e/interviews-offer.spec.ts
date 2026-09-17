@@ -173,11 +173,14 @@ test('interview → blind scorecards → offer approved by someone else → acce
   await expect(offer.locator('.offer-head .badge')).toHaveText('draft')
   await offer.getByRole('button', { name: 'Submit for approval' }).click()
   await expect(offer.locator('.offer-head .badge')).toHaveText('in approval')
-  await expect(offer.getByRole('button', { name: 'Approve' })).toHaveCount(0)
-  await expect(offer).toContainText('cannot approve')
+  // Since migration 0046 the author may approve their own offer: a company this
+  // size often has one person holding offer.approve, and the split rule stopped
+  // the offer moving rather than adding a second pair of eyes.
+  await expect(offer.getByRole('button', { name: 'Approve' })).toHaveCount(1)
 
-  // Authorship is immutable (server-set), so hand-off means: withdraw mine,
-  // then the colleague drafts theirs (seeded as them, already in approval).
+  // The colleague's path still matters, so exercise it: withdraw this one and
+  // let the colleague's offer (seeded as them, already in approval) carry on.
+  // Authorship is immutable — it is set by the server on insert.
   await offer.getByRole('button', { name: 'Withdraw offer' }).click()
   await answerReason(page, 'Colleague will own this offer')
   await expect(offer.getByText('Previous offers (1)')).toBeVisible()

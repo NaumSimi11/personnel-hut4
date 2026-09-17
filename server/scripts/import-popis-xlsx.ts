@@ -20,6 +20,7 @@ import zlib from 'node:zlib'
 import { createClient } from '@supabase/supabase-js'
 import { parseSheet, resolveHolder } from '../../shared/popisImport.js'
 import { parseRowCells, unescapeXml } from '../src/popisXlsxCells.js'
+import { summarizeWrites, writeAsset } from '../src/popisAssetWrite.js'
 
 // ----------------------------------------------------------------- xlsx
 
@@ -88,6 +89,35 @@ function db() {
   return createClient(url, key, { auth: { persistSession: false, autoRefreshToken: false } })
 }
 
+/** Adapts a Supabase client to the small AssetStore interface `writeAsset` tests against. */
+function supabaseStore(client) {
+  return {
+    async insertAsset(row) {
+      const { data, error } = await client.from('assets').insert(row).select('id').single()
+      return error ? { id: null, error: { code: error.code, message: error.message } } : { id: data.id, error: null }
+    },
+    async findAssetByTag(companyId, assetTag) {
+      const { data } = await client
+        .from('assets')
+        .select('id')
+        .eq('company_id', companyId)
+        .eq('asset_tag', assetTag)
+        .maybeSingle()
+      return data ? { id: data.id } : null
+    },
+    async insertAssignment(assetId, personId) {
+      const { error } = await client
+        .from('asset_assignments')
+        .insert({ asset_id: assetId, person_id: personId, issued_at: new Date().toISOString() })
+      return { error: error ? { message: error.message } : null }
+    },
+    async markAssigned(assetId) {
+      const { error } = await client.from('assets').update({ status: 'assigned' }).eq('id', assetId)
+      return { error: error ? { message: error.message } : null }
+    },
+  }
+}
+
 async function read(file, out) {
   const files = readZip(fs.readFileSync(file))
   const strings = sharedStrings(files)
@@ -129,7 +159,7 @@ async function read(file, out) {
 
 async function apply(reviewFile, commit) {
   const review = JSON.parse(fs.readFileSync(reviewFile, 'utf8'))
-  const client = db()
+  const store = supabaseStore(db())
 
   const unresolved = review.sheets.flatMap((s) => s.items.filter((i) => i.holder.kind === 'unresolved'))
   if (unresolved.length) {
@@ -140,8 +170,7 @@ async function apply(reviewFile, commit) {
     throw new Error(`Refusing: no company matched for sheet(s) ${noCompany.map((s) => s.sheet).join(', ')}. Fix companyId in the review file.`)
   }
 
-  let created = 0
-  let assigned = 0
+  const results = []
   for (const sheet of review.sheets) {
     for (const [index, item] of sheet.items.entries()) {
       // A sheet row without a code still needs a unique tag within its company.
@@ -152,38 +181,36 @@ async function apply(reviewFile, commit) {
       if (item.holder.kind === 'person' && item.holder.atCompany) noteParts.push(`Used at ${item.holder.atCompany}`)
       noteParts.push(`Imported from ${path.basename(review.source)} (${sheet.sheet})`)
 
-      const row = {
+      const asset = {
         company_id: sheet.companyId,
         asset_tag: tag,
         type_key: item.typeKey,
         model: item.model,
-        status: item.holder.kind === 'person' ? 'assigned' : 'available',
         note: noteParts.join(' · ').slice(0, 500),
       }
+      const personId = item.holder.kind === 'person' ? item.holder.personId : null
+
       if (!commit) {
-        process.stdout.write(`would create ${sheet.sheet} ${row.asset_tag} ${row.type_key} "${row.model}" (${row.status})\n`)
-        created++
-        if (item.holder.kind === 'person') assigned++
+        process.stdout.write(`would create ${sheet.sheet} ${asset.asset_tag} ${asset.type_key} "${asset.model}" (${personId ? 'assigned' : 'available'})\n`)
+        results.push({ outcome: 'created', assigned: personId !== null })
         continue
       }
-      const { data: asset, error } = await client.from('assets').insert(row).select('id').single()
-      if (error) {
-        process.stdout.write(`FAILED ${sheet.sheet} ${row.asset_tag}: ${error.message}\n`)
-        continue
+
+      const result = await writeAsset(store, { asset, personId })
+      if (result.outcome === 'failed') {
+        process.stdout.write(`FAILED ${sheet.sheet} ${asset.asset_tag}: ${result.message}\n`)
+      } else if (result.warning) {
+        process.stdout.write(`${result.outcome} ${sheet.sheet} ${asset.asset_tag} but ${result.warning}\n`)
       }
-      created++
-      if (item.holder.kind === 'person') {
-        const { error: aErr } = await client.from('asset_assignments').insert({
-          asset_id: asset.id,
-          person_id: item.holder.personId,
-          issued_at: new Date().toISOString(),
-        })
-        if (aErr) process.stdout.write(`FAILED assignment ${row.asset_tag}: ${aErr.message}\n`)
-        else assigned++
-      }
+      results.push(result)
     }
   }
-  process.stdout.write(`\n${commit ? 'Created' : 'Would create'} ${created} assets, ${assigned} assigned to a person.\n`)
+
+  const summary = summarizeWrites(results)
+  const outcomes = commit ? `, reconciled ${summary.reconciled}, failed ${summary.failed}` : ''
+  process.stdout.write(
+    `\n${commit ? 'Created' : 'Would create'} ${summary.created} assets${outcomes}, ${summary.assigned} assigned to a person.\n`,
+  )
 }
 
 const [, , mode, file, ...rest] = process.argv

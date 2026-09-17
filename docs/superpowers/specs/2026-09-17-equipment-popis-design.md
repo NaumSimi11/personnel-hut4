@@ -427,8 +427,9 @@ staying in the same person's bag.
 One thing the maintainer should settle before the report is built, which does
 not block starting:
 
-**The registered legal names** for the report header — `СИНАМИ ДООЕЛ Скопје` and
-`Хут4 Капитал ДООЕЛ Скопје` come from the sheets, but Liquiditas, Praedium,
-Snowball and Hut4's own remain unknown. `companies` holds a display name; the
-report needs the registered one, so this wants a nullable `legal_name` column
-filled in per company, falling back to the display name until it is.
+**The registered legal names** for the report header. `companies.legal_name`
+already exists — migration 0011 added it, and migration 0042 already prints it
+on the equipment handover form — so nothing needs building. What is missing is
+the values: `СИНАМИ ДООЕЛ Скопје` and `Хут4 Капитал ДООЕЛ Скопје` can be read
+off the sheets, but Liquiditas, Praedium and Snowball must come from the
+maintainer. The report falls back to the display name until they are filled in.

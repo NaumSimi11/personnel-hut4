@@ -12,6 +12,7 @@ import {
   ownerLabel,
   type AssignmentAction,
 } from '@/lib/equipment'
+import { assetLine } from '@/lib/assetRegister'
 
 /**
  * Equipment across the holding (plan 049): every asset the viewer may see —
@@ -68,8 +69,25 @@ const shown = computed(() => {
   const list = filter.value === '' ? assets.value : filter.value === POOL ? assets.value.filter((a) => a.company_id === null) : assets.value.filter((a) => a.company_id === filter.value)
   return [...list].sort((a, b) => a.asset_tag.localeCompare(b.asset_tag))
 })
-const typeLabel = (key: string) => types.value.find((t) => t.key === key)?.label ?? key
 const openAssignment = (a: Asset) => a.asset_assignments.find((x) => x.returned_at === null) ?? null
+const typeNames = computed(() => Object.fromEntries(types.value.map((t) => [t.key, t.label])))
+// Only assets with a live (unreturned) assignment have a holder; that name comes
+// off the row's own join, so the register reads right even for someone the
+// employment-periods query has already dropped (a departure mid-handover).
+const holderNames = computed(() =>
+  Object.fromEntries(
+    assets.value.flatMap((a) => {
+      const open = openAssignment(a)
+      return open ? [[open.person_id, open.person?.full_name ?? 'someone']] : []
+    }),
+  ),
+)
+/** The holding-wide register line: category · company · model · holder, "magacin" when unheld. */
+const registerLine = (a: Asset) =>
+  assetLine(
+    { type_key: a.type_key, company_id: a.company_id, holder_id: openAssignment(a)?.person_id ?? null, model: a.model },
+    { types: typeNames.value, companies: companyNames.value, holders: holderNames.value },
+  )
 function canFor(a: Asset): (cap: string) => boolean {
   return (cap) => (a.company_id === null ? auth.canAnywhere(cap) : auth.can(a.company_id, cap))
 }
@@ -283,11 +301,12 @@ onMounted(load)
         <div v-if="!shown.length" class="empty">No assets here.</div>
         <div v-for="a in shown" :key="a.id" class="asset-row" :class="a.status" :data-testid="`asset-${a.asset_tag}`">
           <div class="row-text">
-            <strong>{{ a.asset_tag }} <span class="muted">· {{ typeLabel(a.type_key) }}<template v-if="a.model"> · {{ a.model }}</template></span></strong>
+            <strong>{{ a.asset_tag }}</strong>
+            <small class="register-line">{{ registerLine(a) }}</small>
             <small>
               <span class="badge" :class="a.company_id === null ? 'blue' : ''">{{ ownerLabel(a.company_id, companyNames) }}</span>
               {{ assetStatusLabel(a.status) }}
-              <template v-if="openAssignment(a)"> · {{ openAssignment(a)!.person?.full_name ?? 'someone' }}<template v-if="openAssignment(a)!.issued_at"> (issued {{ openAssignment(a)!.issued_at!.slice(0, 10) }})</template></template>
+              <template v-if="openAssignment(a)?.issued_at"> · issued {{ openAssignment(a)!.issued_at!.slice(0, 10) }}</template>
               <template v-if="a.serial_number"> · S/N {{ a.serial_number }}</template>
               <template v-if="a.condition"> · {{ a.condition }}</template>
             </small>
@@ -317,6 +336,7 @@ onMounted(load)
 .row-text { flex: 1; min-width: 220px; }
 .row-text strong { display: block; font-size: 12px; font-weight: 550; }
 .row-text small { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; font-size: 11px; color: var(--muted); margin-top: 4px; }
+.register-line { display: block; }
 .muted { color: var(--muted); font-weight: 400; }
 .actions { display: flex; gap: 7px; flex-wrap: wrap; }
 .small-btn { font-size: 11px; padding: 7px 11px; }

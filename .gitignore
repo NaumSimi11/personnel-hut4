@@ -14,3 +14,7 @@ playwright-report/
 .fn-payload*.json
 server/public/
 supabase/.temp/
+
+# The holding equipment workbook: real names and assets, never committed.
+Spisok na oprema*.xlsx
+popis-import-review*.json

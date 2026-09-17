@@ -73,9 +73,20 @@ alter table public.companies add column if not exists legal_name text;
 
 - [ ] **Step 2: Apply it**
 
-Run: `supabase/apply-migrations.sh --yes`
+**Do not use `supabase/apply-migrations.sh`.** It loops every migration from
+0001 with no applied-migrations tracking, and 0001 is not idempotent, so against
+an existing database it dies on "relation companies already exists" long before
+reaching this file. It is a fresh-database tool.
 
-Expected: applies cleanly. If it reports the migration as already applied, stop — the number has been used and the file must be renumbered.
+Apply this one file directly:
+
+```bash
+cd /Users/naum/Downloads/files
+set -a && . ./.env.local && set +a
+psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 -f supabase/migrations/0045_popis_register.sql
+```
+
+Expected: `INSERT 0 2` (or `INSERT 0 0` if re-run) and `ALTER TABLE`.
 
 - [ ] **Step 3: Verify the types exist**
 

@@ -180,50 +180,87 @@ which company owns it, and who holds it.
 ✅ `Add a note` → `Service or repair`, "Battery replaced under warranty" → the
 line appears in the history against Ana's name, because she held it at the time.
 
-### 2.4 Hand it to somebody else
+### 2.4 Take it back, then hand it out
 
-Still on `TEST-L01`, press `Hand it to someone else`.
+Equipment never goes from one employee straight to another. It comes back to
+magacin first, and goes out again. Two acts, two forms. The app will not let you
+skip the middle.
 
-✅ The list of who it can go to only contains people **currently employed by the
-company that owns it**, and Ana — who already holds it — is not in it.
-✅ Pick `TEST Marko Petrov`, condition `As issued`, reason `Swapping machines` →
-`Review and sign`.
-✅ A dialog fills the screen with the statement you are signing: *"I confirm that
-I am handing over the equipment listed on this form on behalf of …"*. Type your
-name → `Sign`.
+Still on `TEST-L01` (Ana holds it), press `Ask for it back`.
 
-Now check that **nothing has moved yet**:
+✅ There is no person picker — you are not choosing where it goes, only asking
+for it back.
+✅ Condition `As issued`, reason `Needed for a new starter` → `Review and sign`.
+✅ The dialog says what you are signing: *"I confirm that I am asking for the
+equipment listed on this form back on behalf of …"*. Type your name → `Sign`.
 
-✅ The page says it is waiting on a signature and names both people.
-✅ `Held by` still reads **Ana**. This is the point — an asset does not change
-hands on one person's word.
-✅ Ana is notified that it is being handed to Marko, and a **return form** is
-filed under her documents.
-✅ Marko is notified that you are handing him the laptop.
+Nothing has moved yet:
 
-Try to sign it yourself:
+✅ The page says it is waiting on a signature and names Ana.
+✅ `Held by` still reads **Ana**.
+✅ Ana is notified, and gets an email if she has a work address on file.
 
-✅ Refused — *"You started this handover — the other side has to sign for it."*
+Sign in as **Ana** → `/me` → Equipment.
 
-Now sign in as **Marko** → `/me` → Equipment.
+✅ The row reads `TEST-L01 — <your name> is asking for this back`, with
+`Confirm I handed it over` and `I still have it` — not "accept", because she is
+not accepting anything, she is confirming she gave it up.
+✅ `Confirm I handed it over` → the statement is *"I confirm that I have handed
+back the equipment listed on this form…"* → sign.
+✅ A **return form** is filed under Ana's documents, listing what she handed over.
 
-✅ A row reads `TEST-L01 — <your name> is handing this to you` with
-`Accept it` and `I did not get it`.
-✅ `Accept it` → the dialog shows a different statement: *"I confirm that I have
-received the equipment listed on this form, that I have checked its condition…"*
-→ sign.
-✅ Back on the asset page, `Held by` is now **Marko**, and the history shows
-Ana's assignment closed and Marko's opened on the same day.
-✅ Marko's documents now carry a **handover form** listing the laptop.
+Back on the asset page:
 
-Then try the refusal path with the other laptop:
+✅ `Held by` now reads **magacin**, and the button has changed to
+`Hand it to someone`.
 
-✅ Start a handover, sign in as the receiver, `I did not get it` with a reason →
-the asset stays where it was, and whoever started it is told the reason.
-✅ `Withdraw` before the other side looks → nothing moved, and the row is gone
-from their list.
+Now hand it out:
 
-### 2.5 Prove the pool rule
+✅ `Hand it to someone` → the list has people **currently employed by the company
+that owns it**. Pick `TEST Marko Petrov` → `Review and sign` → the statement is
+now *"I confirm that I am handing over the equipment…"* → sign.
+✅ Sign in as Marko → `/me` → `Accept it` → *"I confirm that I have received the
+equipment… and that I will return it on request or when I leave."*
+✅ `Held by` is now **Marko**, and a **handover form** is filed under his documents.
+
+Try to skip the middle:
+
+✅ While Marko holds it, there is no `Hand it to someone` button at all — only
+`Ask for it back`.
+
+### 2.5 When the person has no login
+
+Some people in the app have no account. Find an asset held by one of them (or
+try it with any employee who has never signed in).
+
+✅ `Ask for it back` → before you sign, the form warns you: they have no account,
+so somebody else in IT or HR signs it in on the company's behalf.
+✅ Sign it, then sign in as a **different** HR person → they can receive it.
+✅ The form says *"I confirm that I have received the equipment on behalf of
+<company>"* — it does **not** pretend the holder signed.
+
+### 2.6 What changed hands
+
+From `/equipment`, press `What changed hands`.
+
+✅ Three tabs: `Waiting on a signature`, `No signed paper copy`, `Everything`.
+✅ Your round trip above shows as **two** rows — `Ana → magacin` and
+`magacin → Marko` — newest first.
+✅ Anything you signed in the app but never printed, signed by hand and uploaded
+back shows under `No signed paper copy`, in amber.
+
+### 2.7 Find the ones the books never matched
+
+On `/equipment`, open the holder filter.
+
+✅ `Kept somewhere, not with a person` — things the Excel put in an office, a
+car, a server, or against the company itself. These are recorded correctly.
+✅ `Books name a person we have not matched` — a much shorter list. These are
+real people holding real kit that the app does not know about. Hand each one out
+properly and the note disappears.
+✅ `In magacin` no longer includes either — it means genuinely nobody has it.
+
+### 2.8 Prove the pool rule
 
 Try to reserve `TEST-P01` (holding pool) for someone at a **different** company.
 

@@ -53,3 +53,33 @@ export function assetNumbers(asset: {
   const inventory = (asset.inventory_number ?? '').trim()
   return inventory ? `${asset.asset_tag} · инв. ${inventory}` : asset.asset_tag
 }
+
+/** The select's value when the holder is not a person in this system. */
+export const OTHER_HOLDER = '__other'
+/** The select's value for putting the asset back in the warehouse. */
+export const NOBODY = '__nobody'
+
+/**
+ * What a holder selection means.
+ *
+ * Equipment does not only go to people. The imported books hand assets to
+ * "office", "office Struga", "sluzbeno vozilo" and a trademark, and name
+ * holders this system has no person for — initials, or someone at a company
+ * that is not in the app. Forcing that into a person picker is what left 59
+ * assets reading as though they sat in the warehouse, free to hand out.
+ */
+export type HolderChoice =
+  | { readonly kind: 'person'; readonly personId: string }
+  | { readonly kind: 'other'; readonly text: string }
+  | { readonly kind: 'nobody' }
+  | { readonly kind: 'invalid'; readonly message: string }
+
+export function holderChoice(selected: string, otherText: string): HolderChoice {
+  if (selected === NOBODY) return { kind: 'nobody' }
+  if (selected === OTHER_HOLDER) {
+    const text = otherText.trim()
+    return text ? { kind: 'other', text } : { kind: 'invalid', message: 'Say who or what has it.' }
+  }
+  if (!selected) return { kind: 'invalid', message: 'Choose who it is for.' }
+  return { kind: 'person', personId: selected }
+}

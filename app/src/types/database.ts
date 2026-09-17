@@ -473,7 +473,9 @@ export type Database = {
           condition: string | null
           created_at: string
           custom: Json
+          holder_note: string | null
           id: string
+          inventory_number: string | null
           location_id: string | null
           model: string | null
           note: string | null
@@ -488,7 +490,9 @@ export type Database = {
           condition?: string | null
           created_at?: string
           custom?: Json
+          holder_note?: string | null
           id?: string
+          inventory_number?: string | null
           location_id?: string | null
           model?: string | null
           note?: string | null
@@ -503,7 +507,9 @@ export type Database = {
           condition?: string | null
           created_at?: string
           custom?: Json
+          holder_note?: string | null
           id?: string
+          inventory_number?: string | null
           location_id?: string | null
           model?: string | null
           note?: string | null

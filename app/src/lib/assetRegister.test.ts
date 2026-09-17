@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { assetLine, assetNumbers } from './assetRegister'
+import { assetLine, assetNumbers, holderChoice, NOBODY, OTHER_HOLDER } from './assetRegister'
 
 const LOOKUPS = {
   types: { laptop: 'Laptop', vehicle: 'Vehicles' },
@@ -85,5 +85,36 @@ describe('assetNumbers', () => {
 
   it('shows the tag alone when the sheet carried no inventory number', () => {
     expect(assetNumbers({ asset_tag: 'A001', inventory_number: null })).toBe('A001')
+  })
+})
+
+describe('holderChoice', () => {
+  it('reads a chosen person as an assignment', () => {
+    expect(holderChoice('p1', '')).toEqual({ kind: 'person', personId: 'p1' })
+  })
+
+  it('reads Other plus text as something to record, not a person', () => {
+    // "office", "sluzbeno vozilo", "IL" — the books hold plenty that is not a
+    // person in this system, and the register has to be able to say so.
+    expect(holderChoice(OTHER_HOLDER, 'office Struga')).toEqual({ kind: 'other', text: 'office Struga' })
+  })
+
+  it('trims what was typed', () => {
+    expect(holderChoice(OTHER_HOLDER, '  office  ')).toEqual({ kind: 'other', text: 'office' })
+  })
+
+  it('asks for the text when Other is chosen and nothing is typed', () => {
+    expect(holderChoice(OTHER_HOLDER, '   ')).toEqual({
+      kind: 'invalid',
+      message: 'Say who or what has it.',
+    })
+  })
+
+  it('asks for a choice when nothing is selected', () => {
+    expect(holderChoice('', '')).toEqual({ kind: 'invalid', message: 'Choose who it is for.' })
+  })
+
+  it('reads the empty option as putting it back in the warehouse', () => {
+    expect(holderChoice(NOBODY, '')).toEqual({ kind: 'nobody' })
   })
 })

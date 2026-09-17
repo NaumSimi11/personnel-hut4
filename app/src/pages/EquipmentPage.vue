@@ -12,7 +12,7 @@ import {
   ownerLabel,
   type AssignmentAction,
 } from '@/lib/equipment'
-import { assetLine, assetNumbers } from '@/lib/assetRegister'
+import { assetLine, assetNumbers, holderChoice, NOBODY, OTHER_HOLDER } from '@/lib/assetRegister'
 
 /**
  * Equipment across the holding (plan 049): every asset the viewer may see —
@@ -95,6 +95,7 @@ function canFor(a: Asset): (cap: string) => boolean {
 }
 const actionsFor = (a: Asset): AssignmentAction[] => assignmentActions(a, openAssignment(a), canFor(a))
 /** Who a given asset may go to: anyone employed for the pool, the company's people for a company asset. */
+const reserveOther = ref('')
 const candidatesFor = (a: Asset): Person[] => (a.company_id === null ? people.value : people.value.filter((p) => p.company_ids.includes(a.company_id as string)))
 
 async function load(): Promise<void> {
@@ -184,6 +185,8 @@ function act(asset: Asset, action: AssignmentAction): void {
   if (action.key === 'reserve') {
     reserving.value = asset
     reservePersonId.value = candidatesFor(asset)[0]?.id ?? ''
+    reserveOther.value = asset.holder_note ?? ''
+    if (asset.holder_note) reservePersonId.value = OTHER_HOLDER
     return
   }
   if (action.key === 'return') {
@@ -205,12 +208,31 @@ function act(asset: Asset, action: AssignmentAction): void {
 }
 
 async function confirmReserve(): Promise<void> {
-  if (!reserving.value || !reservePersonId.value) {
-    error.value = 'Choose who it is for.'
+  if (!reserving.value) return
+  const asset = reserving.value
+  const choice = holderChoice(reservePersonId.value, reserveOther.value)
+
+  if (choice.kind === 'invalid') {
+    error.value = choice.message
     return
   }
-  const asset = reserving.value
-  const ok = await run('Reserve', () => supabase.rpc('reserve_asset', { p_asset_id: asset.id, p_person_id: reservePersonId.value }))
+  // "Other" and "nobody" are not assignments — there is no person to reserve
+  // for. They record what the register should say instead, so an asset someone
+  // has never reads as sitting in the warehouse.
+  if (choice.kind === 'other' || choice.kind === 'nobody') {
+    const holder_note = choice.kind === 'other' ? choice.text : null
+    const ok = await run('Record the holder', () =>
+      supabase.from('assets').update({ holder_note }).eq('id', asset.id),
+    )
+    if (ok) {
+      reserving.value = null
+      notice.value = holder_note
+        ? `${asset.asset_tag} is recorded as held by ${holder_note}.`
+        : `${asset.asset_tag} is back in magacin.`
+    }
+    return
+  }
+  const ok = await run('Reserve', () => supabase.rpc('reserve_asset', { p_asset_id: asset.id, p_person_id: choice.personId }))
   if (ok) reserving.value = null
 }
 
@@ -272,16 +294,22 @@ onMounted(load)
         </form>
 
         <form v-if="reserving" class="form inline" novalidate @submit.prevent="confirmReserve">
-          <div class="form-title">Reserve {{ reserving.asset_tag }} for</div>
+          <div class="form-title">Who has {{ reserving.asset_tag }}</div>
           <label>
-            <span>Person</span>
+            <span>Holder</span>
             <select id="reserve-person" v-model="reservePersonId">
               <option v-for="p in candidatesFor(reserving)" :key="p.id" :value="p.id">{{ p.full_name }}</option>
+              <option :value="OTHER_HOLDER">Other — not a person here…</option>
+              <option :value="NOBODY">Nobody — it is in magacin</option>
             </select>
+          </label>
+          <label v-if="reservePersonId === OTHER_HOLDER">
+            <span>What the books say</span>
+            <input id="reserve-other" v-model="reserveOther" maxlength="120" placeholder="office Struga, sluzbeno vozilo, initials…" />
           </label>
           <div class="form-actions">
             <button type="button" class="button secondary small-btn" :disabled="busy" @click="reserving = null">Cancel</button>
-            <button type="submit" class="button small-btn" :disabled="busy">Confirm reservation</button>
+            <button type="submit" class="button small-btn" :disabled="busy">{{ reservePersonId === OTHER_HOLDER || reservePersonId === NOBODY ? 'Record holder' : 'Confirm reservation' }}</button>
           </div>
         </form>
 

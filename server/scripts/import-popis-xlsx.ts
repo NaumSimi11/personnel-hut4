@@ -145,6 +145,65 @@ async function read(file, out) {
   process.stdout.write(`\nReview file written to ${out}. Correct it, then run "apply".\n`)
 }
 
+async function apply(reviewFile, commit) {
+  const review = JSON.parse(fs.readFileSync(reviewFile, 'utf8'))
+  const client = db()
+
+  const unresolved = review.sheets.flatMap((s) => s.items.filter((i) => i.holder.kind === 'unresolved'))
+  if (unresolved.length) {
+    process.stdout.write(`${unresolved.length} holder(s) are still unresolved; they import unassigned with the original text kept in the note.\n`)
+  }
+  const noCompany = review.sheets.filter((s) => !s.companyId)
+  if (noCompany.length) {
+    throw new Error(`Refusing: no company matched for sheet(s) ${noCompany.map((s) => s.sheet).join(', ')}. Fix companyId in the review file.`)
+  }
+
+  let created = 0
+  let assigned = 0
+  for (const sheet of review.sheets) {
+    for (const [index, item] of sheet.items.entries()) {
+      // A sheet row without a code still needs a unique tag within its company.
+      const tag = item.assetTag ?? `${sheet.sheet.replace(/\s+/g, '').toUpperCase()}-${String(index + 1).padStart(4, '0')}`
+      const noteParts = []
+      if (item.holder.kind === 'company') noteParts.push(`Held by ${item.holder.text}`)
+      if (item.holder.kind === 'unresolved') noteParts.push(`Holder from spreadsheet: "${item.holder.text}" (${item.holder.reason})`)
+      if (item.holder.kind === 'person' && item.holder.atCompany) noteParts.push(`Used at ${item.holder.atCompany}`)
+      noteParts.push(`Imported from ${path.basename(review.source)} (${sheet.sheet})`)
+
+      const row = {
+        company_id: sheet.companyId,
+        asset_tag: tag,
+        type_key: item.typeKey,
+        model: item.model,
+        status: item.holder.kind === 'person' ? 'assigned' : 'available',
+        note: noteParts.join(' · ').slice(0, 500),
+      }
+      if (!commit) {
+        process.stdout.write(`would create ${sheet.sheet} ${row.asset_tag} ${row.type_key} "${row.model}" (${row.status})\n`)
+        created++
+        if (item.holder.kind === 'person') assigned++
+        continue
+      }
+      const { data: asset, error } = await client.from('assets').insert(row).select('id').single()
+      if (error) {
+        process.stdout.write(`FAILED ${sheet.sheet} ${row.asset_tag}: ${error.message}\n`)
+        continue
+      }
+      created++
+      if (item.holder.kind === 'person') {
+        const { error: aErr } = await client.from('asset_assignments').insert({
+          asset_id: asset.id,
+          person_id: item.holder.personId,
+          issued_at: new Date().toISOString(),
+        })
+        if (aErr) process.stdout.write(`FAILED assignment ${row.asset_tag}: ${aErr.message}\n`)
+        else assigned++
+      }
+    }
+  }
+  process.stdout.write(`\n${commit ? 'Created' : 'Would create'} ${created} assets, ${assigned} assigned to a person.\n`)
+}
+
 const [, , mode, file, ...rest] = process.argv
 const flag = (name, fallback) => {
   const i = rest.indexOf(name)
@@ -154,7 +213,10 @@ const flag = (name, fallback) => {
 if (mode === 'read') {
   if (!file) throw new Error('Usage: import-popis-xlsx.ts read <file.xlsx> [--out review.json]')
   await read(file, flag('--out', 'popis-import-review.json'))
+} else if (mode === 'apply') {
+  if (!file) throw new Error('Usage: import-popis-xlsx.ts apply <review.json> [--commit]')
+  await apply(file, rest.includes('--commit'))
 } else {
-  process.stdout.write('Usage: import-popis-xlsx.ts read <file.xlsx> [--out review.json]\n')
+  process.stdout.write('Usage:\n  import-popis-xlsx.ts read  <file.xlsx> [--out review.json]\n  import-popis-xlsx.ts apply <review.json> [--commit]\n')
   process.exit(1)
 }

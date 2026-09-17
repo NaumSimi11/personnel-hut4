@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { dayHeadline, dayStanding, leaveStanding, type DayKind } from '@/lib/leaveDay'
 import { computed, onMounted, ref, watch } from 'vue'
 import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/stores/auth'
@@ -118,15 +119,18 @@ const selectedKind = computed(() => (selected.value ? dayKind(selected.value, ho
 const selectedLeaves = computed(() =>
   selected.value ? entriesOn({ iso: selected.value, day: 0, inMonth: true, weekend: selectedKind.value === 'weekend' }) : [],
 )
-const kindText: Record<string, { title: string; sub: string }> = {
-  working: { title: 'Working day', sub: 'A normal day' },
-  weekend: { title: 'Weekend', sub: 'Not a working day' },
-  holiday: { title: 'Public holiday', sub: 'Does not count as leave' },
-  closure: { title: 'Company closure', sub: 'Does not count as leave' },
-}
+// A day already past is described as such. "Working day · A normal day" on last
+// Thursday reads as the app describing the calendar, not what happened.
+const selectedStanding = computed(() => (selected.value ? dayStanding(selected.value, todayIso()) : 'today'))
+const kindLine = computed(() => dayHeadline(selectedKind.value as DayKind, selectedStanding.value))
 function dayTitle(iso: string): string {
   return new Date(`${iso}T00:00:00Z`).toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'UTC' })
 }
+const detail = ref<TeamRow | null>(null)
+function todayIso(): string { return new Date().toISOString().slice(0, 10) }
+/** Where this leave stands TODAY, not on the day being looked at. */
+function standingOf(r: TeamRow) { return leaveStanding({ start: r.start_date, end: r.end_date }, todayIso()) }
+
 function canOpen(r: TeamRow): boolean {
   return r.person_id === auth.personId || r.leave_type_key !== 'away'
 }
@@ -284,25 +288,32 @@ onMounted(load)
               <svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M4 4l8 8M12 4l-8 8" /></svg>
             </button>
           </div>
-          <div class="rail-kind" :class="selectedKind">
+          <div class="rail-kind" :class="[selectedKind, selectedStanding]">
             <svg v-if="selectedKind === 'holiday' || selectedKind === 'closure'" width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 2v3M3.8 3.8l2 2M12.2 3.8l-2 2M2 8h3M11 8h3M8 8l4.5 6H3.5z" /></svg>
             <svg v-else-if="selectedKind === 'weekend'" width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="3" width="12" height="11" rx="2" /><path d="M2 7h12M5 2v2M11 2v2M6 10l4 2M10 10l-4 2" /></svg>
             <svg v-else width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="8" cy="8" r="3" /><path d="M8 1.5v2M8 12.5v2M1.5 8h2M12.5 8h2M3.4 3.4l1.4 1.4M11.2 11.2l1.4 1.4M3.4 12.6l1.4-1.4M11.2 4.8l1.4-1.4" /></svg>
             <span>
-              <b>{{ holidays[selected] || closures[selected] || kindText[selectedKind].title }}</b>
-              <small>{{ selectedKind === 'holiday' ? 'Public holiday · does not count as leave' : selectedKind === 'closure' ? 'Company closure · does not count as leave' : kindText[selectedKind].sub }}</small>
+              <b>{{ holidays[selected] || closures[selected] || kindLine.title }}</b>
+              <small>{{ selectedKind === 'holiday' ? 'Public holiday · does not count as leave' : selectedKind === 'closure' ? 'Company closure · does not count as leave' : kindLine.sub }}</small>
             </span>
           </div>
           <div class="rail-count">
             <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="6" cy="5.5" r="2.5" /><path d="M1.5 13.5c0-2.5 2-4 4.5-4s4.5 1.5 4.5 4M11 4a2.2 2.2 0 0 1 0 4.4M12.5 9.6c1.4.5 2 1.7 2 3.4" /></svg>
             <template v-if="selectedLeaves.length">
-              <span><b>{{ selectedLeaves.length }}</b> {{ selectedLeaves.length === 1 ? 'person is' : 'people are' }} away</span>
+              <span>
+                <b>{{ selectedLeaves.length }}</b>
+                {{ selectedLeaves.length === 1 ? 'person' : 'people' }}
+                {{ selectedStanding === 'past' ? (selectedLeaves.length === 1 ? 'was' : 'were') : (selectedLeaves.length === 1 ? 'is' : 'are') }}
+                away
+              </span>
             </template>
-            <span v-else-if="selectedKind !== 'working'">Nobody is away — not a working day.</span>
-            <span v-else>Nobody is away — a full team.</span>
+            <span v-else-if="selectedKind !== 'working'">Nobody away — not a working day.</span>
+            <span v-else>Nobody away — a full team.</span>
           </div>
           <ul class="rail-people">
-            <li v-for="r in selectedLeaves" :key="r.id" :class="tone(r)">
+            <li v-for="r in selectedLeaves" :key="r.id" :class="[tone(r), 'clickable']" tabindex="0" role="button"
+                :aria-label="`Open ${r.full_name}'s leave`"
+                @click="detail = r" @keydown.enter="detail = r" @keydown.space.prevent="detail = r">
               <i class="dot" aria-hidden="true"></i>
               <div class="who">
                 <router-link v-if="canOpen(r)" :to="{ name: 'person', params: { personId: r.person_id } }"><b>{{ r.full_name }}</b></router-link>
@@ -310,8 +321,8 @@ onMounted(load)
                 <small>{{ typeLabel(r) }}{{ r.status === 'pending' ? ' · pending' : '' }}{{ r.cancellation_asked ? ' · asks to cancel' : '' }}{{ many ? ` · ${nameOf(r.company_id)}` : '' }}</small>
                 <small>{{ shortDate(r.start_date) }} → {{ shortDate(r.end_date) }} · {{ r.working_days }} working {{ Number(r.working_days) === 1 ? 'day' : 'days' }}</small>
                 <span class="progress">
-                  <span class="bar" aria-hidden="true"><i :style="{ width: `${progress(r).pct}%` }"></i></span>
-                  <small>{{ progress(r).text }}</small>
+                  <span class="bar" aria-hidden="true"><i :style="{ width: `${standingOf(r) === 'finished' ? 100 : progress(r).pct}%` }"></i></span>
+                  <small>{{ standingOf(r) === 'finished' ? `taken in full · ${r.working_days} working ${Number(r.working_days) === 1 ? 'day' : 'days'}` : progress(r).text }}</small>
                 </span>
                 <small v-if="r.note" class="note">“{{ r.note }}”</small>
               </div>
@@ -320,6 +331,35 @@ onMounted(load)
         </aside>
       </div>
     </div>
+
+    <dialog v-if="detail" class="leave-detail" open @click.self="detail = null">
+      <div class="detail-card">
+        <div class="detail-head">
+          <div>
+            <strong>{{ detail.full_name }}</strong>
+            <small>{{ typeLabel(detail) }}{{ many ? ` · ${nameOf(detail.company_id)}` : '' }}</small>
+          </div>
+          <button class="button secondary small-btn" type="button" @click="detail = null">Close</button>
+        </div>
+        <dl class="detail-facts">
+          <div><dt>From</dt><dd>{{ detail.start_date }}</dd></div>
+          <div><dt>To</dt><dd>{{ detail.end_date }}</dd></div>
+          <div><dt>Working days</dt><dd>{{ detail.working_days }}</dd></div>
+          <div>
+            <dt>Standing today</dt>
+            <dd>{{ standingOf(detail) === 'finished' ? 'Taken in full' : standingOf(detail) === 'running' ? 'Away now' : 'Not started' }}</dd>
+          </div>
+          <div><dt>Status</dt><dd>{{ detail.status }}{{ detail.cancellation_asked ? ' · asks to cancel' : '' }}</dd></div>
+          <div v-if="selected"><dt>On {{ selected }}</dt><dd>{{ progress(detail).text }}</dd></div>
+        </dl>
+        <p v-if="detail.note" class="detail-note">“{{ detail.note }}”</p>
+        <router-link
+          v-if="canOpen(detail)"
+          class="button small-btn"
+          :to="{ name: 'person', params: { personId: detail.person_id } }"
+        >Open their record</router-link>
+      </div>
+    </dialog>
   </div>
 </template>
 
@@ -349,7 +389,7 @@ onMounted(load)
 .key.mine { background: transparent; box-shadow: inset 0 0 0 2px var(--green-bright); }
 
 .layout { display: grid; grid-template-columns: 1fr; }
-.layout.open { grid-template-columns: minmax(0, 1fr) 300px; }
+.layout.open { grid-template-columns: minmax(0, 1fr) minmax(280px, 340px); gap: 18px; }
 .grid { display: grid; grid-template-columns: repeat(7, 1fr); align-content: start; }
 .dow { font-size: 10px; text-transform: uppercase; letter-spacing: 0.1em; color: var(--muted); padding: 10px 10px 8px; background: #fafbf8; font-weight: 650; }
 .day { min-height: 112px; padding: 8px 8px 10px; border-top: 1px solid var(--line); border-left: 1px solid var(--line); font-size: 11px; cursor: pointer; transition: background 0.15s var(--ease), box-shadow 0.15s var(--ease); position: relative; }
@@ -392,6 +432,19 @@ onMounted(load)
 .rail-count { display: flex; align-items: center; gap: 7px; margin: 16px 0 0; color: var(--muted); font-size: 12.5px; }
 .rail-count b { color: var(--green); font-size: 15px; }
 .rail-people { list-style: none; margin: 13px 0 0; padding: 0; display: grid; gap: 6px; }
+.rail-people li.clickable { cursor: pointer; }
+.rail-people li.clickable:hover, .rail-people li.clickable:focus-visible { border-color: var(--green); background: #f7f9f5; }
+.rail-kind.past { opacity: 0.85; }
+.rail-kind.past b { color: #8a6d1f; }
+.leave-detail { position: fixed; inset: 0; width: 100%; height: 100%; max-width: none; max-height: none; border: 0; background: rgba(20, 28, 20, 0.35); display: grid; place-items: center; padding: 20px; z-index: 50; }
+.detail-card { background: #fff; border-radius: 14px; padding: 20px 22px; width: min(460px, 100%); display: grid; gap: 14px; box-shadow: 0 18px 50px rgba(20, 28, 20, 0.18); }
+.detail-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.detail-head strong { display: block; font-size: 15px; font-weight: 650; }
+.detail-head small { display: block; font-size: 11px; color: var(--muted); margin-top: 2px; }
+.detail-facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap: 12px; margin: 0; }
+.detail-facts dt { font-size: 10px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); }
+.detail-facts dd { margin: 3px 0 0; font-size: 12px; font-weight: 550; }
+.detail-note { margin: 0; font-size: 12px; color: var(--muted); font-style: italic; }
 .rail-people li { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 10px; border: 1px solid var(--line); border-radius: 8px; padding: 10px 11px; background: #fff; transition: border-color 0.18s var(--ease), background 0.18s var(--ease); }
 .rail-people li:hover { border-color: var(--green); background: #f4f8f3; }
 .rail-people .dot { width: 9px; height: 9px; margin-top: 5px; border-radius: 50%; background: #9aa39c; }
@@ -409,6 +462,12 @@ onMounted(load)
 .bar i { display: block; height: 100%; background: var(--green); border-radius: 3px; transition: width 0.3s var(--ease); }
 .rail-people li.amber .bar i { background: var(--amber); }
 .rail-people li.blue .bar i { background: #3f5f8f; }
+/* Below this the calendar and the rail each need the whole width; sharing it
+   left seven day columns and a list of names both too narrow to read. */
+@media (max-width: 1080px) {
+  .layout.open { grid-template-columns: 1fr; }
+  .rail { position: static; max-height: none; }
+}
 @media (max-width: 720px) {
   .layout.open { grid-template-columns: 1fr; }
   .rail { border-left: 0; }

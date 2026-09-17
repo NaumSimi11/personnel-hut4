@@ -136,7 +136,17 @@ onMounted(load)
 .page-sub { margin: 0; font-size: 12px; color: var(--muted); max-width: 560px; }
 .tabs-row { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; border-bottom: 1px solid var(--line); margin-bottom: 22px; flex-wrap: wrap; }
 .tabs-row > :last-child:not(.tabs) { margin-bottom: 8px; }
-.tabs { display: flex; gap: 22px; overflow: auto; }
+/* The tabs take the row rather than huddling on the left: four of them against
+   the width of a desktop looked like an afterthought, and each target was only
+   as wide as its word. */
+.tabs { display: flex; gap: 0; flex: 1; min-width: 260px; }
+.tabs > * { flex: 1; text-align: center; white-space: nowrap; }
+@media (max-width: 640px) {
+  /* Stacked rather than scrolled sideways: a tab you have to find by swiping
+     is a tab nobody presses. */
+  .tabs { flex-wrap: wrap; }
+  .tabs > * { flex: 1 1 45%; }
+}
 .tab { background: none; border: 0; border-bottom: 2px solid transparent; padding: 10px 0; font-size: 12px; color: var(--muted); cursor: pointer; white-space: nowrap; }
 .tab.active { color: var(--green); font-weight: 600; border-bottom-color: var(--green); }
 </style>

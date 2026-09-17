@@ -123,7 +123,7 @@ function friendly(code: string, message: string): string {
 .body { padding: 26px 28px; }
 h2 { font-size: 19px; margin: 10px 0 10px; }
 .hint { font-size: 11px; color: var(--muted); line-height: 1.6; margin-bottom: 16px; }
-.grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0 16px; }
+.grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 0 16px; }
 @media (max-width: 560px) { .grid { grid-template-columns: 1fr; } }
 .actions { display: flex; gap: 9px; justify-content: flex-end; margin-top: 14px; }
 </style>

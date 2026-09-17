@@ -499,7 +499,7 @@ watch(() => props.companyId, load)
 .muted { font-weight: 400; color: var(--muted); }
 .actions { display: flex; gap: 8px; flex-wrap: wrap; }
 .small-btn { font-size: 11px; padding: 7px 11px; }
-.form { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 14px; padding: 16px 24px; background: #fafbf8; border-top: 1px solid var(--line); }
+.form { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 10px 14px; padding: 16px 24px; background: #fafbf8; border-top: 1px solid var(--line); }
 .form.inline { background: #fbf7ea; }
 .form-title { grid-column: 1 / -1; font-size: 12px; font-weight: 600; }
 .form label { display: grid; gap: 4px; font-size: 11px; color: var(--muted); }

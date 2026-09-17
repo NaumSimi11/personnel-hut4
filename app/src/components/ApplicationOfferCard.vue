@@ -314,7 +314,7 @@ defineExpose({ reload: load, liveTerms: () => (live.value ? terms(live.value) : 
 
 <style scoped>
 .terms-form { padding: 16px 24px 18px; border-top: 1px solid var(--line); background: #fafbf9; }
-.grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0 16px; }
+.grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 0 16px; }
 @media (max-width: 640px) { .grid { grid-template-columns: 1fr; } }
 .code { text-transform: uppercase; }
 .field textarea {

@@ -180,7 +180,7 @@ function close(): void {
 h2 { font-size: 19px; margin: 10px 0 10px; }
 .hint { font-size: 11px; color: var(--muted); line-height: 1.6; margin-bottom: 12px; }
 .link { border: 0; background: none; color: var(--green); font-size: 11px; padding: 0; cursor: pointer; text-decoration: underline; }
-.grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0 16px; }
+.grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 0 16px; }
 textarea { width: 100%; font: 12px/1.5 ui-monospace, monospace; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; resize: vertical; }
 .preview { border: 1px solid var(--line); border-radius: 10px; margin: 12px 0; max-height: 300px; overflow: auto; }
 .verdict-summary { padding: 10px 14px; font-size: 12px; font-weight: 600; background: #fafbf8; border-bottom: 1px solid var(--line); }

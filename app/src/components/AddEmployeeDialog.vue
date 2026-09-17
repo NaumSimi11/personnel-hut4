@@ -375,7 +375,7 @@ h2 { font-size: 19px; margin: 10px 0 10px; }
 .hint { font-size: 11px; color: var(--muted); line-height: 1.6; margin-bottom: 14px; }
 .section { border: 1px solid var(--line); border-radius: 12px; padding: 14px 18px 4px; margin: 0 0 14px; }
 .section legend { font-size: 12px; font-weight: 700; padding: 0 6px; display: flex; align-items: center; gap: 8px; }
-.grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0 16px; }
+.grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 0 16px; }
 @media (max-width: 620px) { .grid { grid-template-columns: 1fr; } }
 .field.checkbox label { display: flex; align-items: center; gap: 8px; font-weight: 600; }
 .field.checkbox input { width: auto; }

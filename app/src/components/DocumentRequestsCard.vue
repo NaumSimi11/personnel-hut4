@@ -266,7 +266,7 @@ watch(
 .row-text small { display: block; font-size: 11px; color: var(--muted); margin-top: 4px; }
 .actions { display: flex; gap: 8px; flex-wrap: wrap; }
 .small-btn { font-size: 11px; padding: 7px 11px; }
-.req-form { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 14px; padding: 16px 24px; background: #fafbf8; border-top: 1px solid var(--line); }
+.req-form { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px 14px; padding: 16px 24px; background: #fafbf8; border-top: 1px solid var(--line); }
 .req-form label { display: grid; gap: 4px; font-size: 11px; color: var(--muted); }
 .req-form label.wide, .req-form .form-actions { grid-column: 1 / -1; }
 .req-form input, .req-form select { font: inherit; font-size: 12px; padding: 7px 9px; border: 1px solid var(--line); border-radius: 7px; background: #fff; }

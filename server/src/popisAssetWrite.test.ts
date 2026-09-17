@@ -8,6 +8,8 @@ const SAMPLE_ASSET: NewAssetRow = {
   type_key: 'laptop',
   model: 'Dell Latitude 5590',
   note: 'Imported from workbook.xlsx (Synami)',
+  inventory_number: '71',
+  holder_note: null,
 }
 
 /** A store whose every method fails the test if called — for asserting a step never runs. */
@@ -15,6 +17,7 @@ const unreachable: AssetStore = {
   insertAsset: () => { throw new Error('insertAsset should not have been called') },
   findAssetByTag: () => { throw new Error('findAssetByTag should not have been called') },
   insertAssignment: () => { throw new Error('insertAssignment should not have been called') },
+  updateAsset: async () => ({ error: null }),
   markAssigned: () => { throw new Error('markAssigned should not have been called') },
 }
 
@@ -41,6 +44,7 @@ function reconcilingStore(existing: readonly FakeAssignment[], calls: string[]):
       calls.push(`insertAssignment:${assetId}:${personId}`)
       return { error: null }
     },
+    updateAsset: async () => ({ error: null }),
     markAssigned: async (assetId) => {
       calls.push(`markAssigned:${assetId}`)
       return { error: null }
@@ -61,6 +65,7 @@ describe('writeAsset', () => {
         calls.push(`insertAssignment:${assetId}:${personId}`)
         return { error: null }
       },
+      updateAsset: async () => ({ error: null }),
       markAssigned: async (assetId) => {
         calls.push(`markAssigned:${assetId}`)
         return { error: null }
@@ -82,6 +87,7 @@ describe('writeAsset', () => {
         calls.push('insertAssignment')
         return { error: { message: 'connection reset' } }
       },
+      updateAsset: async () => ({ error: null }),
       markAssigned: async () => {
         calls.push('markAssigned') // must not happen
         return { error: null }
@@ -106,6 +112,7 @@ describe('writeAsset', () => {
         expect(assetId).toBe('existing-asset')
         return { error: null }
       },
+      updateAsset: async () => ({ error: null }),
       markAssigned: async (assetId) => {
         expect(assetId).toBe('existing-asset')
         return { error: null }
@@ -189,6 +196,7 @@ describe('writeAsset', () => {
       insertAsset: async () => ({ id: 'asset-1', error: null }),
       findAssetByTag: async () => null,
       insertAssignment: async () => ({ error: null }),
+      updateAsset: async () => ({ error: null }),
       markAssigned: async () => ({ error: null }),
     }
 
@@ -230,6 +238,7 @@ describe('writeSheets', () => {
       },
       findAssetByTag: async () => null,
       insertAssignment: async () => ({ error: null }),
+      updateAsset: async () => ({ error: null }),
       markAssigned: async () => ({ error: null, status: 'assigned' }),
     }
   }
@@ -285,6 +294,7 @@ describe('writeAsset status read-back', () => {
       ...unreachable,
       insertAsset: async () => ({ id: 'asset-1', error: null }),
       insertAssignment: async () => ({ error: null }),
+      updateAsset: async () => ({ error: null }),
       markAssigned: async () => ({ error: null, status: 'available' }),
     }
 
@@ -302,6 +312,7 @@ describe('writeAsset status read-back', () => {
       ...unreachable,
       insertAsset: async () => ({ id: 'asset-1', error: null }),
       insertAssignment: async () => ({ error: null }),
+      updateAsset: async () => ({ error: null }),
       markAssigned: async () => ({ error: null, status: 'assigned' }),
     }
 

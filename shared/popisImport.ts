@@ -86,86 +86,122 @@ export type SheetRow = { readonly cells: readonly (string | null)[] }
 export type ParsedItem = {
   readonly typeKey: string
   readonly heading: string
+  /** Шифра — the code on the label. */
   readonly assetTag: string | null
+  /** Инв. бр. — the accounting inventory number, also on the label. */
+  readonly inventoryNumber: string | null
   readonly model: string
   readonly holderText: string | null
+  /** Anything the sheet carried that has no column of its own. */
+  readonly note: string | null
 }
 
-const TICK = /^[√✓v]$/i
-/** Column titles, which vary in order across the three sheets. */
-const HEADER_WORDS = /^(ред\.?\s*бр\.?|шифра|основно средство|корисник|забелешка|инв\.?\s*бр\.?|barcode|model|user)$/i
-const ORDINAL = /^\d+\.?$/
-// Macedonian marks the definite article as a suffix on the noun itself
-// ("пописна" → "пописната"), not a separate word, so a bare two-word phrase
-// match misses the sheets that write the definite form. Matching the stem
-// with a suffix allowed is the correct fix, not a broadening — it still
-// requires the following word "комисија" immediately after, so it cannot
-// drift onto an unrelated cell that merely starts with "пописна".
-const CLOSING = /пописна\S*\s+комисија|потпис|скопје,|^\d+\.\s/i
-// A cell that looks like an asset tag: letters-then-digits (A001), or a
-// barcode padded to five digits or more. Liquiditas pads its barcodes to
-// seven digits — "0000001" — which would also match ORDINAL above, so this
-// check has to run first. Only a cell that fails it may later be stripped
-// as a row number.
-const ASSET_TAG = /^[A-Z]{1,3}\d{2,}$|^\d{5,}$/i
+/** What a column heading means, whichever of the three sheets wrote it. */
+type Field = 'ordinal' | 'tag' | 'model' | 'holder' | 'tick' | 'inventory'
 
-function clean(cells: readonly (string | null)[]): string[] {
-  return cells.map((c) => (c ?? '').trim()).filter((c) => c !== '')
+const COLUMN_FIELDS: ReadonlyArray<readonly [RegExp, Field]> = [
+  [/^ред\.?\s*бр\.?$/i, 'ordinal'],
+  [/^(шифра|barcode)$/i, 'tag'],
+  [/^(основно средство|model)$/i, 'model'],
+  [/^(корисник|user)$/i, 'holder'],
+  [/^забелешка$/i, 'tick'],
+  [/^инв\.?\s*бр\.?$/i, 'inventory'],
+]
+
+const ASSET_TAG = /^[A-Z]{1,3}\d{2,}$|^\d{5,}$/i
+const CLOSING = /пописна\S*\s+комисија|потпис|скопје,|^\d+\.\s/i
+
+function fieldFor(heading: string): Field | null {
+  const hit = COLUMN_FIELDS.find(([pattern]) => pattern.test(heading.trim()))
+  return hit ? hit[1] : null
+}
+
+/** The column map a header row describes, or null if this is not a header row. */
+function readHeader(cells: readonly (string | null)[]): Map<number, Field> | null {
+  const map = new Map<number, Field>()
+  for (const [index, raw] of cells.entries()) {
+    const text = (raw ?? '').trim()
+    if (!text) continue
+    const field = fieldFor(text)
+    if (!field) return null // a word that is not a column title means this is data
+    map.set(index, field)
+  }
+  return map.size >= 2 ? map : null
+}
+
+function at(cells: readonly (string | null)[], map: Map<number, Field>, want: Field): string | null {
+  for (const [index, field] of map) {
+    if (field !== want) continue
+    const text = (cells[index] ?? '').trim()
+    if (text) return text
+  }
+  return null
 }
 
 /**
- * The items in a sheet, each attributed to the category heading above it.
+ * The items in a sheet, read through each category's own header row.
  *
- * A heading is a row with a single cell that names a category. Everything
- * after it, until the next heading, is an item — except the column titles
- * (which differ in order on every sheet, so they are recognised by their
- * words rather than their position) and the commission block at the end.
+ * Reading by position was the original mistake, and it silently dropped Инв.
+ * бр. — the accounting inventory number, which is printed on the same physical
+ * label as the Шифра and is just as much the asset's identity. The three sheets
+ * agree on nothing else either: Synami leads with a row number, Hut 4 does not;
+ * Hut 4 puts Забелешка *before* Корисник and keeps its real codes (A050, A062)
+ * in a column with no heading at all, beside free text; Liquiditas names its
+ * columns in English and has no tick. Only the header row says which column is
+ * which, so that is what this reads — and an empty cell stays empty rather than
+ * sliding the rest of the row left.
  */
 export function parseSheet(rows: readonly SheetRow[]): ParsedItem[] {
   const items: ParsedItem[] = []
   let heading: string | null = null
   let typeKey: string | null = null
+  let columns: Map<number, Field> | null = null
 
   for (const raw of rows) {
-    const cells = clean(raw.cells)
-    if (cells.length === 0) continue
+    const cells = raw.cells
+    const filled = cells.map((c) => (c ?? '').trim()).filter((c) => c !== '')
+    if (filled.length === 0) continue
 
-    if (cells.length === 1) {
-      const found = assetTypeForHeading(cells[0])
+    if (filled.length === 1) {
+      const found = assetTypeForHeading(filled[0])
       if (found) {
-        heading = cells[0].trim()
+        heading = filled[0]
         typeKey = found
+        columns = null // every category restates its own header
         continue
       }
     }
     if (!typeKey || !heading) continue
-    if (cells.some((c) => CLOSING.test(c))) continue
-    if (cells.every((c) => HEADER_WORDS.test(c))) continue
+    if (filled.some((c) => CLOSING.test(c))) continue
 
-    // Drop the tick first; what remains starts with either an ordinal, an
-    // asset tag, or the model straight away.
-    const body = cells.filter((c) => !TICK.test(c))
-    if (body.length === 0) continue
+    const header = readHeader(cells)
+    if (header) {
+      columns = header
+      continue
+    }
+    if (!columns) continue
 
-    // A cell is only ever stripped as an ordinal once it has been cleared
-    // of being an asset tag — a zero-padded barcode matches both patterns,
-    // and being a tag takes precedence.
-    const firstIsTag = ASSET_TAG.test(body[0])
-    const withoutOrdinal =
-      !firstIsTag && body.length > 1 && ORDINAL.test(body[0]) ? body.slice(1) : body
-    if (withoutOrdinal.length === 0) continue
+    const model = at(cells, columns, 'model')
+    if (!model) continue
 
-    const looksLikeTag = ASSET_TAG.test(withoutOrdinal[0])
-    const assetTag = looksLikeTag ? withoutOrdinal[0] : null
-    const rest = looksLikeTag ? withoutOrdinal.slice(1) : withoutOrdinal
-    if (rest.length === 0) continue
+    // Hut 4 numbers its rows in the column it calls Шифра, and keeps the real
+    // code in a trailing column with no heading, mixed with free text.
+    const named = at(cells, columns, 'tag')
+    const spare = cells
+      .map((c, i) => (columns?.has(i) ? '' : (c ?? '').trim()))
+      .filter((c) => c !== '')
+    const spareTag = spare.find((c) => ASSET_TAG.test(c)) ?? null
+    const assetTag = named && ASSET_TAG.test(named) ? named : spareTag
+    const note = spare.filter((c) => c !== assetTag).join(' · ') || null
 
     items.push({
       typeKey,
       heading,
       assetTag,
-      model: rest[0],
-      holderText: rest.length > 1 ? rest[1] : null,
+      inventoryNumber: at(cells, columns, 'inventory'),
+      model,
+      holderText: at(cells, columns, 'holder'),
+      note,
     })
   }
   return items

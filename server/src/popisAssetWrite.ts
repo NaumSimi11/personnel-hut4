@@ -39,6 +39,10 @@ export type NewAssetRow = {
   readonly type_key: string
   readonly model: string
   readonly note: string
+  /** Инв. бр. — printed on the label beside the tag, keyed on by the accounts. */
+  readonly inventory_number: string | null
+  /** Who the sheet says holds it, when that resolves to no person here. */
+  readonly holder_note: string | null
 }
 
 export type WriteItem = {
@@ -72,6 +76,22 @@ export type AssetStore = {
     assetTag: string,
   ): Promise<{ readonly id: string; readonly openAssignment?: OpenAssignment | null } | null>
   insertAssignment(assetId: string, personId: string): Promise<{ readonly error: { readonly message: string } | null }>
+  /**
+   * Brings an existing row up to date with the source. A reconciled asset is
+   * one a previous run created, possibly before the source grew a column —
+   * the first import of this workbook stored no inventory number at all — so
+   * reconciling has to write the current values, not merely recognise the row.
+   */
+  updateAsset(
+    assetId: string,
+    fields: {
+      readonly model: string
+      readonly type_key: string
+      readonly note: string
+      readonly inventory_number: string | null
+      readonly holder_note: string | null
+    },
+  ): Promise<{ readonly error: { readonly message: string } | null }>
   /**
    * Sets the asset's status to `assigned` and reports the status the row
    * carries afterwards. `status` is optional only so a test double may leave
@@ -113,6 +133,16 @@ async function placeAsset(
   const existing = await store.findAssetByTag(asset.company_id, asset.asset_tag)
   if (!existing) {
     return { message: `duplicate asset_tag "${asset.asset_tag}" but no existing row was found to reconcile to` }
+  }
+  const refreshed = await store.updateAsset(existing.id, {
+    model: asset.model,
+    type_key: asset.type_key,
+    note: asset.note,
+    inventory_number: asset.inventory_number,
+    holder_note: asset.holder_note,
+  })
+  if (refreshed.error) {
+    return { message: `reconciled to the existing "${asset.asset_tag}" but could not update it: ${refreshed.error.message}` }
   }
   return { outcome: 'reconciled', id: existing.id, openAssignment: existing.openAssignment ?? null }
 }

@@ -12,7 +12,7 @@ import {
   ownerLabel,
   type AssignmentAction,
 } from '@/lib/equipment'
-import { assetLine } from '@/lib/assetRegister'
+import { assetLine, assetNumbers } from '@/lib/assetRegister'
 
 /**
  * Equipment across the holding (plan 049): every asset the viewer may see —
@@ -27,6 +27,8 @@ type Asset = {
   id: string
   company_id: string | null
   asset_tag: string
+  inventory_number: string | null
+  holder_note: string | null
   type_key: string
   model: string | null
   serial_number: string | null
@@ -85,7 +87,7 @@ const holderNames = computed(() =>
 /** The holding-wide register line: category · company · model · holder, "magacin" when unheld. */
 const registerLine = (a: Asset) =>
   assetLine(
-    { type_key: a.type_key, company_id: a.company_id, holder_id: openAssignment(a)?.person_id ?? null, model: a.model },
+    { type_key: a.type_key, company_id: a.company_id, holder_id: openAssignment(a)?.person_id ?? null, model: a.model, holder_note: a.holder_note },
     { types: typeNames.value, companies: companyNames.value, holders: holderNames.value },
   )
 function canFor(a: Asset): (cap: string) => boolean {
@@ -301,7 +303,7 @@ onMounted(load)
         <div v-if="!shown.length" class="empty">No assets here.</div>
         <div v-for="a in shown" :key="a.id" class="asset-row" :class="a.status" :data-testid="`asset-${a.asset_tag}`">
           <div class="row-text">
-            <strong>{{ a.asset_tag }}</strong>
+            <strong>{{ assetNumbers(a) }}</strong>
             <small class="register-line">{{ registerLine(a) }}</small>
             <small>
               <span class="badge" :class="a.company_id === null ? 'blue' : ''">{{ ownerLabel(a.company_id, companyNames) }}</span>

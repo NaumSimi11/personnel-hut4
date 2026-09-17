@@ -16,6 +16,14 @@ export function supabaseStore(client: SupabaseClient): AssetStore {
       return error ? { id: null, error: { code: error.code, message: error.message } } : { id: data.id, error: null }
     },
 
+    async updateAsset(assetId, fields) {
+      // Reconciling is not merely recognising a row: the first import of this
+      // workbook stored no inventory number, because the parser never read the
+      // column. A re-run has to bring the row up to the source.
+      const { error } = await client.from('assets').update(fields).eq('id', assetId)
+      return { error: error ? { message: error.message } : null }
+    },
+
     async findAssetByTag(companyId, assetTag) {
       const { data, error: lookupError } = await client
         .from('assets')

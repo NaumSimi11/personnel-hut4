@@ -138,10 +138,17 @@ function toWriteItem(source, sheet, item, index) {
   // re-run would then create duplicates instead of reconciling.
   const tag = item.assetTag ?? `${sheet.sheet.replace(/\s+/g, '').toUpperCase()}-${String(index + 1).padStart(4, '0')}`
   const noteParts = []
-  if (item.holder.kind === 'company') noteParts.push(`Held by ${item.holder.text}`)
-  if (item.holder.kind === 'unresolved') noteParts.push(`Holder from spreadsheet: "${item.holder.text}" (${item.holder.reason})`)
   if (item.holder.kind === 'person' && item.holder.atCompany) noteParts.push(`Used at ${item.holder.atCompany}`)
+  if (item.note) noteParts.push(item.note)
   noteParts.push(`Imported from ${path.basename(source)} (${sheet.sheet})`)
+
+  // Whoever the sheet names, when that is not a person in this system. Without
+  // it the register showed the asset sitting in magacin, free to hand out,
+  // while the books said someone had it — a worse answer than saying nothing.
+  const holderNote =
+    item.holder.kind === 'company' ? item.holder.text
+    : item.holder.kind === 'unresolved' ? item.holder.text
+    : null
 
   return {
     asset: {
@@ -150,6 +157,8 @@ function toWriteItem(source, sheet, item, index) {
       type_key: item.typeKey,
       model: item.model,
       note: noteParts.join(' · ').slice(0, 500),
+      inventory_number: item.inventoryNumber ?? null,
+      holder_note: holderNote,
     },
     personId: item.holder.kind === 'person' ? item.holder.personId : null,
   }

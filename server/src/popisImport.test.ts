@@ -119,6 +119,7 @@ describe('parseSheet', () => {
       row('ред. бр.', 'Шифра', 'Основно средство', 'Корисник', 'Забелешка'),
       row('1', 'A001', 'Dell Latitude 5590', 'magacin', '√'),
       row('Монитори'),
+      row('ред. бр.', 'Шифра', 'Основно средство', 'Корисник', 'Забелешка'),
       row('1', 'M010', 'Monitor Dell S2721HS', 'Keith Attard', '√'),
     ])
     expect(items).toHaveLength(2)
@@ -141,7 +142,7 @@ describe('parseSheet', () => {
   it('ignores the tick, which records the last count and not the asset', () => {
     const items = parseSheet([
       row('Лаптопи'),
-      row('Шифра', 'Основно средство', 'Корисник', 'Забелешка'),
+      row('ред. бр.', 'Шифра', 'Основно средство', 'Корисник', 'Забелешка'),
       row('1', 'A001', 'HP ProBook', 'magacin', '√'),
     ])
     expect(JSON.stringify(items[0])).not.toContain('√')
@@ -167,7 +168,7 @@ describe('parseSheet', () => {
     // commission's own sign-off paragraph gets imported as an asset.
     const items = parseSheet([
       row('Лаптопи'),
-      row('Шифра', 'Основно средство', 'Корисник'),
+      row('ред. бр.', 'Шифра', 'Основно средство', 'Корисник'),
       row('1', 'A001', 'HP ProBook', 'magacin'),
       row(
         'Пописната комисија за основни средства  констатира дека состојбата на средствата  ' +
@@ -206,6 +207,98 @@ describe('parseSheet', () => {
     expect(items[0]).toMatchObject({ typeKey: 'monitor', assetTag: null, model: 'Monitor Dell S2721HS' })
     expect(items[1]).toMatchObject({
       typeKey: 'monitor', assetTag: 'M020', model: 'Monitor Dell U2719D', holderText: 'Kristina Cvetanov',
+    })
+  })
+})
+
+describe('parseSheet reading the header row', () => {
+  const row = (...cells: (string | null)[]) => ({ cells })
+
+  it('takes the inventory number, which the accounts key their fixed assets on', () => {
+    const items = parseSheet([
+      row('Лаптопи'),
+      row('ред. бр.', 'Шифра', 'Основно средство', 'Корисник', 'Забелешка', 'Инв. бр.'),
+      row('2', 'A002', 'Hp ProBook 450G5', 'magacin', '√', '71'),
+    ])
+    expect(items[0]).toMatchObject({
+      assetTag: 'A002',
+      model: 'Hp ProBook 450G5',
+      holderText: 'magacin',
+      inventoryNumber: '71',
+    })
+  })
+
+  it('reads Hut 4, where Забелешка comes BEFORE Корисник', () => {
+    // Position-guessing worked here only by accident, because the tick was
+    // filtered out first. The header says which column is which.
+    const items = parseSheet([
+      row('Лаптопи'),
+      row('Шифра', 'Основно средство', 'Забелешка', 'Корисник'),
+      row('1', 'Laptop Dell XPs 13 9310', '√', 'Kristina Cvetanov'),
+    ])
+    expect(items[0]).toMatchObject({
+      model: 'Laptop Dell XPs 13 9310',
+      holderText: 'Kristina Cvetanov',
+    })
+  })
+
+  it('takes Hut 4’s real code from the unlabelled column after Корисник', () => {
+    // That sheet numbers its rows in the column it calls Шифра, and keeps the
+    // actual code (A050, A062) in a trailing column with no heading at all.
+    const items = parseSheet([
+      row('Лаптопи'),
+      row('Шифра', 'Основно средство', 'Забелешка', 'Корисник'),
+      row('7', 'HP NB 255 G9', '√', 'magacin', 'A050'),
+    ])
+    expect(items[0]).toMatchObject({ assetTag: 'A050', model: 'HP NB 255 G9', holderText: 'magacin' })
+  })
+
+  it('keeps free text from that trailing column as a note rather than a code', () => {
+    const items = parseSheet([
+      row('Лаптопи'),
+      row('Шифра', 'Основно средство', 'Забелешка', 'Корисник'),
+      row('6', 'Lenovo 21DM', '√', 'magacin', 'ex Oli'),
+    ])
+    expect(items[0].assetTag).toBeNull()
+    expect(items[0].note).toBe('ex Oli')
+  })
+
+  it('reads Liquiditas, which names its columns in English and has no tick', () => {
+    const items = parseSheet([
+      row('Laptops'),
+      row('Barcode', 'Model', 'User'),
+      row('0000001', 'Berin Trade Mark', 'Liquiditas DOOEL'),
+    ])
+    expect(items[0]).toMatchObject({
+      assetTag: '0000001',
+      model: 'Berin Trade Mark',
+      holderText: 'Liquiditas DOOEL',
+      inventoryNumber: null,
+    })
+  })
+
+  it('does not mistake the row number for the asset code', () => {
+    const items = parseSheet([
+      row('Лаптопи'),
+      row('ред. бр.', 'Шифра', 'Основно средство', 'Корисник', 'Забелешка', 'Инв. бр.'),
+      row('1', 'A001', 'Dell Latitude 5590', 'magacin', '√', ''),
+    ])
+    expect(items[0].assetTag).toBe('A001')
+  })
+
+  it('leaves an empty cell as null rather than shifting later columns left', () => {
+    // Софтвери rows have no Шифра at all; collapsing the gap used to slide the
+    // model into the code and lose a column off the end.
+    const items = parseSheet([
+      row('Софтвери'),
+      row('ред. бр.', 'Шифра', 'Основно средство', 'Корисник', 'Забелешка', 'Инв. бр.'),
+      row('105', '', 'Seavus project viewer', 'Synami DOOEL', '√', '1'),
+    ])
+    expect(items[0]).toMatchObject({
+      assetTag: null,
+      model: 'Seavus project viewer',
+      holderText: 'Synami DOOEL',
+      inventoryNumber: '1',
     })
   })
 })

@@ -249,21 +249,48 @@ onMounted(load)
     </template>
 
     <template v-else>
-      <div class="page-head me-head">
-        <AvatarUpload
-          v-if="auth.personId"
-          :person-id="auth.personId"
-          :name="auth.personName ?? ''"
-          :path="auth.avatarPath"
-          :editable="true"
-          @changed="(p) => (auth.avatarPath = p)"
-        />
-        <div>
-          <div class="eyebrow">My workspace</div>
-          <h1>Welcome, {{ firstName }}.</h1>
-          <p class="page-sub">Your record, your tasks, and what you can do in each company. Click the picture to add your photo.</p>
+      <div class="eyebrow">My workspace</div>
+      <h1 class="page-title">Welcome, {{ firstName }}.</h1>
+
+      <section class="card hero">
+        <div class="hero-main">
+          <AvatarUpload
+            v-if="auth.personId"
+            :person-id="auth.personId"
+            :name="auth.personName ?? ''"
+            :path="auth.avatarPath"
+            :editable="true"
+            @changed="(p) => (auth.avatarPath = p)"
+          />
+          <div class="hero-who">
+            <strong class="hero-name">{{ person?.full_name ?? auth.personName ?? '—' }}</strong>
+            <a v-if="person?.work_email" class="hero-mail" :href="`mailto:${person.work_email}`">{{ person.work_email }}</a>
+            <p v-if="current" class="hero-role">{{ current.job_title }} · {{ current.company?.name }}</p>
+            <p class="hero-hint">Click the picture to add your photo.</p>
+          </div>
+          <span v-if="current" class="badge" :class="employmentBadgeClass(current.status)">
+            {{ current.status.replace('_', ' ') }}
+          </span>
         </div>
-      </div>
+
+        <dl v-if="current" class="hero-facts">
+          <div><dt>Company</dt><dd>{{ current.company?.name ?? '—' }}</dd></div>
+          <div><dt>Started</dt><dd>{{ current.start_date }}</dd></div>
+          <div><dt>Time here</dt><dd>{{ tenureLabel(current.start_date, current.end_date, todayDb()) }}</dd></div>
+          <div><dt>Companies</dt><dd>{{ myCompanies.length }}</dd></div>
+        </dl>
+
+        <details v-if="employments.length > 1" class="hero-history">
+          <summary><span class="chevron" aria-hidden="true">›</span> Employment history <span class="muted-count">{{ employments.length }}</span></summary>
+          <div v-for="emp in employments" :key="emp.id" class="emp-row">
+            <div class="row-text">
+              <strong>{{ emp.job_title }} · {{ emp.company?.name }}</strong>
+              <small>{{ emp.start_date }} → {{ emp.end_date ?? 'present' }}</small>
+            </div>
+            <span class="badge" :class="employmentBadgeClass(emp.status)">{{ emp.status.replace('_', ' ') }}</span>
+          </div>
+        </details>
+      </section>
 
       <p v-if="error" class="error-note" role="alert">{{ error }}</p>
       <div v-if="loading" class="empty">Loading your workspace…</div>
@@ -325,44 +352,6 @@ onMounted(load)
         </div>
 
         <div class="right-column">
-          <div class="card">
-            <div class="card-head">
-              <h2>My profile</h2>
-            </div>
-            <div class="card-body profile">
-              <div class="profile-top">
-                <div>
-                  <strong class="profile-name">{{ person?.full_name ?? '—' }}</strong>
-                  <a v-if="person?.work_email" class="profile-mail" :href="`mailto:${person.work_email}`">{{ person.work_email }}</a>
-                  <span v-else class="profile-mail">—</span>
-                </div>
-                <span v-if="current" class="badge" :class="employmentBadgeClass(current.status)">
-                  {{ current.status.replace('_', ' ') }}
-                </span>
-              </div>
-              <dl v-if="current" class="facts">
-                <div><dt>Role</dt><dd>{{ current.job_title }}</dd></div>
-                <div><dt>Company</dt><dd>{{ current.company?.name ?? '—' }}</dd></div>
-                <div><dt>Started</dt><dd>{{ current.start_date }}</dd></div>
-                <div><dt>Time here</dt><dd>{{ tenureLabel(current.start_date, current.end_date, todayDb()) }}</dd></div>
-              </dl>
-              <p v-else class="empty">No current employment recorded.</p>
-            </div>
-            <div class="card-head">
-              <h2>Employment history</h2>
-            </div>
-            <div v-if="!employments.length" class="empty">No employment recorded.</div>
-            <div v-for="emp in employments" :key="emp.id" class="emp-row">
-              <div class="row-text">
-                <strong>{{ emp.job_title }} · {{ emp.company?.name }}</strong>
-                <small>{{ emp.start_date }} → {{ emp.end_date ?? 'present' }}</small>
-              </div>
-              <span class="badge" :class="employmentBadgeClass(emp.status)">
-                {{ emp.status.replace('_', ' ') }}
-              </span>
-            </div>
-          </div>
-
           <LeaveCard v-if="auth.personId" :person-id="auth.personId" title="My leave" />
           <CompensationCard v-if="auth.personId" :person-id="auth.personId" :periods="employments" title="My compensation" />
           <DocumentsCard v-if="auth.personId" :person-id="auth.personId" :companies="myCompanies" title="My documents" />
@@ -415,9 +404,27 @@ onMounted(load)
 </template>
 
 <style scoped>
-.page-head { margin-bottom: 22px; }
-.me-head { display: flex; align-items: center; gap: 22px; flex-wrap: wrap; }
-.page-sub { margin: 0; font-size: 12px; color: var(--muted); }
+.page-title { margin-bottom: 18px; }
+
+/* The hero: who you are, before anything you have to do about it. */
+.hero { padding: 24px; margin-bottom: 22px; }
+.hero-main { display: flex; align-items: center; gap: 20px; flex-wrap: wrap; }
+.hero-who { flex: 1; min-width: 200px; }
+.hero-name { display: block; font-size: 19px; font-weight: 650; letter-spacing: -0.01em; }
+.hero-mail { display: inline-block; margin-top: 3px; font-size: 12px; color: var(--muted); text-decoration: none; }
+.hero-mail:hover { text-decoration: underline; }
+.hero-role { margin: 7px 0 0; font-size: 13px; font-weight: 550; }
+.hero-hint { margin: 6px 0 0; font-size: 11px; color: var(--muted); }
+.hero-facts {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
+  gap: 14px; margin: 20px 0 0; padding-top: 18px; border-top: 1px solid #edf0eb;
+}
+.hero-facts dt { font-size: 10px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); }
+.hero-facts dd { margin: 4px 0 0; font-size: 13px; font-weight: 600; }
+.hero-history { margin-top: 16px; padding-top: 14px; border-top: 1px solid #edf0eb; }
+.hero-history summary { list-style: none; cursor: pointer; font-size: 11px; color: var(--muted); display: flex; align-items: center; gap: 7px; }
+.hero-history summary::-webkit-details-marker { display: none; }
+.hero-history[open] .chevron { transform: rotate(90deg); }
 .grid-two { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(260px, 1fr); gap: 22px; }
 @media (max-width: 900px) { .grid-two { grid-template-columns: 1fr; } }
 .left-column { display: grid; gap: 22px; align-content: start; }

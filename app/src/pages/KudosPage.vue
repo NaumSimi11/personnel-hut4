@@ -38,7 +38,7 @@ const activeValues = computed(() => overview.value.values.filter((v) => v.active
 const monthText = computed(() => (month.value ? monthLabel(month.value) : 'all months'))
 
 async function loadOverview(): Promise<void> {
-  const { data, error: err } = await supabase.rpc('kudos_overview', { p_month: month.value || null })
+  const { data, error: err } = await supabase.rpc('kudos_overview', { p_month: month.value || undefined })
   if (err) {
     error.value = 'Could not load the kudos.'
     console.error('Kudos overview load failed:', err.message)

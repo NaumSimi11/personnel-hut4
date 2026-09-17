@@ -445,6 +445,126 @@ export type Database = {
           },
         ]
       }
+      asset_handovers: {
+        Row: {
+          asset_id: string
+          company_id: string
+          condition: string | null
+          counterparty_id: string
+          created_at: string
+          decline_reason: string | null
+          document_id: string | null
+          from_person_id: string | null
+          id: string
+          kind: string
+          reason: string | null
+          signed_by_counterparty: string | null
+          signed_by_counterparty_at: string | null
+          signed_by_starter_at: string | null
+          started_by: string
+          status: string
+          to_person_id: string | null
+          updated_at: string
+        }
+        Insert: {
+          asset_id: string
+          company_id: string
+          condition?: string | null
+          counterparty_id: string
+          created_at?: string
+          decline_reason?: string | null
+          document_id?: string | null
+          from_person_id?: string | null
+          id?: string
+          kind: string
+          reason?: string | null
+          signed_by_counterparty?: string | null
+          signed_by_counterparty_at?: string | null
+          signed_by_starter_at?: string | null
+          started_by: string
+          status?: string
+          to_person_id?: string | null
+          updated_at?: string
+        }
+        Update: {
+          asset_id?: string
+          company_id?: string
+          condition?: string | null
+          counterparty_id?: string
+          created_at?: string
+          decline_reason?: string | null
+          document_id?: string | null
+          from_person_id?: string | null
+          id?: string
+          kind?: string
+          reason?: string | null
+          signed_by_counterparty?: string | null
+          signed_by_counterparty_at?: string | null
+          signed_by_starter_at?: string | null
+          started_by?: string
+          status?: string
+          to_person_id?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "asset_handovers_asset_id_fkey"
+            columns: ["asset_id"]
+            isOneToOne: false
+            referencedRelation: "assets"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "asset_handovers_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "asset_handovers_counterparty_id_fkey"
+            columns: ["counterparty_id"]
+            isOneToOne: false
+            referencedRelation: "people"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "asset_handovers_document_id_fkey"
+            columns: ["document_id"]
+            isOneToOne: false
+            referencedRelation: "documents"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "asset_handovers_from_person_id_fkey"
+            columns: ["from_person_id"]
+            isOneToOne: false
+            referencedRelation: "people"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "asset_handovers_signed_by_counterparty_fkey"
+            columns: ["signed_by_counterparty"]
+            isOneToOne: false
+            referencedRelation: "people"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "asset_handovers_started_by_fkey"
+            columns: ["started_by"]
+            isOneToOne: false
+            referencedRelation: "people"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "asset_handovers_to_person_id_fkey"
+            columns: ["to_person_id"]
+            isOneToOne: false
+            referencedRelation: "people"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       asset_notes: {
         Row: {
           about_person_id: string | null
@@ -476,7 +596,29 @@ export type Database = {
           kind?: string
           written_by?: string | null
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "asset_notes_about_person_id_fkey"
+            columns: ["about_person_id"]
+            isOneToOne: false
+            referencedRelation: "people"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "asset_notes_asset_id_fkey"
+            columns: ["asset_id"]
+            isOneToOne: false
+            referencedRelation: "assets"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "asset_notes_written_by_fkey"
+            columns: ["written_by"]
+            isOneToOne: false
+            referencedRelation: "people"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       asset_types: {
         Row: {
@@ -521,7 +663,7 @@ export type Database = {
         }
         Insert: {
           asset_tag: string
-          company_id: string | null
+          company_id?: string | null
           condition?: string | null
           created_at?: string
           custom?: Json
@@ -704,8 +846,8 @@ export type Database = {
           director_person_id: string | null
           hr_contact_person_id: string | null
           hr_notification_email: string | null
-          it_notification_email: string | null
           id: string
+          it_notification_email: string | null
           kind: string
           leave_carry_over_until: string
           leave_entitlement_days: number
@@ -734,8 +876,8 @@ export type Database = {
           director_person_id?: string | null
           hr_contact_person_id?: string | null
           hr_notification_email?: string | null
-          it_notification_email?: string | null
           id?: string
+          it_notification_email?: string | null
           kind?: string
           leave_carry_over_until?: string
           leave_entitlement_days?: number
@@ -764,8 +906,8 @@ export type Database = {
           director_person_id?: string | null
           hr_contact_person_id?: string | null
           hr_notification_email?: string | null
-          it_notification_email?: string | null
           id?: string
+          it_notification_email?: string | null
           kind?: string
           leave_carry_over_until?: string
           leave_entitlement_days?: number
@@ -913,6 +1055,70 @@ export type Database = {
           },
         ]
       }
+      contract_templates: {
+        Row: {
+          body: string
+          category_key: string
+          company_id: string | null
+          created_at: string
+          id: string
+          published_at: string | null
+          published_by: string | null
+          status: string
+          title: string
+          updated_at: string
+          version: number
+        }
+        Insert: {
+          body: string
+          category_key: string
+          company_id?: string | null
+          created_at?: string
+          id?: string
+          published_at?: string | null
+          published_by?: string | null
+          status?: string
+          title: string
+          updated_at?: string
+          version?: number
+        }
+        Update: {
+          body?: string
+          category_key?: string
+          company_id?: string | null
+          created_at?: string
+          id?: string
+          published_at?: string | null
+          published_by?: string | null
+          status?: string
+          title?: string
+          updated_at?: string
+          version?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "contract_templates_category_key_fkey"
+            columns: ["category_key"]
+            isOneToOne: false
+            referencedRelation: "document_categories"
+            referencedColumns: ["key"]
+          },
+          {
+            foreignKeyName: "contract_templates_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "contract_templates_published_by_fkey"
+            columns: ["published_by"]
+            isOneToOne: false
+            referencedRelation: "people"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       custom_field_definitions: {
         Row: {
           archived_at: string | null
@@ -988,48 +1194,6 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
-      }
-      contract_templates: {
-        Row: {
-          body: string
-          category_key: string
-          company_id: string | null
-          created_at: string
-          id: string
-          published_at: string | null
-          published_by: string | null
-          status: string
-          title: string
-          updated_at: string
-          version: number
-        }
-        Insert: {
-          body: string
-          category_key: string
-          company_id?: string | null
-          created_at?: string
-          id?: string
-          published_at?: string | null
-          published_by?: string | null
-          status?: string
-          title: string
-          updated_at?: string
-          version?: number
-        }
-        Update: {
-          body?: string
-          category_key?: string
-          company_id?: string | null
-          created_at?: string
-          id?: string
-          published_at?: string | null
-          published_by?: string | null
-          status?: string
-          title?: string
-          updated_at?: string
-          version?: number
-        }
-        Relationships: []
       }
       document_categories: {
         Row: {
@@ -1226,63 +1390,6 @@ export type Database = {
           },
         ]
       }
-      equipment_returns: {
-        Row: {
-          asset_id: string
-          assignment_id: string | null
-          company_id: string
-          condition: string | null
-          created_at: string
-          decline_reason: string | null
-          document_id: string | null
-          hr_person_id: string
-          id: string
-          person_id: string
-          reason: string | null
-          signed_by_hr: string | null
-          signed_by_hr_at: string | null
-          signed_by_person_at: string | null
-          status: string
-          updated_at: string
-        }
-        Insert: {
-          asset_id: string
-          assignment_id?: string | null
-          company_id: string
-          condition?: string | null
-          created_at?: string
-          decline_reason?: string | null
-          document_id?: string | null
-          hr_person_id: string
-          id?: string
-          person_id: string
-          reason?: string | null
-          signed_by_hr?: string | null
-          signed_by_hr_at?: string | null
-          signed_by_person_at?: string | null
-          status?: string
-          updated_at?: string
-        }
-        Update: {
-          asset_id?: string
-          assignment_id?: string | null
-          company_id?: string
-          condition?: string | null
-          created_at?: string
-          decline_reason?: string | null
-          document_id?: string | null
-          hr_person_id?: string
-          id?: string
-          person_id?: string
-          reason?: string | null
-          signed_by_hr?: string | null
-          signed_by_hr_at?: string | null
-          signed_by_person_at?: string | null
-          status?: string
-          updated_at?: string
-        }
-        Relationships: []
-      }
       employment_changes: {
         Row: {
           applied_at: string | null
@@ -1354,16 +1461,16 @@ export type Database = {
           corrected_by: string | null
           id: string
           new_department_id: string | null
-          new_location_id: string | null
-          new_manager_id: string | null
-          old_department_id: string | null
-          old_location_id: string | null
-          old_manager_id: string | null
           new_employment_type_key: string | null
           new_job_title: string
+          new_location_id: string | null
+          new_manager_id: string | null
           new_start_date: string
+          old_department_id: string | null
           old_employment_type_key: string | null
           old_job_title: string
+          old_location_id: string | null
+          old_manager_id: string | null
           old_start_date: string
           period_id: string
           person_id: string
@@ -1375,16 +1482,16 @@ export type Database = {
           corrected_by?: string | null
           id?: string
           new_department_id?: string | null
-          new_location_id?: string | null
-          new_manager_id?: string | null
-          old_department_id?: string | null
-          old_location_id?: string | null
-          old_manager_id?: string | null
           new_employment_type_key?: string | null
           new_job_title: string
+          new_location_id?: string | null
+          new_manager_id?: string | null
           new_start_date: string
+          old_department_id?: string | null
           old_employment_type_key?: string | null
           old_job_title: string
+          old_location_id?: string | null
+          old_manager_id?: string | null
           old_start_date: string
           period_id: string
           person_id: string
@@ -1396,16 +1503,16 @@ export type Database = {
           corrected_by?: string | null
           id?: string
           new_department_id?: string | null
-          new_location_id?: string | null
-          new_manager_id?: string | null
-          old_department_id?: string | null
-          old_location_id?: string | null
-          old_manager_id?: string | null
           new_employment_type_key?: string | null
           new_job_title?: string
+          new_location_id?: string | null
+          new_manager_id?: string | null
           new_start_date?: string
+          old_department_id?: string | null
           old_employment_type_key?: string | null
           old_job_title?: string
+          old_location_id?: string | null
+          old_manager_id?: string | null
           old_start_date?: string
           period_id?: string
           person_id?: string
@@ -1422,6 +1529,48 @@ export type Database = {
           {
             foreignKeyName: "employment_corrections_corrected_by_fkey"
             columns: ["corrected_by"]
+            isOneToOne: false
+            referencedRelation: "people"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "employment_corrections_new_department_id_fkey"
+            columns: ["new_department_id"]
+            isOneToOne: false
+            referencedRelation: "departments"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "employment_corrections_new_location_id_fkey"
+            columns: ["new_location_id"]
+            isOneToOne: false
+            referencedRelation: "locations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "employment_corrections_new_manager_id_fkey"
+            columns: ["new_manager_id"]
+            isOneToOne: false
+            referencedRelation: "people"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "employment_corrections_old_department_id_fkey"
+            columns: ["old_department_id"]
+            isOneToOne: false
+            referencedRelation: "departments"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "employment_corrections_old_location_id_fkey"
+            columns: ["old_location_id"]
+            isOneToOne: false
+            referencedRelation: "locations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "employment_corrections_old_manager_id_fkey"
+            columns: ["old_manager_id"]
             isOneToOne: false
             referencedRelation: "people"
             referencedColumns: ["id"]
@@ -1776,7 +1925,43 @@ export type Database = {
           status?: string
           updated_at?: string
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "generated_documents_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "generated_documents_document_id_fkey"
+            columns: ["document_id"]
+            isOneToOne: false
+            referencedRelation: "documents"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "generated_documents_person_id_fkey"
+            columns: ["person_id"]
+            isOneToOne: false
+            referencedRelation: "people"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "generated_documents_plan_id_fkey"
+            columns: ["plan_id"]
+            isOneToOne: false
+            referencedRelation: "plans"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "generated_documents_requested_by_fkey"
+            columns: ["requested_by"]
+            isOneToOne: false
+            referencedRelation: "people"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       grant_capabilities: {
         Row: {
@@ -1804,61 +1989,6 @@ export type Database = {
             columns: ["grant_id"]
             isOneToOne: false
             referencedRelation: "access_grants"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      hiring_request_history: {
-        Row: {
-          actor_id: string | null
-          at: string
-          company_id: string
-          id: string
-          kind: string
-          reason: string | null
-          request_id: string
-          snapshot: Json
-        }
-        Insert: {
-          actor_id?: string | null
-          at?: string
-          company_id: string
-          id?: string
-          kind: string
-          reason?: string | null
-          request_id: string
-          snapshot: Json
-        }
-        Update: {
-          actor_id?: string | null
-          at?: string
-          company_id?: string
-          id?: string
-          kind?: string
-          reason?: string | null
-          request_id?: string
-          snapshot?: Json
-        }
-        Relationships: [
-          {
-            foreignKeyName: "hiring_request_history_actor_id_fkey"
-            columns: ["actor_id"]
-            isOneToOne: false
-            referencedRelation: "people"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "hiring_request_history_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "companies"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "hiring_request_history_request_id_fkey"
-            columns: ["request_id"]
-            isOneToOne: false
-            referencedRelation: "hiring_requests"
             referencedColumns: ["id"]
           },
         ]
@@ -1912,7 +2042,22 @@ export type Database = {
           trusted?: boolean
           updated_at?: string
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "handover_recipients_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "handover_recipients_person_id_fkey"
+            columns: ["person_id"]
+            isOneToOne: false
+            referencedRelation: "people"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       handover_sends: {
         Row: {
@@ -1981,7 +2126,105 @@ export type Database = {
           to_email?: string | null
           updated_at?: string
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "handover_sends_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "handover_sends_employment_period_id_fkey"
+            columns: ["employment_period_id"]
+            isOneToOne: false
+            referencedRelation: "employment_periods"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "handover_sends_marked_by_fkey"
+            columns: ["marked_by"]
+            isOneToOne: false
+            referencedRelation: "people"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "handover_sends_person_id_fkey"
+            columns: ["person_id"]
+            isOneToOne: false
+            referencedRelation: "people"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "handover_sends_plan_id_fkey"
+            columns: ["plan_id"]
+            isOneToOne: false
+            referencedRelation: "plans"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "handover_sends_recipient_id_fkey"
+            columns: ["recipient_id"]
+            isOneToOne: false
+            referencedRelation: "handover_recipients"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      hiring_request_history: {
+        Row: {
+          actor_id: string | null
+          at: string
+          company_id: string
+          id: string
+          kind: string
+          reason: string | null
+          request_id: string
+          snapshot: Json
+        }
+        Insert: {
+          actor_id?: string | null
+          at?: string
+          company_id: string
+          id?: string
+          kind: string
+          reason?: string | null
+          request_id: string
+          snapshot: Json
+        }
+        Update: {
+          actor_id?: string | null
+          at?: string
+          company_id?: string
+          id?: string
+          kind?: string
+          reason?: string | null
+          request_id?: string
+          snapshot?: Json
+        }
+        Relationships: [
+          {
+            foreignKeyName: "hiring_request_history_actor_id_fkey"
+            columns: ["actor_id"]
+            isOneToOne: false
+            referencedRelation: "people"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "hiring_request_history_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "hiring_request_history_request_id_fkey"
+            columns: ["request_id"]
+            isOneToOne: false
+            referencedRelation: "hiring_requests"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       hiring_requests: {
         Row: {
@@ -2485,10 +2728,24 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
+            foreignKeyName: "kudos_posted_by_fkey"
+            columns: ["posted_by"]
+            isOneToOne: false
+            referencedRelation: "people"
+            referencedColumns: ["id"]
+          },
+          {
             foreignKeyName: "kudos_to_person_id_fkey"
             columns: ["to_person_id"]
             isOneToOne: false
             referencedRelation: "people"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "kudos_value_id_fkey"
+            columns: ["value_id"]
+            isOneToOne: false
+            referencedRelation: "kudos_values"
             referencedColumns: ["id"]
           },
         ]
@@ -3225,6 +3482,13 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
+            foreignKeyName: "payroll_items_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "people"
+            referencedColumns: ["id"]
+          },
+          {
             foreignKeyName: "payroll_items_period_id_fkey"
             columns: ["period_id"]
             isOneToOne: false
@@ -3582,7 +3846,6 @@ export type Database = {
       plan_tasks: {
         Row: {
           asset_id: string | null
-          task_key: string | null
           blocked_reason: string | null
           critical: boolean
           description: string | null
@@ -3599,13 +3862,13 @@ export type Database = {
           skip_reason: string | null
           sort_order: number
           status: string
+          task_key: string | null
           template_task_id: string | null
           title: string
           updated_at: string
         }
         Insert: {
           asset_id?: string | null
-          task_key?: string | null
           blocked_reason?: string | null
           critical?: boolean
           description?: string | null
@@ -3622,13 +3885,13 @@ export type Database = {
           skip_reason?: string | null
           sort_order?: number
           status?: string
+          task_key?: string | null
           template_task_id?: string | null
           title: string
           updated_at?: string
         }
         Update: {
           asset_id?: string | null
-          task_key?: string | null
           blocked_reason?: string | null
           critical?: boolean
           description?: string | null
@@ -3645,6 +3908,7 @@ export type Database = {
           skip_reason?: string | null
           sort_order?: number
           status?: string
+          task_key?: string | null
           template_task_id?: string | null
           title?: string
           updated_at?: string
@@ -3715,9 +3979,9 @@ export type Database = {
           start_date: string
           status: string
           template_id: string | null
+          updated_at: string
           welcome_sent_at: string | null
           welcome_sent_to: string | null
-          updated_at: string
         }
         Insert: {
           cancelled_reason?: string | null
@@ -3732,9 +3996,9 @@ export type Database = {
           start_date: string
           status?: string
           template_id?: string | null
+          updated_at?: string
           welcome_sent_at?: string | null
           welcome_sent_to?: string | null
-          updated_at?: string
         }
         Update: {
           cancelled_reason?: string | null
@@ -3749,9 +4013,9 @@ export type Database = {
           start_date?: string
           status?: string
           template_id?: string | null
+          updated_at?: string
           welcome_sent_at?: string | null
           welcome_sent_to?: string | null
-          updated_at?: string
         }
         Relationships: [
           {
@@ -4192,6 +4456,65 @@ export type Database = {
           },
         ]
       }
+      signatures: {
+        Row: {
+          capacity: string
+          created_at: string
+          document_sha256: string | null
+          id: string
+          image: string | null
+          method: Database["public"]["Enums"]["signature_method"]
+          person_id: string
+          signed_at: string
+          signed_ip: string | null
+          signed_name: string
+          statement: string
+          subject_id: string
+          subject_type: string
+          user_agent: string | null
+        }
+        Insert: {
+          capacity: string
+          created_at?: string
+          document_sha256?: string | null
+          id?: string
+          image?: string | null
+          method: Database["public"]["Enums"]["signature_method"]
+          person_id: string
+          signed_at?: string
+          signed_ip?: string | null
+          signed_name: string
+          statement: string
+          subject_id: string
+          subject_type: string
+          user_agent?: string | null
+        }
+        Update: {
+          capacity?: string
+          created_at?: string
+          document_sha256?: string | null
+          id?: string
+          image?: string | null
+          method?: Database["public"]["Enums"]["signature_method"]
+          person_id?: string
+          signed_at?: string
+          signed_ip?: string | null
+          signed_name?: string
+          statement?: string
+          subject_id?: string
+          subject_type?: string
+          user_agent?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "signatures_person_id_fkey"
+            columns: ["person_id"]
+            isOneToOne: false
+            referencedRelation: "people"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       task_templates: {
         Row: {
           active: boolean
@@ -4356,19 +4679,32 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
-      hiring_managers: { Args: { p_company_id: string }; Returns: { full_name: string; id: string }[] }
-      contract_values: { Args: { p_employment_id?: string; p_person_id: string }; Returns: Json }
-      publish_contract_template: { Args: { p_body?: string; p_template_id: string; p_title?: string }; Returns: Json }
-      accept_equipment_return: { Args: { p_condition?: string; p_return_id: string }; Returns: Json }
-      cancel_equipment_return: { Args: { p_return_id: string }; Returns: Json }
-      decline_equipment_return: { Args: { p_reason: string; p_return_id: string }; Returns: Json }
-      hr_people: { Args: { p_company_id: string }; Returns: { full_name: string; id: string }[] }
-      request_equipment: { Args: { p_company_id: string; p_note?: string; p_title: string }; Returns: Json }
-      start_equipment_return: {
-        Args: { p_asset_id: string; p_condition?: string; p_hr_person_id: string; p_reason?: string }
+      accept_asset_handover: {
+        Args: {
+          p_condition?: string
+          p_handover_id: string
+          p_sign_image?: string
+          p_sign_method?: Database["public"]["Enums"]["signature_method"]
+          p_sign_name: string
+        }
+        Returns: Json
+      }
+      accept_equipment_return: {
+        Args: {
+          p_condition?: string
+          p_return_id: string
+          p_sign_image?: string
+          p_sign_method?: Database["public"]["Enums"]["signature_method"]
+          p_sign_name: string
+        }
         Returns: Json
       }
       acknowledge_policy: { Args: { p_policy_id: string }; Returns: Json }
+      add_kit_item: {
+        Args: { p_item: string; p_request_id: string }
+        Returns: Json
+      }
+      add_payroll_item: { Args: { p: Json }; Returns: Json }
       add_plan_task: {
         Args: {
           p_critical?: boolean
@@ -4379,7 +4715,6 @@ export type Database = {
         }
         Returns: Json
       }
-      add_kit_item: { Args: { p_item: string; p_request_id: string }; Returns: Json }
       adjust_leave_balance: {
         Args: {
           p_company_id: string
@@ -4421,6 +4756,7 @@ export type Database = {
         Args: { p_document_id: string; p_request_id: string }
         Returns: Json
       }
+      cancel_asset_handover: { Args: { p_handover_id: string }; Returns: Json }
       cancel_departure: {
         Args: { p_employment_period_id: string; p_reason?: string }
         Returns: Json
@@ -4429,16 +4765,17 @@ export type Database = {
         Args: { p_change_id: string }
         Returns: undefined
       }
+      cancel_equipment_return: { Args: { p_return_id: string }; Returns: Json }
       cancel_leave: {
         Args: { p_reason: string; p_request_id: string }
         Returns: Json
       }
       cancel_reservation: { Args: { p_assignment_id: string }; Returns: Json }
-      compensation_summary: { Args: { p_company_id: string }; Returns: Json }
       company_template: {
         Args: { p_company_id: string; p_kind: string }
         Returns: Json
       }
+      compensation_summary: { Args: { p_company_id: string }; Returns: Json }
       complete_departure: {
         Args: { p_employment_period_id: string }
         Returns: Json
@@ -4451,6 +4788,10 @@ export type Database = {
           p_manager_id?: string
           p_start_date: string
         }
+        Returns: Json
+      }
+      contract_values: {
+        Args: { p_employment_id?: string; p_person_id: string }
         Returns: Json
       }
       correct_employment: {
@@ -4478,20 +4819,43 @@ export type Database = {
         Args: { p_decision: string; p_note?: string; p_request_id: string }
         Returns: Json
       }
+      decline_asset_handover: {
+        Args: { p_handover_id: string; p_reason: string }
+        Returns: Json
+      }
+      decline_equipment_return: {
+        Args: { p_reason: string; p_return_id: string }
+        Returns: Json
+      }
       decline_leave_cancellation: {
         Args: { p_note: string; p_request_id: string }
         Returns: Json
       }
+      equipment_form_data: { Args: { p_queue_id: string }; Returns: Json }
       first_day_details: { Args: { p_company_id: string }; Returns: Json }
-      add_payroll_item: { Args: { p: Json }; Returns: Json }
-      remove_payroll_item: { Args: { p_id: string }; Returns: Json }
-      payroll_settings: { Args: { p_company_id: string }; Returns: Json }
-      set_payroll_settings: { Args: { p: Json; p_company_id: string }; Returns: Json }
-      kudos_overview: { Args: { p_month?: string | null }; Returns: Json }
-      record_kudos: { Args: { p: Json }; Returns: Json }
-      update_kudos: { Args: { p: Json; p_id: string }; Returns: Json }
-      save_kudos_value: { Args: { p: Json; p_id: string | null }; Returns: Json }
+      handover_candidates: {
+        Args: { p_asset_id: string }
+        Returns: {
+          full_name: string
+          id: string
+          job_title: string
+        }[]
+      }
       handover_fields: { Args: never; Returns: Json }
+      hiring_managers: {
+        Args: { p_company_id: string }
+        Returns: {
+          full_name: string
+          id: string
+        }[]
+      }
+      hr_people: {
+        Args: { p_company_id: string }
+        Returns: {
+          full_name: string
+          id: string
+        }[]
+      }
       import_field_notebook: {
         Args: { p_commit?: boolean; p_payload: Json }
         Returns: Json
@@ -4505,6 +4869,7 @@ export type Database = {
         Args: { p_asset_id?: string; p_index: number; p_request_id: string }
         Returns: Json
       }
+      kudos_overview: { Args: { p_month?: string }; Returns: Json }
       leave_balance: {
         Args: { p_company_id: string; p_person_id: string; p_year: number }
         Returns: Json
@@ -4512,6 +4877,7 @@ export type Database = {
       mark_handover_sent: { Args: { p_id: string }; Returns: Json }
       mark_notifications_read: { Args: { p_ids?: string[] }; Returns: number }
       mark_payroll_exported: { Args: { p_period_id: string }; Returns: Json }
+      payroll_settings: { Args: { p_company_id: string }; Returns: Json }
       prepare_payroll_period: {
         Args: {
           p_company_id: string
@@ -4533,6 +4899,10 @@ export type Database = {
         }
         Returns: Json
       }
+      publish_contract_template: {
+        Args: { p_body?: string; p_template_id: string; p_title?: string }
+        Returns: Json
+      }
       publish_policy: {
         Args: {
           p_body?: string
@@ -4543,11 +4913,31 @@ export type Database = {
         }
         Returns: Json
       }
+      record_generated_document: {
+        Args: {
+          p_queue_id: string
+          p_size_bytes: number
+          p_storage_path: string
+          p_title: string
+        }
+        Returns: Json
+      }
+      record_kudos: { Args: { p: Json }; Returns: Json }
       recruitment_report: {
         Args: { p_company_id: string; p_from: string; p_to: string }
         Returns: Json
       }
+      remove_handover_recipient: { Args: { p_id: string }; Returns: Json }
+      remove_payroll_item: { Args: { p_id: string }; Returns: Json }
       reopen_payroll_period: { Args: { p_period_id: string }; Returns: Json }
+      reorder_template_tasks: {
+        Args: { p_ids: string[]; p_template_id: string }
+        Returns: Json
+      }
+      request_equipment: {
+        Args: { p_company_id: string; p_note?: string; p_title: string }
+        Returns: Json
+      }
       request_leave: {
         Args: {
           p_documents_to_follow?: boolean
@@ -4573,10 +4963,13 @@ export type Database = {
         }
         Returns: number
       }
+      resend_handover: { Args: { p_id: string }; Returns: Json }
       reserve_asset: {
         Args: { p_asset_id: string; p_note?: string; p_person_id: string }
         Returns: Json
       }
+      retire_template_task: { Args: { p_id: string }; Returns: Json }
+      retry_handover: { Args: { p_id: string }; Returns: Json }
       return_asset: {
         Args: {
           p_assignment_id: string
@@ -4590,15 +4983,8 @@ export type Database = {
         Returns: Json
       }
       roll_leave_year: { Args: { p_year: number }; Returns: number }
-      remove_handover_recipient: { Args: { p_id: string }; Returns: Json }
-      reorder_template_tasks: {
-        Args: { p_ids: string[]; p_template_id: string }
-        Returns: Json
-      }
-      resend_handover: { Args: { p_id: string }; Returns: Json }
-      retire_template_task: { Args: { p_id: string }; Returns: Json }
-      retry_handover: { Args: { p_id: string }; Returns: Json }
       save_handover_recipient: { Args: { p: Json }; Returns: Json }
+      save_kudos_value: { Args: { p: Json; p_id: string }; Returns: Json }
       schedule_departure: {
         Args: {
           p_employment_period_id: string
@@ -4617,14 +5003,18 @@ export type Database = {
         }
         Returns: Json
       }
+      send_welcome_note: {
+        Args: { p_plan_id: string; p_to?: string }
+        Returns: Json
+      }
       set_avatar: {
         Args: { p_path?: string; p_person_id: string }
         Returns: Json
       }
-      send_welcome_note: { Args: { p_plan_id: string; p_to?: string }; Returns: Json }
-      set_first_day_details: { Args: { p: Json; p_company_id: string }; Returns: Json }
-      set_starter_kit: { Args: { p_company_id: string; p_items: string[] }; Returns: Json }
-      starter_kit: { Args: { p_company_id: string }; Returns: Json }
+      set_first_day_details: {
+        Args: { p: Json; p_company_id: string }
+        Returns: Json
+      }
       set_leave_entitlement: {
         Args: {
           p_company_id: string
@@ -4635,6 +5025,39 @@ export type Database = {
         }
         Returns: Json
       }
+      set_payroll_settings: {
+        Args: { p: Json; p_company_id: string }
+        Returns: Json
+      }
+      set_starter_kit: {
+        Args: { p_company_id: string; p_items: string[] }
+        Returns: Json
+      }
+      start_asset_handover: {
+        Args: {
+          p_asset_id: string
+          p_condition?: string
+          p_reason?: string
+          p_sign_image?: string
+          p_sign_method?: Database["public"]["Enums"]["signature_method"]
+          p_sign_name: string
+          p_to_person_id: string
+        }
+        Returns: Json
+      }
+      start_equipment_return: {
+        Args: {
+          p_asset_id: string
+          p_condition?: string
+          p_hr_person_id: string
+          p_reason?: string
+          p_sign_image?: string
+          p_sign_method?: Database["public"]["Enums"]["signature_method"]
+          p_sign_name: string
+        }
+        Returns: Json
+      }
+      starter_kit: { Args: { p_company_id: string }; Returns: Json }
       submit_requested_document: {
         Args: { p_document_id: string; p_request_id: string }
         Returns: Json
@@ -4654,11 +5077,13 @@ export type Database = {
         }
         Returns: Json
       }
+      update_kudos: { Args: { p: Json; p_id: string }; Returns: Json }
       upsert_template_task: { Args: { p: Json }; Returns: Json }
+      welcome_note_data: { Args: { p_queue_id: string }; Returns: Json }
       welcome_note_text: { Args: { p_plan_id: string }; Returns: Json }
     }
     Enums: {
-      [_ in never]: never
+      signature_method: "typed" | "drawn"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -4785,7 +5210,9 @@ export type CompositeTypes<
 
 export const Constants = {
   public: {
-    Enums: {},
+    Enums: {
+      signature_method: ["typed", "drawn"],
+    },
   },
 } as const
 

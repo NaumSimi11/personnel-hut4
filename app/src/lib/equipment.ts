@@ -169,48 +169,76 @@ export const returnRequestInput = z.object({
 })
 export type ReturnRequestForm = z.input<typeof returnRequestInput>
 
-export type EquipmentReturn = {
-  readonly id: string
-  readonly status: 'awaiting_hr' | 'accepted' | 'declined' | 'cancelled'
-  readonly person_id: string
-  readonly hr_person_id: string
-  readonly decline_reason: string | null
-  readonly signed_by_person_at: string | null
-  readonly signed_by_hr_at: string | null
-}
-
-export type ReturnAction = { key: 'accept' | 'decline' | 'cancel'; label: string }
+export type HandoverKind = 'return' | 'issue' | 'reassign'
+export type HandoverStatus = 'awaiting' | 'accepted' | 'declined' | 'cancelled'
 
 /**
- * What a viewer may do about a return in flight.
+ * An asset changing hands, whichever way it is pointed.
  *
- * A return is finished when both names are on it, so the two sides get
- * different buttons: the person who started it may take it back until HR has
- * looked, and only the named HR person decides. Neither can do the other's
- * part, which is the whole reason the record exists.
+ * A return used to have its own type, its own buttons and its own wording.
+ * Reassigning is the same event with the names swapped, so it is the same type:
+ * somebody starts it and signs, the counterparty signs, and only then does the
+ * thing move. `kind` only decides what the buttons are called.
  */
-export function returnActions(ret: EquipmentReturn, viewerId: string | null): ReturnAction[] {
-  if (ret.status !== 'awaiting_hr' || !viewerId) return []
-  if (viewerId === ret.hr_person_id) {
+export type Handover = {
+  readonly id: string
+  readonly kind: HandoverKind
+  readonly status: HandoverStatus
+  readonly started_by: string
+  readonly counterparty_id: string
+  readonly from_person_id: string | null
+  readonly to_person_id: string | null
+  readonly decline_reason: string | null
+  readonly signed_by_starter_at: string | null
+  readonly signed_by_counterparty_at: string | null
+}
+
+export type HandoverAction = { key: 'accept' | 'decline' | 'cancel'; label: string }
+
+const LABELS: Record<HandoverKind, { accept: string; decline: string; cancel: string }> = {
+  return: { accept: 'Accept the return', decline: 'Not accepted', cancel: 'Cancel the return' },
+  issue: { accept: 'Accept it', decline: 'I did not get it', cancel: 'Withdraw' },
+  reassign: { accept: 'Accept it', decline: 'I did not get it', cancel: 'Withdraw' },
+}
+
+/**
+ * What a viewer may do about a handover in flight.
+ *
+ * The two sides get different buttons: whoever started it may withdraw it until
+ * the other has looked, and only the counterparty decides. Neither can do the
+ * other's part, which is the whole reason the record exists.
+ */
+export function handoverActions(h: Handover, viewerId: string | null): HandoverAction[] {
+  if (h.status !== 'awaiting' || !viewerId) return []
+  const labels = LABELS[h.kind]
+  if (viewerId === h.counterparty_id) {
     return [
-      { key: 'accept', label: 'Accept the return' },
-      { key: 'decline', label: 'Not accepted' },
+      { key: 'accept', label: labels.accept },
+      { key: 'decline', label: labels.decline },
     ]
   }
-  if (viewerId === ret.person_id) return [{ key: 'cancel', label: 'Cancel the return' }]
+  if (viewerId === h.started_by) return [{ key: 'cancel', label: labels.cancel }]
   return []
 }
 
-/** What the person sees about a return of theirs, in plain words. */
-export function returnStatusLine(ret: EquipmentReturn, hrName: string): string {
-  switch (ret.status) {
-    case 'awaiting_hr':
-      return `Waiting for ${hrName} to accept it.`
+/** What one side sees about a handover, in plain words. */
+export function handoverStatusLine(
+  h: Handover,
+  viewerId: string | null,
+  names: { starter: string; counterparty: string },
+): string {
+  switch (h.status) {
+    case 'awaiting':
+      return viewerId === h.counterparty_id
+        ? 'Waiting for you to sign it.'
+        : `Waiting for ${names.counterparty} to sign it.`
     case 'accepted':
-      return `Accepted by ${hrName}. Signed by both of you.`
+      return h.kind === 'return'
+        ? `Accepted by ${names.counterparty}. Signed by both of you.`
+        : `${names.counterparty} signed for it.`
     case 'declined':
-      return ret.decline_reason ? `Not accepted — ${ret.decline_reason}` : 'Not accepted.'
+      return h.decline_reason ? `Not accepted — ${h.decline_reason}` : 'Not accepted.'
     case 'cancelled':
-      return 'You cancelled this return.'
+      return viewerId === h.started_by ? 'You withdrew this.' : `${names.starter} withdrew this.`
   }
 }

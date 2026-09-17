@@ -170,7 +170,60 @@ On `TEST-L01` → `Reserve` → choose `TEST Ana Stojanova` → `Confirm reserva
 ✅ A **handover form PDF** is generated and filed under her documents.
 ✅ Open her record → Documents → the PDF is there and opens.
 
-### 2.3 Prove the pool rule
+### 2.3 The asset's own page
+
+Click the tag `TEST-L01` in the register.
+
+✅ You land on a page for that one asset: its numbers, type, model, serial,
+which company owns it, and who holds it.
+✅ **History** reads newest first and ends with `Registered`.
+✅ `Add a note` → `Service or repair`, "Battery replaced under warranty" → the
+line appears in the history against Ana's name, because she held it at the time.
+
+### 2.4 Hand it to somebody else
+
+Still on `TEST-L01`, press `Hand it to someone else`.
+
+✅ The list of who it can go to only contains people **currently employed by the
+company that owns it**, and Ana — who already holds it — is not in it.
+✅ Pick `TEST Marko Petrov`, condition `As issued`, reason `Swapping machines` →
+`Review and sign`.
+✅ A dialog fills the screen with the statement you are signing: *"I confirm that
+I am handing over the equipment listed on this form on behalf of …"*. Type your
+name → `Sign`.
+
+Now check that **nothing has moved yet**:
+
+✅ The page says it is waiting on a signature and names both people.
+✅ `Held by` still reads **Ana**. This is the point — an asset does not change
+hands on one person's word.
+✅ Ana is notified that it is being handed to Marko, and a **return form** is
+filed under her documents.
+✅ Marko is notified that you are handing him the laptop.
+
+Try to sign it yourself:
+
+✅ Refused — *"You started this handover — the other side has to sign for it."*
+
+Now sign in as **Marko** → `/me` → Equipment.
+
+✅ A row reads `TEST-L01 — <your name> is handing this to you` with
+`Accept it` and `I did not get it`.
+✅ `Accept it` → the dialog shows a different statement: *"I confirm that I have
+received the equipment listed on this form, that I have checked its condition…"*
+→ sign.
+✅ Back on the asset page, `Held by` is now **Marko**, and the history shows
+Ana's assignment closed and Marko's opened on the same day.
+✅ Marko's documents now carry a **handover form** listing the laptop.
+
+Then try the refusal path with the other laptop:
+
+✅ Start a handover, sign in as the receiver, `I did not get it` with a reason →
+the asset stays where it was, and whoever started it is told the reason.
+✅ `Withdraw` before the other side looks → nothing moved, and the row is gone
+from their list.
+
+### 2.5 Prove the pool rule
 
 Try to reserve `TEST-P01` (holding pool) for someone at a **different** company.
 

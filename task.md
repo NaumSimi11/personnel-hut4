@@ -76,7 +76,48 @@ DONE
 - person page: edit forms fold on their own width, not the window's
 - equipment preview page: full detail, delete, and a service history
 
+- equipment preview page: reassigning from the page itself. Built by
+  generalising the return rather than copying it: equipment_returns became
+  asset_handovers, which records an asset changing hands in either direction.
+  The register's two-party rule, the signature pad and the forms are shared.
+  On a reassign the outgoing holder does not sign — they are told, and their
+  return form is filed while they still hold it, so equipment can still be
+  recovered from somebody on leave or not answering.
+
 LEFT
-- equipment preview page: reassigning from the page itself, with a signed
-  document to both sides. The return flow already does this in reverse, so it
-  is that flow pointed the other way rather than new machinery.
+(nothing from the list above)
+
+---
+NEXT, in the order I would do them
+
+1. Nobody has run the E2E suite against any of this. Everything built since
+   the попис import — the register, self-service, signing, contract
+   templates, the asset page, handovers — is verified by unit tests and by
+   me driving the database, not by the browser suite. It is gated behind
+   E2E_ALLOW_PRODUCTION for good reason; it wants a scratch project to run
+   against, not the live one.
+
+2. holder_note — 64 assets whose holder came from the books and was never
+   matched to a person. A handover clears it, which is the right cure, but
+   nothing prompts anyone to do it. A filter on the register for "named in
+   the books, not matched to anyone" would let somebody work through them.
+
+3. A handover that nobody signs sits awaiting forever, and the asset reads
+   as still held by the old person. It wants an age: after a fortnight,
+   show it as stale on the asset page and tell whoever started it. Not an
+   auto-cancel — silently undoing a handover is worse than a stale row.
+
+4. The signed scan comes back as a new version of the generated document,
+   but nothing checks that it ever does. A handover accepted in the app with
+   no signed copy filed is the same gap the return form has. A column on
+   asset_handovers pointing at the document, and a line on the asset page
+   when it is missing.
+
+5. There is no page listing handovers. They are visible on the asset and on
+   /me, which is right for the two people involved, but HR has no way to see
+   "what moved this month" without opening assets one at a time. The data is
+   there; it is one read-only page.
+
+6. equipment_form_data prints everything a person holds, not the one thing
+   the form is about. On a return of a single laptop the form lists the
+   phone too. Correct for an offboarding, misleading for one handover.

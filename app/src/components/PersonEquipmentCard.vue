@@ -6,15 +6,15 @@ import {
   assetStatusLabel,
   equipmentRequestInput,
   itRequestStatusLabel,
-  returnActions,
+  handoverActions,
+  handoverStatusLine,
   returnRequestInput,
-  returnStatusLine,
-  type EquipmentReturn,
-  type ReturnAction,
+  type Handover,
+  type HandoverAction,
 } from '@/lib/equipment'
 import { useDialogStore } from '@/stores/dialogs'
 import SignaturePad from '@/components/SignaturePad.vue'
-import { capacityFor, returnStatements, type SignatureInput } from '@shared/signature'
+import { handoverCapacity, handoverStatement, type HandoverSide, type SignatureInput } from '@shared/signature'
 
 /**
  * What one person holds and what IT is doing for them (plan 029): open
@@ -35,11 +35,12 @@ type Held = {
   asset: { asset_tag: string; type_key: string; model: string | null; status: string; company_id: string } | null
 }
 type Request = { id: string; title: string; status: string; company_id: string; requested_systems: unknown; blocked_reason: string | null }
-type ReturnRow = EquipmentReturn & {
+type HandoverRow = Handover & {
   asset_id: string
   company_id: string
   asset: { asset_tag: string; model: string | null } | null
-  hr: { full_name: string } | null
+  counterparty: { full_name: string } | null
+  starter: { full_name: string } | null
 }
 type HrPerson = { id: string; full_name: string }
 
@@ -53,7 +54,7 @@ const error = ref<string | null>(null)
 const held = ref<Held[]>([])
 const requests = ref<Request[]>([])
 const types = ref<Record<string, string>>({})
-const returns = ref<ReturnRow[]>([])
+const handovers = ref<HandoverRow[]>([])
 const hrPeople = ref<HrPerson[]>([])
 const dialogs = useDialogStore()
 const busy = ref(false)
@@ -72,28 +73,40 @@ const returnForm = ref({ hrPersonId: '', reason: '', condition: '' })
 const signingReturn = ref(false)
 // One dialog serves both signatures; which one is decided by whether an accept
 // is in flight, so the pad, the statement and the capacity stay in step.
-const signing = computed(() => signingReturn.value || acceptingReturn.value !== null)
-const signingTitle = computed(() =>
-  acceptingReturn.value
-    ? `Accept ${acceptingReturn.value.asset?.asset_tag ?? 'this asset'} back`
-    : `Sign the return of ${returning.value?.asset?.asset_tag ?? 'this asset'}`,
-)
+const accepting = ref<HandoverRow | null>(null)
+const signing = computed(() => signingReturn.value || accepting.value !== null)
+const signingTitle = computed(() => {
+  const a = accepting.value
+  if (!a) return `Sign the return of ${returning.value?.asset?.asset_tag ?? 'this asset'}`
+  const tag = a.asset?.asset_tag ?? 'this asset'
+  return a.kind === 'return' ? `Accept ${tag} back` : `Accept ${tag}`
+})
 function closeSigning(): void {
   signingReturn.value = false
-  acceptingReturn.value = null
+  accepting.value = null
 }
-const acceptingReturn = ref<ReturnRow | null>(null)
 
-const companyOfReturn = computed(() =>
-  companyName(returning.value?.asset?.company_id ?? acceptingReturn.value?.company_id ?? '') || 'the company',
+const signingCompany = computed(() =>
+  companyName(returning.value?.asset?.company_id ?? accepting.value?.company_id ?? '') || 'the company',
 )
-const statements = computed(() => returnStatements(companyOfReturn.value))
+// Which of the four statements is in front of you: starting a return, taking
+// one in as HR, or signing for equipment somebody is handing you.
+const signingSide = computed<HandoverSide>(() => {
+  if (!accepting.value) return 'returning'
+  return accepting.value.kind === 'return' ? 'receivingForCompany' : 'receiving'
+})
 
-/** A return in flight for an asset, so its row can say so instead of offering Return again. */
-const openReturnFor = (assetId: string) =>
-  returns.value.find((r) => r.asset_id === assetId && r.status === 'awaiting_hr') ?? null
-const mine = computed(() => returns.value.filter((r) => r.person_id === auth.personId))
-const forMe = computed(() => returns.value.filter((r) => r.hr_person_id === auth.personId && r.status === 'awaiting_hr'))
+/** A handover in flight for an asset, so its row says so instead of offering Return again. */
+const openHandoverFor = (assetId: string) =>
+  handovers.value.find((h) => h.asset_id === assetId && h.status === 'awaiting') ?? null
+const mine = computed(() => handovers.value.filter((h) => h.started_by === auth.personId))
+const forMe = computed(() =>
+  handovers.value.filter((h) => h.counterparty_id === auth.personId && h.status === 'awaiting'),
+)
+const namesOf = (h: HandoverRow) => ({
+  starter: h.starter?.full_name ?? 'they',
+  counterparty: h.counterparty?.full_name ?? 'the other side',
+})
 
 async function run(label: string, fn: () => Promise<{ error: { message: string } | null }>): Promise<boolean> {
   busy.value = true
@@ -179,46 +192,56 @@ async function signAndSend(sig: SignatureInput): Promise<void> {
 }
 
 async function signAndAccept(sig: SignatureInput): Promise<void> {
-  const r = acceptingReturn.value
-  if (!r) return
-  const ok = await run('Accept return', async () =>
-    await supabase.rpc('accept_equipment_return', {
-      p_return_id: r.id,
+  const h = accepting.value
+  if (!h) return
+  const ok = await run('Accept handover', async () =>
+    await supabase.rpc('accept_asset_handover', {
+      p_handover_id: h.id,
       p_sign_name: sig.name,
       p_sign_method: sig.method,
       p_sign_image: sig.image ?? undefined,
     }),
   )
   if (ok) {
-    acceptingReturn.value = null
-    notice.value = `${r.asset?.asset_tag ?? 'The asset'} is back in magacin. The form carries both names.`
+    accepting.value = null
+    const tag = h.asset?.asset_tag ?? 'The asset'
+    notice.value =
+      h.kind === 'return'
+        ? `${tag} is back in magacin. The form carries both names.`
+        : `${tag} is yours. The form carries both names.`
   }
 }
 
-async function actOnReturn(r: ReturnRow, action: ReturnAction): Promise<void> {
+async function actOnHandover(h: HandoverRow, action: HandoverAction): Promise<void> {
+  const isReturn = h.kind === 'return'
   if (action.key === 'accept') {
-    // HR signs the same form; accepting without a name on it would leave the
-    // person's signature facing nothing.
-    acceptingReturn.value = r
+    // The counterparty signs the same form; accepting without a name on it
+    // would leave the first signature facing nothing.
+    accepting.value = h
     return
   }
   if (action.key === 'decline') {
     const answer = await dialogs.askReason({
-      title: 'Not accepting this return?',
-      hint: 'The person keeps the equipment. Say what they should do next.',
+      title: isReturn ? 'Not accepting this return?' : 'Not accepting this equipment?',
+      hint: isReturn
+        ? 'The person keeps the equipment. Say what they should do next.'
+        : 'It stays where it is. Say what went wrong, so IT knows what to do.',
       confirmLabel: 'Send it back to them',
     })
     if (!answer) return
-    await run('Decline return', async () => await supabase.rpc('decline_equipment_return', { p_return_id: r.id, p_reason: answer.reason }))
+    await run('Decline handover', async () =>
+      await supabase.rpc('decline_asset_handover', { p_handover_id: h.id, p_reason: answer.reason }))
     return
   }
   const sure = await dialogs.confirmAction({
-    title: 'Cancel this return?',
-    hint: 'You keep the equipment and HR stops seeing the request.',
-    confirmLabel: 'Cancel the return',
+    title: isReturn ? 'Cancel this return?' : 'Withdraw this handover?',
+    hint: isReturn
+      ? 'You keep the equipment and HR stops seeing the request.'
+      : 'Nothing moves, and they stop being asked to sign.',
+    confirmLabel: isReturn ? 'Cancel the return' : 'Withdraw it',
     cancelLabel: 'Keep it pending',
   })
-  if (sure) await run('Cancel return', async () => await supabase.rpc('cancel_equipment_return', { p_return_id: r.id }))
+  if (sure) await run('Cancel handover', async () => await supabase.rpc('cancel_asset_handover', { p_handover_id: h.id }))
 }
 
 const companyName = (id: string) => props.companies.find((c) => c.id === id)?.name ?? ''
@@ -243,11 +266,12 @@ async function load(): Promise<void> {
       .eq('person_id', props.personId)
       .not('status', 'in', '("done","cancelled")'),
     supabase.from('asset_types').select('key, label'),
-    // Returns this person started, and any waiting on them as HR.
+    // Handovers this person started, and any waiting on the viewer to sign —
+    // a return they sent to HR, or equipment somebody is handing them.
     supabase
-      .from('equipment_returns')
-      .select('id, asset_id, company_id, person_id, hr_person_id, status, decline_reason, signed_by_person_at, signed_by_hr_at, asset:assets(asset_tag, model), hr:people!equipment_returns_hr_person_id_fkey(full_name)')
-      .or(`person_id.eq.${props.personId},hr_person_id.eq.${auth.personId ?? props.personId}`)
+      .from('asset_handovers')
+      .select('id, asset_id, company_id, kind, status, started_by, counterparty_id, from_person_id, to_person_id, decline_reason, signed_by_starter_at, signed_by_counterparty_at, asset:assets(asset_tag, model), counterparty:people!asset_handovers_counterparty_id_fkey(full_name), starter:people!asset_handovers_started_by_fkey(full_name)')
+      .or(`started_by.eq.${props.personId},counterparty_id.eq.${auth.personId ?? props.personId}`)
       .order('created_at', { ascending: false }),
   ])
   loading.value = false
@@ -259,7 +283,7 @@ async function load(): Promise<void> {
   held.value = (heldRes.data ?? []) as unknown as Held[]
   requests.value = (reqRes.data ?? []) as Request[]
   types.value = Object.fromEntries((typeRes.data ?? []).map((t) => [t.key, t.label]))
-  returns.value = (retRes.data ?? []) as unknown as ReturnRow[]
+  handovers.value = (retRes.data ?? []) as unknown as HandoverRow[]
 }
 
 onMounted(load)
@@ -286,12 +310,13 @@ watch(() => `${props.personId}|${props.companies.map((c) => c.id).join(',')}`, (
             <template v-if="h.asset"> · {{ assetStatusLabel(h.asset.status) }}</template>
             <template v-if="h.asset && companies.length > 1"> · {{ companyName(h.asset.company_id) }}</template>
           </small>
-          <small v-if="openReturnFor(h.asset_id)" class="pending">
-            Return sent to {{ openReturnFor(h.asset_id)?.hr?.full_name ?? 'HR' }} — waiting for them to accept it.
+          <small v-if="openHandoverFor(h.asset_id)" class="pending">
+            {{ openHandoverFor(h.asset_id)?.kind === 'return' ? 'Return sent to' : 'Being handed to' }}
+            {{ openHandoverFor(h.asset_id)?.counterparty?.full_name ?? 'HR' }} — waiting for them to sign.
           </small>
         </div>
         <button
-          v-if="isMe && h.issued_at && !openReturnFor(h.asset_id)"
+          v-if="isMe && h.issued_at && !openHandoverFor(h.asset_id)"
           class="button secondary small-btn"
           type="button"
           :disabled="busy"
@@ -336,26 +361,32 @@ watch(() => `${props.personId}|${props.companies.map((c) => c.id).join(',')}`, (
 
       <div v-for="r in forMe" :key="r.id" class="equipment-row awaiting">
         <div class="row-text">
-          <strong>{{ r.asset?.asset_tag }} — returned to you</strong>
-          <small>{{ r.asset?.model }} · signed {{ r.signed_by_person_at?.slice(0, 10) }}</small>
+          <strong>
+            {{ r.asset?.asset_tag }} —
+            {{ r.kind === 'return' ? 'returned to you' : `${r.starter?.full_name ?? 'someone'} is handing this to you` }}
+          </strong>
+          <small>
+            <template v-if="r.asset?.model">{{ r.asset.model }} · </template>
+            signed {{ r.signed_by_starter_at?.slice(0, 10) }}
+          </small>
         </div>
         <div class="row-actions">
           <button
-            v-for="a in returnActions(r, auth.personId)"
+            v-for="a in handoverActions(r, auth.personId)"
             :key="a.key"
             class="button small-btn"
             :class="{ secondary: a.key !== 'accept' }"
             type="button"
             :disabled="busy"
-            @click="actOnReturn(r, a)"
+            @click="actOnHandover(r, a)"
           >{{ a.label }}</button>
         </div>
       </div>
 
-      <div v-for="r in mine.filter((x) => x.status !== 'awaiting_hr')" :key="r.id" class="equipment-row settled">
+      <div v-for="r in mine.filter((x) => x.status !== 'awaiting')" :key="r.id" class="equipment-row settled">
         <div class="row-text">
           <strong>{{ r.asset?.asset_tag }}</strong>
-          <small>{{ returnStatusLine(r, r.hr?.full_name ?? 'HR') }}</small>
+          <small>{{ handoverStatusLine(r, auth.personId, namesOf(r)) }}</small>
         </div>
       </div>
 
@@ -371,11 +402,11 @@ watch(() => `${props.personId}|${props.companies.map((c) => c.id).join(',')}`, (
             <button class="button secondary small-btn" type="button" :disabled="busy" @click="closeSigning">Close</button>
           </div>
           <SignaturePad
-            :statement="acceptingReturn ? statements.hr : statements.person"
-            :capacity="capacityFor(acceptingReturn ? 'hr' : 'person', companyOfReturn)"
+            :statement="handoverStatement(signingSide, signingCompany)"
+            :capacity="handoverCapacity(signingSide, signingCompany)"
             :suggested-name="auth.personName ?? ''"
             :busy="busy"
-            @sign="acceptingReturn ? signAndAccept($event) : signAndSend($event)"
+            @sign="accepting ? signAndAccept($event) : signAndSend($event)"
           >
             <template #cancel>
               <button type="button" class="button secondary small-btn" :disabled="busy" @click="closeSigning">Cancel</button>

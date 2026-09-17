@@ -44,7 +44,9 @@ function cancel(): void {
 async function save(id: string | null, data: { name: string; description: string; active: boolean }): Promise<boolean> {
   busy.value = true
   error.value = null
-  const { error: err } = await supabase.rpc('save_kudos_value', { p_id: id, p: data as unknown as Json })
+  // p_id is a uuid with no default, so a null means "make a new one" — which the
+  // generated types cannot say, since they type every uuid argument as a string.
+  const { error: err } = await supabase.rpc('save_kudos_value', { p_id: id as string, p: data as unknown as Json })
   busy.value = false
   if (err) {
     error.value = err.code === '42501' ? 'Only an admin shapes the kudos values.' : err.message

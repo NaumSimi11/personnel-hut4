@@ -39,29 +39,74 @@ export function signatureProblem(input: SignatureInput): string | null {
 }
 
 /**
- * What each side is putting their name to.
+ * What each side is putting their name to: the four sides of a handover.
  *
  * Written out rather than implied, because "I signed the form" is worth nothing
  * in an argument and "I confirm I have handed back the equipment listed" is
- * worth something. Both carry the capacity — signing for yourself is a
+ * worth something. Each carries its capacity — signing for yourself is a
  * different act from signing for a company.
+ *
+ * `returning` / `receivingForCompany` are a person giving equipment back and HR
+ * taking it; `handingOver` / `receiving` are the company giving equipment out
+ * and a person taking it. Every statement says what the act was, not that a
+ * form was signed.
+ *
+ * These are shown before signing; the database composes the same words again
+ * when it records the signature, so what somebody read is what was stored and
+ * the page cannot choose the wording. Any change here must be made in the
+ * handover RPCs (migration 0062) too — they are the copy that is kept.
  */
+export type HandoverSide = 'returning' | 'receivingForCompany' | 'handingOver' | 'receiving'
+
+export function handoverStatement(side: HandoverSide, companyName: string): string {
+  switch (side) {
+    case 'returning':
+      return (
+        'I confirm that I have handed back the equipment listed on this form, ' +
+        'in the condition recorded, and that I keep nothing further belonging to the company.'
+      )
+    case 'receivingForCompany':
+      return (
+        `I confirm that I have received the equipment listed on this form on behalf of ${companyName}, ` +
+        'and that I am authorised to accept it.'
+      )
+    case 'handingOver':
+      return (
+        `I confirm that I am handing over the equipment listed on this form on behalf of ${companyName}, ` +
+        'that I am authorised to do so, and that the record of who held it before is correct.'
+      )
+    case 'receiving':
+      return (
+        'I confirm that I have received the equipment listed on this form, that I have checked its ' +
+        'condition, and that I will return it on request or when I leave.'
+      )
+  }
+}
+
+export function handoverCapacity(side: HandoverSide, companyName: string): string {
+  switch (side) {
+    case 'returning':
+      return 'The person returning the equipment'
+    case 'receiving':
+      return 'The person receiving the equipment'
+    default:
+      return `For ${companyName}`
+  }
+}
+
 export type ReturnStatements = {
   readonly person: string
   readonly hr: string
 }
 
+/** The return's two sides, kept under their old names for the return card. */
 export function returnStatements(companyName: string): ReturnStatements {
   return {
-    person:
-      'I confirm that I have handed back the equipment listed on this form, ' +
-      'in the condition recorded, and that I keep nothing further belonging to the company.',
-    hr:
-      `I confirm that I have received the equipment listed on this form on behalf of ${companyName}, ` +
-      'and that I am authorised to accept it.',
+    person: handoverStatement('returning', companyName),
+    hr: handoverStatement('receivingForCompany', companyName),
   }
 }
 
 export function capacityFor(role: 'person' | 'hr', companyName: string): string {
-  return role === 'person' ? 'The person returning the equipment' : `For ${companyName}`
+  return handoverCapacity(role === 'person' ? 'returning' : 'receivingForCompany', companyName)
 }

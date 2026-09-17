@@ -13,6 +13,7 @@ import {
   type AssignmentAction,
 } from '@/lib/equipment'
 import { assetLine, assetNumbers, holderChoice, NOBODY, OTHER_HOLDER } from '@/lib/assetRegister'
+import { nextAssetTag, nextInventoryNumber } from '@/lib/assetNumbering'
 
 /**
  * Equipment across the holding (plan 049): every asset the viewer may see —
@@ -53,7 +54,7 @@ const companies = ref<{ id: string; name: string }[]>([])
 const types = ref<{ key: string; label: string }[]>([])
 const filter = ref('')
 const addingAsset = ref(false)
-const assetForm = ref({ ownerId: POOL, assetTag: '', typeKey: '', model: '', serialNumber: '', note: '' })
+const assetForm = ref({ ownerId: POOL, assetTag: '', inventoryNumber: '', typeKey: '', model: '', serialNumber: '', note: '' })
 const reserving = ref<Asset | null>(null)
 const reservePersonId = ref('')
 const returning = ref<Asset | null>(null)
@@ -95,6 +96,11 @@ function canFor(a: Asset): (cap: string) => boolean {
 }
 const actionsFor = (a: Asset): AssignmentAction[] => assignmentActions(a, openAssignment(a), canFor(a))
 /** Who a given asset may go to: anyone employed for the pool, the company's people for a company asset. */
+const ownedBy = (ownerId: string) =>
+  assets.value.filter((a) => (ownerId === POOL ? a.company_id === null : a.company_id === ownerId))
+const suggestedTag = (ownerId: string) => nextAssetTag(ownedBy(ownerId).map((a) => a.asset_tag))
+const suggestedInventory = (ownerId: string) => nextInventoryNumber(ownedBy(ownerId).map((a) => a.inventory_number))
+
 const reserveOther = ref('')
 const candidatesFor = (a: Asset): Person[] => (a.company_id === null ? people.value : people.value.filter((p) => p.company_ids.includes(a.company_id as string)))
 
@@ -150,7 +156,18 @@ async function run(label: string, fn: () => PromiseLike<{ error: { message: stri
 }
 
 function startAsset(): void {
-  assetForm.value = { ownerId: ownerOptions.value[0]?.id ?? POOL, assetTag: '', typeKey: types.value[0]?.key ?? '', model: '', serialNumber: '', note: '' }
+  const owner = ownerOptions.value[0]?.id ?? POOL
+  assetForm.value = {
+    ownerId: owner,
+    // Where the company's own series got to. Only a suggestion — the label on
+    // the box is the authority, and whoever knows better overwrites it.
+    assetTag: suggestedTag(owner) ?? '',
+    inventoryNumber: suggestedInventory(owner) ?? '',
+    typeKey: types.value[0]?.key ?? '',
+    model: '',
+    serialNumber: '',
+    note: '',
+  }
   error.value = null
   addingAsset.value = true
 }
@@ -167,6 +184,7 @@ async function saveAsset(): Promise<void> {
       .insert({
         company_id: assetForm.value.ownerId === POOL ? null : assetForm.value.ownerId,
         asset_tag: parsed.data.assetTag,
+        inventory_number: assetForm.value.inventoryNumber.trim() || null,
         type_key: parsed.data.typeKey,
         model: parsed.data.model || null,
         serial_number: parsed.data.serialNumber || null,
@@ -273,11 +291,15 @@ onMounted(load)
         <form v-if="addingAsset" class="form" novalidate @submit.prevent="saveAsset">
           <label>
             <span>Belongs to</span>
-            <select id="asset-owner" v-model="assetForm.ownerId">
+            <select id="asset-owner" v-model="assetForm.ownerId" @change="assetForm.assetTag = suggestedTag(assetForm.ownerId) ?? ''; assetForm.inventoryNumber = suggestedInventory(assetForm.ownerId) ?? ''">
               <option v-for="o in ownerOptions" :key="o.id" :value="o.id">{{ o.name }}</option>
             </select>
           </label>
-          <label><span>Asset tag</span><input id="asset-tag" v-model="assetForm.assetTag" maxlength="60" /></label>
+          <label><span>Шифра (asset tag)</span><input id="asset-tag" v-model="assetForm.assetTag" maxlength="60" /></label>
+          <label>
+            <span>Инв. бр. (inventory number)</span>
+            <input id="asset-inventory" v-model="assetForm.inventoryNumber" maxlength="60" />
+          </label>
           <label>
             <span>Type</span>
             <select id="asset-type" v-model="assetForm.typeKey">

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { assetInput, assetStatusLabel, assignmentActions, itRequestActions, itRequestInput, parseSystems, kitItems, kitProgress, ownerLabel, tidyKit } from './equipment'
+import { assetInput, assetStatusLabel, assignmentActions, itRequestActions, itRequestInput, kitItems, kitProgress, ownerLabel, parseSystems, returnActions, returnStatusLine, tidyKit, type EquipmentReturn } from './equipment'
 
 describe('assetInput', () => {
   it('needs a tag and a type; the rest is optional', () => {
@@ -93,5 +93,59 @@ describe('assetInput with every column the sheets use', () => {
   it('refuses a ред. бр. that is not a number', () => {
     const parsed = assetInput.safeParse({ ...base, ordinal: 'fifty', inventoryNumber: '' })
     expect(parsed.success).toBe(false)
+  })
+})
+
+describe('returnActions', () => {
+  const ret: EquipmentReturn = {
+    id: 'r1', status: 'awaiting_hr', person_id: 'p1', hr_person_id: 'hr1',
+    decline_reason: null, signed_by_person_at: '2026-09-17', signed_by_hr_at: null,
+  }
+
+  it('lets the named HR person decide, and nothing else', () => {
+    expect(returnActions(ret, 'hr1')).toEqual([
+      { key: 'accept', label: 'Accept the return' },
+      { key: 'decline', label: 'Not accepted' },
+    ])
+  })
+
+  it('lets the person take it back while HR has not looked', () => {
+    expect(returnActions(ret, 'p1')).toEqual([{ key: 'cancel', label: 'Cancel the return' }])
+  })
+
+  it('offers a bystander nothing', () => {
+    expect(returnActions(ret, 'someone-else')).toEqual([])
+    expect(returnActions(ret, null)).toEqual([])
+  })
+
+  it('offers nothing once it is settled', () => {
+    for (const status of ['accepted', 'declined', 'cancelled'] as const) {
+      expect(returnActions({ ...ret, status }, 'hr1')).toEqual([])
+      expect(returnActions({ ...ret, status }, 'p1')).toEqual([])
+    }
+  })
+})
+
+describe('returnStatusLine', () => {
+  const base: EquipmentReturn = {
+    id: 'r1', status: 'awaiting_hr', person_id: 'p1', hr_person_id: 'hr1',
+    decline_reason: null, signed_by_person_at: null, signed_by_hr_at: null,
+  }
+
+  it('names who it is waiting on', () => {
+    expect(returnStatusLine(base, 'Ana')).toBe('Waiting for Ana to accept it.')
+  })
+
+  it('says both names are on it once accepted', () => {
+    expect(returnStatusLine({ ...base, status: 'accepted' }, 'Ana')).toBe('Accepted by Ana. Signed by both of you.')
+  })
+
+  it('gives the reason it was refused', () => {
+    expect(returnStatusLine({ ...base, status: 'declined', decline_reason: 'Keep it until Friday' }, 'Ana'))
+      .toBe('Not accepted — Keep it until Friday')
+  })
+
+  it('copes with a refusal that carries no reason', () => {
+    expect(returnStatusLine({ ...base, status: 'declined' }, 'Ana')).toBe('Not accepted.')
   })
 })

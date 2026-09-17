@@ -1151,6 +1151,63 @@ export type Database = {
           },
         ]
       }
+      equipment_returns: {
+        Row: {
+          asset_id: string
+          assignment_id: string | null
+          company_id: string
+          condition: string | null
+          created_at: string
+          decline_reason: string | null
+          document_id: string | null
+          hr_person_id: string
+          id: string
+          person_id: string
+          reason: string | null
+          signed_by_hr: string | null
+          signed_by_hr_at: string | null
+          signed_by_person_at: string | null
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          asset_id: string
+          assignment_id?: string | null
+          company_id: string
+          condition?: string | null
+          created_at?: string
+          decline_reason?: string | null
+          document_id?: string | null
+          hr_person_id: string
+          id?: string
+          person_id: string
+          reason?: string | null
+          signed_by_hr?: string | null
+          signed_by_hr_at?: string | null
+          signed_by_person_at?: string | null
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          asset_id?: string
+          assignment_id?: string | null
+          company_id?: string
+          condition?: string | null
+          created_at?: string
+          decline_reason?: string | null
+          document_id?: string | null
+          hr_person_id?: string
+          id?: string
+          person_id?: string
+          reason?: string | null
+          signed_by_hr?: string | null
+          signed_by_hr_at?: string | null
+          signed_by_person_at?: string | null
+          status?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       employment_changes: {
         Row: {
           applied_at: string | null
@@ -4224,6 +4281,15 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      accept_equipment_return: { Args: { p_condition?: string; p_return_id: string }; Returns: Json }
+      cancel_equipment_return: { Args: { p_return_id: string }; Returns: Json }
+      decline_equipment_return: { Args: { p_reason: string; p_return_id: string }; Returns: Json }
+      hr_people: { Args: { p_company_id: string }; Returns: { full_name: string; id: string }[] }
+      request_equipment: { Args: { p_company_id: string; p_note?: string; p_title: string }; Returns: Json }
+      start_equipment_return: {
+        Args: { p_asset_id: string; p_condition?: string; p_hr_person_id: string; p_reason?: string }
+        Returns: Json
+      }
       acknowledge_policy: { Args: { p_policy_id: string }; Returns: Json }
       add_plan_task: {
         Args: {

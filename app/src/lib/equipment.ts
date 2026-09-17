@@ -152,3 +152,65 @@ export function tidyKit(items: string[]): string[] {
     })
     .slice(0, KIT_MAX)
 }
+
+// ------------------------------------------------- asking, and handing back
+
+export const equipmentRequestInput = z.object({
+  companyId: z.string().min(1, 'Choose the company.'),
+  title: z.string().trim().min(3, 'Say what you need.').max(120),
+  note: z.string().trim().max(500),
+})
+export type EquipmentRequestForm = z.input<typeof equipmentRequestInput>
+
+export const returnRequestInput = z.object({
+  hrPersonId: z.string().min(1, 'Choose who in HR to send it to.'),
+  reason: z.string().trim().max(500),
+  condition: z.string().trim().max(120),
+})
+export type ReturnRequestForm = z.input<typeof returnRequestInput>
+
+export type EquipmentReturn = {
+  readonly id: string
+  readonly status: 'awaiting_hr' | 'accepted' | 'declined' | 'cancelled'
+  readonly person_id: string
+  readonly hr_person_id: string
+  readonly decline_reason: string | null
+  readonly signed_by_person_at: string | null
+  readonly signed_by_hr_at: string | null
+}
+
+export type ReturnAction = { key: 'accept' | 'decline' | 'cancel'; label: string }
+
+/**
+ * What a viewer may do about a return in flight.
+ *
+ * A return is finished when both names are on it, so the two sides get
+ * different buttons: the person who started it may take it back until HR has
+ * looked, and only the named HR person decides. Neither can do the other's
+ * part, which is the whole reason the record exists.
+ */
+export function returnActions(ret: EquipmentReturn, viewerId: string | null): ReturnAction[] {
+  if (ret.status !== 'awaiting_hr' || !viewerId) return []
+  if (viewerId === ret.hr_person_id) {
+    return [
+      { key: 'accept', label: 'Accept the return' },
+      { key: 'decline', label: 'Not accepted' },
+    ]
+  }
+  if (viewerId === ret.person_id) return [{ key: 'cancel', label: 'Cancel the return' }]
+  return []
+}
+
+/** What the person sees about a return of theirs, in plain words. */
+export function returnStatusLine(ret: EquipmentReturn, hrName: string): string {
+  switch (ret.status) {
+    case 'awaiting_hr':
+      return `Waiting for ${hrName} to accept it.`
+    case 'accepted':
+      return `Accepted by ${hrName}. Signed by both of you.`
+    case 'declined':
+      return ret.decline_reason ? `Not accepted — ${ret.decline_reason}` : 'Not accepted.'
+    case 'cancelled':
+      return 'You cancelled this return.'
+  }
+}

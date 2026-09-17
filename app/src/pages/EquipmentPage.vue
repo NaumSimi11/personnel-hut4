@@ -69,7 +69,6 @@ const shown = computed(() => {
   const list = filter.value === '' ? assets.value : filter.value === POOL ? assets.value.filter((a) => a.company_id === null) : assets.value.filter((a) => a.company_id === filter.value)
   return [...list].sort((a, b) => a.asset_tag.localeCompare(b.asset_tag))
 })
-const typeLabel = (key: string) => types.value.find((t) => t.key === key)?.label ?? key
 const openAssignment = (a: Asset) => a.asset_assignments.find((x) => x.returned_at === null) ?? null
 const typeNames = computed(() => Object.fromEntries(types.value.map((t) => [t.key, t.label])))
 // Only assets with a live (unreturned) assignment have a holder; that name comes
@@ -302,12 +301,12 @@ onMounted(load)
         <div v-if="!shown.length" class="empty">No assets here.</div>
         <div v-for="a in shown" :key="a.id" class="asset-row" :class="a.status" :data-testid="`asset-${a.asset_tag}`">
           <div class="row-text">
-            <strong>{{ a.asset_tag }} <span class="muted">· {{ typeLabel(a.type_key) }}<template v-if="a.model"> · {{ a.model }}</template></span></strong>
+            <strong>{{ a.asset_tag }}</strong>
             <small class="register-line">{{ registerLine(a) }}</small>
             <small>
               <span class="badge" :class="a.company_id === null ? 'blue' : ''">{{ ownerLabel(a.company_id, companyNames) }}</span>
               {{ assetStatusLabel(a.status) }}
-              <template v-if="openAssignment(a)"> · {{ openAssignment(a)!.person?.full_name ?? 'someone' }}<template v-if="openAssignment(a)!.issued_at"> (issued {{ openAssignment(a)!.issued_at!.slice(0, 10) }})</template></template>
+              <template v-if="openAssignment(a)?.issued_at"> · issued {{ openAssignment(a)!.issued_at!.slice(0, 10) }}</template>
               <template v-if="a.serial_number"> · S/N {{ a.serial_number }}</template>
               <template v-if="a.condition"> · {{ a.condition }}</template>
             </small>

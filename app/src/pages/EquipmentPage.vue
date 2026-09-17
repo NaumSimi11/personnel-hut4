@@ -58,7 +58,7 @@ const companies = ref<{ id: string; name: string }[]>([])
 const types = ref<{ key: string; label: string }[]>([])
 const filter = ref('')
 const addingAsset = ref(false)
-const assetForm = ref({ ownerId: POOL, ordinal: '', assetTag: '', inventoryNumber: '', typeKey: '', typeNote: '', model: '', serialNumber: '', note: '' })
+const assetForm = ref({ ownerId: POOL, ordinal: '', assetTag: '', inventoryNumber: '', typeKey: '', typeNote: '', holderId: NOBODY, holderOther: '', model: '', serialNumber: '', note: '' })
 const editingAsset = ref<Asset | null>(null)
 const reserving = ref<Asset | null>(null)
 const reservePersonId = ref('')
@@ -108,6 +108,9 @@ function canFor(a: Asset): (cap: string) => boolean {
 }
 const actionsFor = (a: Asset): AssignmentAction[] => assignmentActions(a, openAssignment(a), canFor(a))
 /** Who a given asset may go to: anyone employed for the pool, the company's people for a company asset. */
+const candidatesForOwner = (ownerId: string): Person[] =>
+  ownerId === POOL ? people.value : people.value.filter((p) => p.company_ids.includes(ownerId))
+
 const ownedBy = (ownerId: string) =>
   assets.value.filter((a) => (ownerId === POOL ? a.company_id === null : a.company_id === ownerId))
 const suggestedTag = (ownerId: string) => nextAssetTag(ownedBy(ownerId).map((a) => a.asset_tag))
@@ -130,6 +133,8 @@ function editAsset(a: Asset): void {
     inventoryNumber: a.inventory_number ?? '',
     typeKey: a.type_key,
     typeNote: a.type_note ?? '',
+    holderId: NOBODY,
+    holderOther: '',
     model: a.model ?? '',
     serialNumber: a.serial_number ?? '',
     note: a.note ?? '',
@@ -214,6 +219,8 @@ function startAsset(): void {
     inventoryNumber: suggestedInventory(owner) ?? '',
     typeKey: types.value[0]?.key ?? '',
     typeNote: '',
+    holderId: NOBODY,
+    holderOther: '',
     model: '',
     serialNumber: '',
     note: '',
@@ -235,6 +242,7 @@ async function saveAsset(): Promise<void> {
     inventory_number: parsed.data.inventoryNumber,
     type_key: parsed.data.typeKey,
     type_note: assetForm.value.typeKey === 'other' ? assetForm.value.typeNote.trim() || null : null,
+    ...(editingAsset.value ? {} : { holder_note: assetForm.value.holderId === OTHER_HOLDER ? assetForm.value.holderOther.trim() || null : null }),
     model: parsed.data.model || null,
     serial_number: parsed.data.serialNumber || null,
     note: parsed.data.note || null,
@@ -249,10 +257,33 @@ async function saveAsset(): Promise<void> {
     const { data, error: err } = await supabase.from('assets').insert(fields).select('id').maybeSingle()
     return { error: err ?? (data ? null : { message: 'row-level security' }) }
   })
-  if (ok) {
-    notice.value = target ? `${fields.asset_tag} saved.` : `${fields.asset_tag} added.`
-    addingAsset.value = false
-    editingAsset.value = null
+  if (!ok) return
+  notice.value = target ? `${fields.asset_tag} saved.` : `${fields.asset_tag} added.`
+  addingAsset.value = false
+  editingAsset.value = null
+
+  // Registering something someone already has should not take three screens.
+  // Only on create: an existing asset's holder changes through the row, where
+  // the reserve / issue / return rules and the handover form live.
+  const choice = holderChoice(assetForm.value.holderId, assetForm.value.holderOther)
+  if (target || choice.kind !== 'person') return
+
+  const lookup = supabase.from('assets').select('id').eq('asset_tag', fields.asset_tag)
+  const created = await (fields.company_id === null
+    ? lookup.is('company_id', null)
+    : lookup.eq('company_id', fields.company_id)
+  ).maybeSingle()
+  if (!created.data) return
+  const handed = await run('Assign', async () => {
+    const reserved = await supabase.rpc('reserve_asset', { p_asset_id: created.data!.id, p_person_id: choice.personId })
+    if (reserved.error) return { error: reserved.error }
+    const assignmentId = (reserved.data as { assignment_id?: string } | null)?.assignment_id
+    if (!assignmentId) return { error: { message: 'the reservation returned no id' } }
+    return await supabase.rpc('issue_asset', { p_assignment_id: assignmentId })
+  })
+  if (handed) {
+    notice.value = `${fields.asset_tag} added and issued. The handover form is being made under the person's documents.`
+    void deliverNotifications()
   }
 }
 
@@ -369,6 +400,18 @@ onMounted(load)
           <label v-if="assetForm.typeKey === 'other'">
             <span>What is it</span>
             <input id="asset-type-note" v-model="assetForm.typeNote" maxlength="60" placeholder="Docking station, projector, printer…" />
+          </label>
+          <label v-if="!editingAsset">
+            <span>Assign to</span>
+            <select id="asset-holder" v-model="assetForm.holderId">
+              <option :value="NOBODY">Nobody yet — it goes to magacin</option>
+              <option v-for="p in candidatesForOwner(assetForm.ownerId)" :key="p.id" :value="p.id">{{ p.full_name }}</option>
+              <option :value="OTHER_HOLDER">Other — not a person here…</option>
+            </select>
+          </label>
+          <label v-if="!editingAsset && assetForm.holderId === OTHER_HOLDER">
+            <span>Who or what has it</span>
+            <input id="asset-holder-other" v-model="assetForm.holderOther" maxlength="120" placeholder="office Struga, sluzbeno vozilo…" />
           </label>
           <label><span>Model</span><input id="asset-model" v-model="assetForm.model" maxlength="120" /></label>
           <label><span>Serial number</span><input id="asset-serial" v-model="assetForm.serialNumber" maxlength="120" /></label>

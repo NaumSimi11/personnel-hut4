@@ -636,13 +636,13 @@ onMounted(async () => {
 .profile-head .contact { color: var(--muted); }
 .hero-actions { display: flex; gap: 8px; flex-wrap: wrap; }
 .avatar.big { width: 76px; height: 76px; font-size: 24px; background: linear-gradient(145deg, #dbe8d2, #b9d3c1); box-shadow: 0 10px 24px -12px rgba(22, 36, 31, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.8); }
-.facts-strip { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 0; margin: 0; border-top: 1px solid var(--line); background: #fff; }
+.facts-strip { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(150px, 100%), 1fr)); gap: 0; margin: 0; border-top: 1px solid var(--line); background: #fff; }
 .fact { padding: 14px 22px; border-right: 1px solid var(--line); }
 .fact:last-child { border-right: 0; }
 .fact dt { font-size: 11px; text-transform: uppercase; letter-spacing: 0.1em; color: var(--muted); font-weight: 650; }
 .fact dd { margin: 4px 0 0; font-size: 14px; font-weight: 600; color: var(--ink); }
 .fact dd small { display: block; font-size: 11px; color: var(--muted); font-weight: 500; margin-top: 2px; text-transform: none; }
-.grid-two { display: grid; grid-template-columns: minmax(0, 1.45fr) minmax(300px, 1fr); gap: 22px; align-items: start; }
+.grid-two { display: grid; grid-template-columns: minmax(0, 1.45fr) minmax(min(300px, 100%), 1fr); gap: 22px; align-items: start; }
 @media (max-width: 900px) { .grid-two { grid-template-columns: 1fr; } }
 .main-column, .right-column { display: grid; gap: 22px; align-content: start; min-width: 0; }
 .emp-row { display: flex; align-items: center; gap: 13px; padding: 15px 24px; border-top: 1px solid #edf0eb; flex-wrap: wrap; }

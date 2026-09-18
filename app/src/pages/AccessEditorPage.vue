@@ -264,7 +264,7 @@ onMounted(async () => {
 
 <style scoped>
 h1 { margin-bottom: 24px; }
-.editor-grid { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(260px, 1fr); gap: 22px; }
+.editor-grid { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(min(260px, 100%), 1fr); gap: 22px; }
 @media (max-width: 900px) { .editor-grid { grid-template-columns: 1fr; } }
 .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0 20px; }
 @media (max-width: 600px) { .form-grid { grid-template-columns: 1fr; } }

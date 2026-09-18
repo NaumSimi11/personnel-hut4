@@ -416,7 +416,7 @@ onMounted(load)
 .hero-role { margin: 7px 0 0; font-size: 13px; font-weight: 550; }
 .hero-hint { margin: 6px 0 0; font-size: 11px; color: var(--muted); }
 .hero-facts {
-  display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(min(110px, 100%), 1fr));
   gap: 14px; margin: 20px 0 0; padding-top: 18px; border-top: 1px solid #edf0eb;
 }
 .hero-facts dt { font-size: 10px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); }
@@ -425,7 +425,7 @@ onMounted(load)
 .hero-history summary { list-style: none; cursor: pointer; font-size: 11px; color: var(--muted); display: flex; align-items: center; gap: 7px; }
 .hero-history summary::-webkit-details-marker { display: none; }
 .hero-history[open] .chevron { transform: rotate(90deg); }
-.grid-two { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(260px, 1fr); gap: 22px; }
+.grid-two { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(min(260px, 100%), 1fr); gap: 22px; }
 @media (max-width: 900px) { .grid-two { grid-template-columns: 1fr; } }
 .left-column { display: grid; gap: 22px; align-content: start; }
 .right-column { display: grid; gap: 22px; align-content: start; }
@@ -448,7 +448,7 @@ onMounted(load)
 .profile-name { display: block; font-size: 15px; font-weight: 650; }
 .profile-mail { display: block; margin-top: 3px; font-size: 12px; color: var(--muted); text-decoration: none; }
 .profile-mail:hover { text-decoration: underline; }
-.facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 12px; margin: 0; }
+.facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(120px, 100%), 1fr)); gap: 12px; margin: 0; }
 .facts dt { font-size: 10px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); }
 .facts dd { margin: 3px 0 0; font-size: 12px; font-weight: 550; }
 .inline-note {

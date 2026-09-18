@@ -299,7 +299,7 @@ onMounted(load)
 .editor { display: grid; gap: 14px; padding: 18px 24px; border-top: 1px solid #edf0eb; background: #f7f9f5; }
 .form-title { font-size: 12px; font-weight: 600; }
 .top { display: grid; grid-template-columns: 2fr 1fr; gap: 12px; }
-.split { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(240px, 1fr); gap: 16px; }
+.split { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(min(240px, 100%), 1fr); gap: 16px; }
 @media (max-width: 900px) { .split, .top { grid-template-columns: 1fr; } }
 label { display: grid; gap: 4px; font-size: 11px; color: var(--muted); }
 input, select, textarea { font: inherit; font-size: 12px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; background: #fff; }

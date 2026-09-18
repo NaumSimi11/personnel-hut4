@@ -168,7 +168,7 @@ const line = computed(() =>
 .button.danger { color: #a8332b; border-color: #e6c9c6; }
 
 .edit { flex: 1; display: grid; gap: 12px; }
-.fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; }
+.fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(150px, 100%), 1fr)); gap: 10px; }
 .fields label { display: grid; gap: 4px; font-size: 11px; color: var(--muted); }
 .fields label.wide { grid-column: span 2; }
 .fields input, .fields select { font: inherit; font-size: 12px; padding: 7px 9px; border: 1px solid var(--line); border-radius: 8px; background: #fff; }

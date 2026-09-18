@@ -216,7 +216,7 @@ function when(iso: string): string {
 .celebrate { margin-bottom: 22px; }
 .section-label { display: flex; align-items: baseline; gap: 10px; margin: 0 0 12px; font-size: 13px; font-weight: 650; letter-spacing: 0.01em; }
 .section-label small { font-size: 12px; font-weight: 400; color: var(--muted); }
-.grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 14px; align-items: start; }
+.grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(300px, 100%), 1fr)); gap: 14px; align-items: start; }
 @media (max-width: 700px) { .grid { grid-template-columns: 1fr; } }
 .col { display: grid; gap: 14px; }
 .card { margin: 0; }

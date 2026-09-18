@@ -20,7 +20,7 @@ defineProps<{ tiles: StatTile[]; loading?: boolean }>()
 </template>
 
 <style scoped>
-.stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 14px; margin-bottom: 22px; }
+.stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(190px, 100%), 1fr)); gap: 14px; margin-bottom: 22px; }
 .stat {
   background: var(--surface);
   border: 1px solid var(--line);

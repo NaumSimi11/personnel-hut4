@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { dayHeadline, dayStanding, leaveStanding, type DayKind } from '@/lib/leaveDay'
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/stores/auth'
 import { todayDb } from '@/lib/compensation'
@@ -148,8 +148,28 @@ const selectedWeekday = computed(() =>
 const selectedMonthYear = computed(() =>
   selected.value ? new Date(`${selected.value}T00:00:00Z`).toLocaleDateString('en-GB', { month: 'long', year: 'numeric', timeZone: 'UTC' }) : '',
 )
+const railEl = ref<HTMLElement | null>(null)
+
+/**
+ * Picking a day, and making sure you can see what picking it did.
+ *
+ * Where the panel sits beside the calendar, opening it is obvious. Where it is
+ * stacked underneath — which on a phone it always is — the whole month grid is
+ * between you and the answer, so tapping a day looked like it did nothing. The
+ * scroll only happens when the panel is actually off-screen, so it never
+ * yanks the page on a wide one.
+ */
 function select(day: GridDay): void {
-  selected.value = selected.value === day.iso ? null : day.iso
+  const closing = selected.value === day.iso
+  selected.value = closing ? null : day.iso
+  if (closing) return
+  void nextTick(() => {
+    const el = railEl.value
+    if (!el) return
+    const box = el.getBoundingClientRect()
+    const hidden = box.top > window.innerHeight - 80 || box.bottom < 80
+    if (hidden) el.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+  })
 }
 
 // ---------------------------------------------------------------- load
@@ -241,9 +261,12 @@ onMounted(load)
       </div>
       <p v-if="error" class="error-note in-card" role="alert">{{ error }}</p>
       <div v-else-if="loading" class="empty">Loading calendar…</div>
-      <div v-else class="layout" :class="{ open: selected }">
+      <div v-else class="layout-wrap">
+       <div class="layout" :class="{ open: selected }">
         <div class="grid" data-testid="leave-calendar">
-          <div v-for="d in ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']" :key="d" class="dow">{{ d }}</div>
+          <div v-for="d in ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']" :key="d" class="dow">
+            <span class="dow-long">{{ d }}</span><span class="dow-short" aria-hidden="true">{{ d[0] }}</span>
+          </div>
           <div
             v-for="day in grid"
             :key="day.iso"
@@ -260,6 +283,7 @@ onMounted(load)
           >
             <div class="day-head">
               <b class="num">{{ day.day }}</b>
+              <i v-if="holidays[day.iso] || closures[day.iso]" class="hol-dot" aria-hidden="true"></i>
             </div>
             <small v-if="holidays[day.iso] || closures[day.iso]" class="hol" :title="holidays[day.iso] || closures[day.iso]">{{ holidays[day.iso] || closures[day.iso] }}</small>
             <div class="chips">
@@ -275,9 +299,10 @@ onMounted(load)
               </div>
               <div v-if="overflow(day)" class="more">+{{ overflow(day) }} more</div>
             </div>
+            <span v-if="entriesOn(day).length" class="away-count" aria-hidden="true">{{ entriesOn(day).length }}</span>
           </div>
         </div>
-        <aside v-if="selected" class="rail" data-testid="day-rail" :aria-label="dayTitle(selected)">
+        <aside v-if="selected" ref="railEl" class="rail" data-testid="day-rail" :aria-label="dayTitle(selected)">
           <div class="rail-head">
             <div>
               <span class="eyebrow">{{ selectedWeekday }}</span>
@@ -329,6 +354,7 @@ onMounted(load)
             </li>
           </ul>
         </aside>
+       </div>
       </div>
     </div>
 
@@ -365,7 +391,7 @@ onMounted(load)
 
 <style scoped>
 .calendar { display: grid; gap: 18px; }
-.stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 14px; }
+.stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(190px, 100%), 1fr)); gap: 14px; }
 .stat { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 16px 20px; box-shadow: var(--shadow-sm); display: grid; gap: 2px; }
 .stat b { font-size: 26px; font-weight: 700; letter-spacing: -0.03em; line-height: 1.1; }
 .stat span { font-size: 12px; color: var(--muted); }
@@ -388,15 +414,30 @@ onMounted(load)
 .key.holiday { background: #f2dcae; }
 .key.mine { background: transparent; box-shadow: inset 0 0 0 2px var(--green-bright); }
 
+/* The day panel sits beside the calendar only where both fit, and the test is
+   the space this card actually has — not the window's width.
+   With a window media query at 1080px, a 1100px window kept them side by side
+   and left the grid 420px wide, while a 900px window stacked them and left it
+   578px: a narrower window drew a wider calendar. Stacked is the default and
+   sharing is the exception, so the failure mode is a full-width calendar
+   rather than a squeezed one. */
+.layout-wrap { container: calarea / inline-size; }
 .layout { display: grid; grid-template-columns: 1fr; }
-.layout.open { grid-template-columns: minmax(0, 1fr) minmax(280px, 340px); gap: 18px; }
+@container calarea (min-width: 1040px) {
+  .layout.open { grid-template-columns: minmax(0, 1fr) minmax(280px, 340px); gap: 18px; }
+}
 /* minmax(0, …), not 1fr. A bare 1fr is minmax(auto, 1fr), and auto means
    min-content — so "Day of the Macedonian Uprising (observed) (MK)" sized its
    own column. Measured on the live page: 283px 42px 46px 43px 299px 42px 228px,
    a grid 982px wide inside a 760px column, which is why the day panel was
    drawn over the weekend. The columns are seven equal sevenths of whatever
-   space there is, and the contents fit themselves to that. */
-.grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); align-content: start; }
+   space there is, and the contents fit themselves to that.
+
+   container-type, so the cells answer to the GRID's width rather than the
+   window's. The two come apart constantly here: opening the day panel takes a
+   1440px window's grid down to 760px, and the sidebar costs another 320px, so
+   a window-width media query dresses a 578px grid as though it had 900px. */
+.grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); align-content: start; container: calgrid / inline-size; }
 .dow { font-size: 10px; text-transform: uppercase; letter-spacing: 0.1em; color: var(--muted); padding: 10px 10px 8px; background: #fafbf8; font-weight: 650; }
 .day { min-width: 0; min-height: 112px; padding: 8px 8px 10px; border-top: 1px solid var(--line); border-left: 1px solid var(--line); font-size: 11px; cursor: pointer; transition: background 0.15s var(--ease), box-shadow 0.15s var(--ease); position: relative; }
 .day:nth-child(7n + 1) { border-left: 0; }
@@ -409,6 +450,11 @@ onMounted(load)
 .day.today .num { color: #fff; background: var(--green-bright); }
 .day-head { display: flex; align-items: center; gap: 6px; min-width: 0; }
 .num { display: grid; place-items: center; width: 22px; height: 22px; border-radius: 50%; font-size: 11px; font-weight: 650; flex-shrink: 0; }
+.dow-short { display: none; }
+/* Stand-ins for the two things a cell says, for when it is too narrow to say
+   them in words. Hidden until then. */
+.hol-dot { display: none; width: 6px; height: 6px; border-radius: 50%; background: #c99a3f; flex-shrink: 0; }
+.away-count { display: none; }
 /* Its own row, under the date rather than beside it. Sharing the line with a
    22px circle left about seventy pixels for "Day of the Macedonian Uprising
    (observed) (MK)", which is four lines of nothing useful. Wrapping beats
@@ -455,7 +501,7 @@ onMounted(load)
 .detail-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
 .detail-head strong { display: block; font-size: 15px; font-weight: 650; }
 .detail-head small { display: block; font-size: 11px; color: var(--muted); margin-top: 2px; }
-.detail-facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap: 12px; margin: 0; }
+.detail-facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(110px, 100%), 1fr)); gap: 12px; margin: 0; }
 .detail-facts dt { font-size: 10px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); }
 .detail-facts dd { margin: 3px 0 0; font-size: 12px; font-weight: 550; }
 .detail-note { margin: 0; font-size: 12px; color: var(--muted); font-style: italic; }
@@ -476,16 +522,40 @@ onMounted(load)
 .bar i { display: block; height: 100%; background: var(--green); border-radius: 3px; transition: width 0.3s var(--ease); }
 .rail-people li.amber .bar i { background: var(--amber); }
 .rail-people li.blue .bar i { background: #3f5f8f; }
-/* Below this the calendar and the rail each need the whole width; sharing it
-   left seven day columns and a list of names both too narrow to read. */
-@media (max-width: 1080px) {
-  .layout.open { grid-template-columns: 1fr; }
-  .rail { position: static; max-height: none; }
+/* Stacked, the panel is a band under the calendar rather than a column beside
+   it, so it loses the left border and the sticky column behaviour. */
+.rail { position: static; max-height: none; border-left: 0; }
+@container calarea (min-width: 1040px) {
+  .layout.open .rail { border-left: 1px solid var(--line); }
 }
-@media (max-width: 720px) {
-  .layout.open { grid-template-columns: 1fr; }
-  .rail { border-left: 0; }
-  .day { min-height: 64px; padding: 6px; }
-  .entry { font-size: 10px; }
+
+/* Under about 100px a column, names stop being names: "Day of the Macedonian
+   Uprising (observed) (MK)" needs five lines at that width, and four people
+   away needs four chips that each read "Mari…". So the cell stops pretending.
+   It keeps what a month grid is actually for — which days are holidays, which
+   days are busy, and how busy — as a dot and a number, and the day panel
+   underneath carries every word. Nothing is lost, because nothing narrower
+   than this was readable in the first place. */
+@container calgrid (max-width: 700px) {
+  .day { min-height: 62px; padding: 6px 5px; }
+  .hol, .chips, .more { display: none; }
+  .hol-dot { display: block; }
+  .day-head { justify-content: center; gap: 4px; }
+  .away-count {
+    display: block; margin: 5px auto 0; width: fit-content; min-width: 17px; padding: 1px 5px;
+    border-radius: 999px; background: #e6f2e9; color: #2c6144; font-size: 10px; font-weight: 650;
+    text-align: center; font-variant-numeric: tabular-nums;
+  }
+  .dow { padding: 8px 2px; text-align: center; letter-spacing: 0.04em; }
+  .dow-long { display: none; }
+  .dow-short { display: inline; }
+}
+
+/* Narrower still — a phone held upright — and even the circled number is
+   crowding its own cell. */
+@container calgrid (max-width: 430px) {
+  .day { min-height: 50px; padding: 4px 2px; }
+  .num { width: 19px; height: 19px; font-size: 10px; }
+  .away-count { font-size: 9px; padding: 0 4px; }
 }
 </style>

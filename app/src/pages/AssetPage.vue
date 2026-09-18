@@ -505,7 +505,7 @@ onMounted(load)
 .title { margin: 4px 0 2px; }
 .sub { margin: 0 0 20px; font-size: 13px; color: var(--muted); }
 .facts-card { padding: 20px 24px; margin-bottom: 18px; }
-.facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 16px; margin: 0; }
+.facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(130px, 100%), 1fr)); gap: 16px; margin: 0; }
 .facts dt { font-size: 10px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); }
 .facts dd { margin: 4px 0 0; font-size: 13px; font-weight: 600; }
 .facts dd small { font-weight: 400; color: var(--muted); }
@@ -522,7 +522,7 @@ onMounted(load)
 .sign-head strong { font-size: 14px; font-weight: 650; }
 .button.danger { color: #a8332b; border-color: #e6c9c6; }
 
-.note-form { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 10px 14px; padding: 16px 24px; background: #f7f9f5; border-top: 1px solid #edf0eb; }
+.note-form { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(170px, 100%), 1fr)); gap: 10px 14px; padding: 16px 24px; background: #f7f9f5; border-top: 1px solid #edf0eb; }
 .note-form label { display: grid; gap: 4px; font-size: 11px; color: var(--muted); }
 .note-form label.wide { grid-column: 1 / -1; }
 .note-form input, .note-form select { font: inherit; font-size: 12px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; background: #fff; }

@@ -200,7 +200,7 @@ defineExpose({ reload: load })
 .head-actions { display: flex; gap: 8px; flex-wrap: wrap; }
 .in-card, .notice { margin: 14px 24px 0; }
 .notice { padding: 10px 14px; border-radius: 9px; background: #edf5ed; color: #3e744e; font-size: 12px; }
-.rails { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 14px; padding: 18px 24px; }
+.rails { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(260px, 100%), 1fr)); gap: 14px; padding: 18px 24px; }
 .rail { border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; display: flex; flex-wrap: wrap; gap: 12px 18px; }
 .rail-company { width: 100%; font-size: 11px; font-weight: 600; }
 .stat b { display: block; font-size: 20px; font-weight: 600; }

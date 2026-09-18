@@ -402,7 +402,7 @@ onMounted(load)
 
 <style scoped>
 .schedule-form { padding: 16px 24px 18px; border-top: 1px solid var(--line); background: #fafbf9; }
-.grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 0 16px; }
+.grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(190px, 100%), 1fr)); gap: 0 16px; }
 @media (max-width: 640px) { .grid { grid-template-columns: 1fr; } }
 .field-hint { display: block; font-size: 11px; color: var(--muted); margin-top: -8px; margin-bottom: 12px; }
 .field select[multiple] { height: auto; }

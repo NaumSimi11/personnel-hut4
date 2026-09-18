@@ -325,7 +325,7 @@ watch(
 .version { font-size: 11px; font-weight: 600; color: var(--muted); margin-left: 4px; }
 .actions { display: flex; gap: 8px; flex-wrap: wrap; }
 .small-btn { font-size: 11px; padding: 7px 11px; }
-.doc-form { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px 14px; padding: 16px 24px; background: #fafbf8; border-top: 1px solid var(--line); }
+.doc-form { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(200px, 100%), 1fr)); gap: 10px 14px; padding: 16px 24px; background: #fafbf8; border-top: 1px solid var(--line); }
 .form-title { grid-column: 1 / -1; font-size: 12px; font-weight: 600; }
 .doc-form label { display: grid; gap: 4px; font-size: 11px; color: var(--muted); }
 .doc-form label.wide, .doc-form .form-actions { grid-column: 1 / -1; }

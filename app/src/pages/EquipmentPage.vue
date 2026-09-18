@@ -563,7 +563,7 @@ onMounted(load)
 .page-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-bottom: 22px; }
 .page-sub { margin: 4px 0 0; font-size: 12px; color: var(--muted); max-width: 620px; }
 .notice { padding: 10px 14px; border-radius: 9px; background: #edf5ed; color: #3e744e; font-size: 12px; margin-bottom: 12px; }
-.form { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 10px 14px; padding: 14px 24px; border-top: 1px solid #edf0eb; background: #fafbf8; }
+.form { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(180px, 100%), 1fr)); gap: 10px 14px; padding: 14px 24px; border-top: 1px solid #edf0eb; background: #fafbf8; }
 .form.inline { grid-template-columns: 1fr; max-width: 420px; }
 .form label { display: grid; gap: 5px; font-size: 11px; color: var(--muted); }
 .form input, .form select { border: 1px solid #dce3d7; padding: 8px 10px; font-size: 12px; background: #fff; color: var(--ink); }

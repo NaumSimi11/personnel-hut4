@@ -109,7 +109,7 @@ function badgeClass(stage: string): string {
 .recruitment { margin-bottom: 22px; }
 .section-label { display: flex; align-items: baseline; gap: 10px; margin: 0 0 12px; font-size: 13px; font-weight: 650; letter-spacing: 0.01em; }
 .section-label small { font-size: 12px; font-weight: 400; color: var(--muted); }
-.grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 14px; }
+.grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(300px, 100%), 1fr)); gap: 14px; }
 @media (max-width: 700px) { .grid { grid-template-columns: 1fr; } }
 .small-btn { font-size: 11px; padding: 7px 11px; text-decoration: none; }
 .bars { display: flex; align-items: flex-end; gap: 12px; min-height: 150px; padding: 12px 24px 18px; }

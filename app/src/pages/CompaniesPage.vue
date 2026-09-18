@@ -224,7 +224,7 @@ onMounted(load)
 .holding-banner small { display: block; font-size: 12px; color: var(--muted); margin-top: 4px; }
 .holding-link { text-decoration: none; }
 
-.company-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 18px; }
+.company-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(320px, 100%), 1fr)); gap: 18px; }
 .company-card {
   display: flex;
   flex-direction: column;

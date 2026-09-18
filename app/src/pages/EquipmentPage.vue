@@ -440,10 +440,10 @@ onMounted(load)
           <option value="">Anyone</option>
           <option :value="NOBODY">In magacin</option>
           <option v-if="bookCounts.kept" :value="KEPT_SOMEWHERE">
-            Kept somewhere, not with a person ({{ bookCounts.kept }})
+            Kept somewhere ({{ bookCounts.kept }})
           </option>
           <option v-if="bookCounts.unmatched" :value="UNMATCHED_PERSON">
-            Books name a person we have not matched ({{ bookCounts.unmatched }})
+            Unmatched holder ({{ bookCounts.unmatched }})
           </option>
           <option v-for="h in holdersWithAssets" :key="h.id" :value="h.id">{{ h.name }}</option>
         </select>
@@ -554,6 +554,8 @@ onMounted(load)
 </template>
 
 <style scoped>
+.card-head .search { flex: 1 1 180px; min-width: 0; }
+.card-head > select { max-width: 100%; }
 .head-actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 .search { font: inherit; font-size: 12px; padding: 7px 11px; border: 1px solid var(--line); border-radius: 999px; background: #fff; min-width: 230px; flex: 1; }
 .filters select { font: inherit; font-size: 12px; padding: 7px 10px; border: 1px solid var(--line); border-radius: 999px; background: #fff; }

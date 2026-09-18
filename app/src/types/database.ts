@@ -4996,8 +4996,16 @@ export type Database = {
         Returns: Json
       }
       roll_leave_year: { Args: { p_year: number }; Returns: number }
+      save_company_closure: {
+        Args: { p_date: string; p_id: string; p_name: string }
+        Returns: Json
+      }
       save_handover_recipient: { Args: { p: Json }; Returns: Json }
       save_kudos_value: { Args: { p: Json; p_id: string }; Returns: Json }
+      save_public_holiday: {
+        Args: { p_date: string; p_id: string; p_name: string }
+        Returns: Json
+      }
       schedule_departure: {
         Args: {
           p_employment_period_id: string

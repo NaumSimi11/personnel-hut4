@@ -35,6 +35,11 @@ const pasted = ref('')
 const parsed = ref<ParseResult | null>(null)
 const newHoliday = ref({ date: '', name: '' })
 const newClosure = ref({ date: '', name: '' })
+// Edited where the row sits, not in a form at the top of a list of forty.
+const editing = ref<{ kind: 'holiday' | 'closure'; id: string } | null>(null)
+const editForm = ref({ date: '', name: '' })
+const isEditing = (kind: 'holiday' | 'closure', id: string) =>
+  editing.value?.kind === kind && editing.value.id === id
 
 const canManage = computed(() => auth.isAdmin || Object.values(auth.capabilities).some((set) => set.has('holidays.manage')))
 const countries = computed(() => {
@@ -88,6 +93,44 @@ function addHoliday(): void {
     ),
     'Holiday saved.',
   ).then(() => (newHoliday.value = { date: '', name: '' }))
+}
+
+function startEdit(kind: 'holiday' | 'closure', row: { id: string; date: string; name: string }): void {
+  error.value = null
+  notice.value = null
+  editing.value = { kind, id: row.id }
+  editForm.value = { date: row.date, name: row.name }
+}
+
+/**
+ * Saving an edit goes through an RPC rather than a plain update, because
+ * moving a holiday's date has to carry its substitute day with it — observed_of
+ * holds a date, not an id, so the child comes loose otherwise — and because a
+ * clash with the day already there should say so in words.
+ */
+async function saveEdit(): Promise<void> {
+  const target = editing.value
+  if (!target) return
+  if (!editForm.value.date || !editForm.value.name.trim()) {
+    error.value = 'Give it a date and a name.'
+    return
+  }
+  error.value = null
+  const { data, error: err } = await supabase.rpc(
+    target.kind === 'holiday' ? 'save_public_holiday' : 'save_company_closure',
+    { p_id: target.id, p_date: editForm.value.date, p_name: editForm.value.name.trim() },
+  )
+  if (err) {
+    error.value = err.message
+    console.error('Calendar edit failed:', err.message)
+    return
+  }
+  const moved = (data as { moved_observed?: number } | null)?.moved_observed ?? 0
+  editing.value = null
+  notice.value = moved
+    ? `Saved. Its substitute day moved with it.`
+    : target.kind === 'holiday' ? 'Holiday saved.' : 'Closure saved.'
+  await load()
 }
 
 async function removeHoliday(h: Holiday): Promise<void> {
@@ -147,7 +190,7 @@ async function removeClosure(c: Closure): Promise<void> {
   await write(supabase.from('company_closures').delete().eq('id', c.id), 'Closure removed.')
 }
 
-watch([year, country], () => (parsed.value = null))
+watch([year, country], () => { parsed.value = null; editing.value = null })
 onMounted(load)
 </script>
 
@@ -177,10 +220,23 @@ onMounted(load)
           <table>
             <thead><tr><th>Date</th><th>Holiday</th><th v-if="canManage"></th></tr></thead>
             <tbody>
-              <tr v-for="h in yearHolidays" :key="h.id">
-                <td>{{ h.date }}</td>
-                <td>{{ h.name }}<small v-if="h.observed_of" class="muted"> · observed for {{ h.observed_of }}</small></td>
-                <td v-if="canManage" class="right"><button class="button secondary small-btn" type="button" @click="removeHoliday(h)">Remove</button></td>
+              <tr v-for="h in yearHolidays" :key="h.id" :class="{ editing: isEditing('holiday', h.id) }">
+                <template v-if="!isEditing('holiday', h.id)">
+                  <td>{{ h.date }}</td>
+                  <td>{{ h.name }}<small v-if="h.observed_of" class="muted"> · observed for {{ h.observed_of }}</small></td>
+                  <td v-if="canManage" class="right actions">
+                    <button class="button secondary small-btn" type="button" @click="startEdit('holiday', h)">Edit</button>
+                    <button class="button secondary small-btn" type="button" @click="removeHoliday(h)">Remove</button>
+                  </td>
+                </template>
+                <template v-else>
+                  <td><input v-model="editForm.date" type="date" aria-label="Holiday date" /></td>
+                  <td><input v-model="editForm.name" class="wide" maxlength="120" aria-label="Holiday name" /></td>
+                  <td class="right actions">
+                    <button class="button secondary small-btn" type="button" @click="editing = null">Cancel</button>
+                    <button class="button small-btn" type="button" @click="saveEdit">Save</button>
+                  </td>
+                </template>
               </tr>
             </tbody>
           </table>
@@ -227,10 +283,23 @@ onMounted(load)
         <table>
           <thead><tr><th>Date</th><th>Closure</th><th v-if="canManage"></th></tr></thead>
           <tbody>
-            <tr v-for="c in yearClosures" :key="c.id">
-              <td>{{ c.date }}</td>
-              <td>{{ c.name }}</td>
-              <td v-if="canManage" class="right"><button class="button secondary small-btn" type="button" @click="removeClosure(c)">Remove</button></td>
+            <tr v-for="c in yearClosures" :key="c.id" :class="{ editing: isEditing('closure', c.id) }">
+              <template v-if="!isEditing('closure', c.id)">
+                <td>{{ c.date }}</td>
+                <td>{{ c.name }}</td>
+                <td v-if="canManage" class="right actions">
+                  <button class="button secondary small-btn" type="button" @click="startEdit('closure', c)">Edit</button>
+                  <button class="button secondary small-btn" type="button" @click="removeClosure(c)">Remove</button>
+                </td>
+              </template>
+              <template v-else>
+                <td><input v-model="editForm.date" type="date" aria-label="Closure date" /></td>
+                <td><input v-model="editForm.name" class="wide" maxlength="120" aria-label="Closure name" /></td>
+                <td class="right actions">
+                  <button class="button secondary small-btn" type="button" @click="editing = null">Cancel</button>
+                  <button class="button small-btn" type="button" @click="saveEdit">Save</button>
+                </td>
+              </template>
             </tr>
           </tbody>
         </table>
@@ -251,6 +320,13 @@ onMounted(load)
 .pick { border: 1px solid #dce3d7; padding: 8px 10px; font-size: 12px; background: #fff; }
 .small-btn { padding: 7px 11px; font-size: 11px; }
 .right { text-align: right; }
+.actions { display: flex; gap: 6px; justify-content: flex-end; flex-wrap: wrap; }
+tr.editing { background: #f7f9f5; }
+tr.editing input { border: 1px solid #dce3d7; border-radius: 8px; padding: 7px 9px; font: inherit; font-size: 12px; background: #fff; }
+tr.editing input.wide { width: 100%; min-width: 0; }
+/* The table scrolls rather than pushing the page sideways on a narrow screen. */
+.table-wrap { overflow-x: auto; }
+.table-wrap table { width: 100%; min-width: 420px; }
 .muted { color: var(--muted); }
 .manage { padding: 16px 24px; border-top: 1px solid #edf0eb; display: grid; gap: 14px; }
 .inline { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }

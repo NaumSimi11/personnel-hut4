@@ -112,13 +112,14 @@ function badgeClass(stage: string): string {
 .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 14px; }
 @media (max-width: 700px) { .grid { grid-template-columns: 1fr; } }
 .small-btn { font-size: 11px; padding: 7px 11px; text-decoration: none; }
-.bars { display: flex; align-items: flex-end; gap: 12px; height: 150px; padding: 12px 24px 18px; }
+.bars { display: flex; align-items: flex-end; gap: 12px; min-height: 150px; padding: 12px 24px 18px; }
 .bar-col { display: flex; flex-direction: column; align-items: center; justify-content: flex-end; gap: 6px; flex: 1; min-width: 0; height: 100%; }
 .bar-count { font-size: 12px; font-weight: 650; font-variant-numeric: tabular-nums; }
 .bar { display: block; width: 100%; max-width: 44px; border-radius: 6px 6px 3px 3px; background: #6f8fb8; transition: height 240ms var(--ease); }
 .bar.green { background: var(--green-bright); }
 .bar.red { background: #c77b7b; }
-.bar-label { font-size: 11px; color: var(--muted); text-align: center; white-space: nowrap; }
+/* Wraps: a nowrap label was 5px wider than its own column. */
+.bar-label { font-size: 11px; color: var(--muted); text-align: center; line-height: 1.25; overflow-wrap: anywhere; }
 .list { list-style: none; margin: 0; padding: 0; }
 .row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 24px; border-top: 1px solid var(--line); color: var(--ink); text-decoration: none; }
 .row:hover { background: #f7f9f5; }

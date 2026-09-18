@@ -110,15 +110,23 @@ small { line-height: 1.45; }
   overflow: hidden;
   box-shadow: var(--shadow-md);
 }
+/* Wraps. A card head carries a title and whatever the card's actions are —
+   filters, a search box, buttons — and at any width narrower than the sum of
+   those it was overflowing its own card rather than going to a second line.
+   Measured on /equipment at 480px: four children totalling 861px in a 446px
+   head. Wrapping costs nothing when everything already fits. */
 .card-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  flex-wrap: wrap;
   padding: 20px 24px;
   border-bottom: 1px solid var(--line);
   gap: 12px;
   background: linear-gradient(180deg, #fff, #fbfcfa);
 }
+/* So a long title shrinks instead of pushing the actions out of the card. */
+.card-head > * { min-width: 0; }
 .card-head p { margin: 5px 0 0; font-size: 12px; color: var(--muted); }
 .card-body { padding: 23px 24px; }
 

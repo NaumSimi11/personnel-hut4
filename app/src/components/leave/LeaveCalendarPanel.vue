@@ -260,8 +260,8 @@ onMounted(load)
           >
             <div class="day-head">
               <b class="num">{{ day.day }}</b>
-              <small v-if="holidays[day.iso] || closures[day.iso]" class="hol" :title="holidays[day.iso] || closures[day.iso]">{{ holidays[day.iso] || closures[day.iso] }}</small>
             </div>
+            <small v-if="holidays[day.iso] || closures[day.iso]" class="hol" :title="holidays[day.iso] || closures[day.iso]">{{ holidays[day.iso] || closures[day.iso] }}</small>
             <div class="chips">
               <div
                 v-for="r in visibleChips(day)"
@@ -390,9 +390,15 @@ onMounted(load)
 
 .layout { display: grid; grid-template-columns: 1fr; }
 .layout.open { grid-template-columns: minmax(0, 1fr) minmax(280px, 340px); gap: 18px; }
-.grid { display: grid; grid-template-columns: repeat(7, 1fr); align-content: start; }
+/* minmax(0, …), not 1fr. A bare 1fr is minmax(auto, 1fr), and auto means
+   min-content — so "Day of the Macedonian Uprising (observed) (MK)" sized its
+   own column. Measured on the live page: 283px 42px 46px 43px 299px 42px 228px,
+   a grid 982px wide inside a 760px column, which is why the day panel was
+   drawn over the weekend. The columns are seven equal sevenths of whatever
+   space there is, and the contents fit themselves to that. */
+.grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); align-content: start; }
 .dow { font-size: 10px; text-transform: uppercase; letter-spacing: 0.1em; color: var(--muted); padding: 10px 10px 8px; background: #fafbf8; font-weight: 650; }
-.day { min-height: 112px; padding: 8px 8px 10px; border-top: 1px solid var(--line); border-left: 1px solid var(--line); font-size: 11px; cursor: pointer; transition: background 0.15s var(--ease), box-shadow 0.15s var(--ease); position: relative; }
+.day { min-width: 0; min-height: 112px; padding: 8px 8px 10px; border-top: 1px solid var(--line); border-left: 1px solid var(--line); font-size: 11px; cursor: pointer; transition: background 0.15s var(--ease), box-shadow 0.15s var(--ease); position: relative; }
 .day:nth-child(7n + 1) { border-left: 0; }
 .day:hover { background: #f7f9f5; }
 .day.out { color: #b5bcb1; background: #fcfcfb; }
@@ -403,7 +409,15 @@ onMounted(load)
 .day.today .num { color: #fff; background: var(--green-bright); }
 .day-head { display: flex; align-items: center; gap: 6px; min-width: 0; }
 .num { display: grid; place-items: center; width: 22px; height: 22px; border-radius: 50%; font-size: 11px; font-weight: 650; flex-shrink: 0; }
-.hol { font-size: 10px; color: #8a5e21; font-weight: 650; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+/* Its own row, under the date rather than beside it. Sharing the line with a
+   22px circle left about seventy pixels for "Day of the Macedonian Uprising
+   (observed) (MK)", which is four lines of nothing useful. Wrapping beats
+   truncating here: a name cut to "Day of the Macedonian…" tells you less than
+   nothing on a day you are trying to plan around. The full name is on the
+   title and in the day panel either way. */
+.hol { display: -webkit-box; margin-top: 3px; font-size: 10px; color: #8a5e21; font-weight: 650; min-width: 0;
+  line-height: 1.25; white-space: normal; overflow-wrap: anywhere;
+  -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
 .chips { display: grid; gap: 3px; margin-top: 6px; }
 .entry { display: flex; align-items: center; gap: 5px; font-size: 11px; font-weight: 550; padding: 3px 6px; border-radius: 6px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; border: 1px solid transparent; line-height: 1.2; }
 .entry::before { content: ''; width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; background: currentColor; }
@@ -413,7 +427,7 @@ onMounted(load)
 .entry.grey { background: #eceeea; color: #4f5b55; }
 .entry.pending { background: #fff; border-style: dashed; border-color: currentColor; opacity: 0.85; }
 .entry.mine { box-shadow: inset 0 0 0 1.5px var(--green-bright); }
-.chip-name { overflow: hidden; text-overflow: ellipsis; }
+.chip-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .more { font-size: 10px; color: var(--muted); font-weight: 600; padding: 2px 6px; }
 .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 

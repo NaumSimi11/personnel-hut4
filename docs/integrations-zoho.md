@@ -95,3 +95,98 @@ with a non-zero code.
 
 Both are read-only views over the mirror tables — there is no UI path that
 edits them; the sync is the only writer.
+
+# Zoho Recruit: a one-off file import, not a sync
+
+Where the sync above is live and repeatable, this is the opposite shape: a
+batch import from a CSV/attachment export, run by hand, once, through the
+same kind of door the talent pool's UI uses
+(`public.import_zoho_recruit(payload, commit)`, migration 0067 — see
+[the data model](data-model.md) and `plans/052-talent-pool.md` §3 for the
+full mapping and payload shape). There is no live connection to Zoho
+Recruit and nothing is scheduled.
+
+## What it does
+
+Reads the Zoho Recruit export (`docs/Data_001/Data/*.csv`,
+`docs/Attachments_001/`), maps its vocabulary onto the app's (candidate
+status → application stage, `Source` → `candidate_sources.key`, department →
+company), and writes jobs, candidates, applications, application events and
+notes with the same per-row-verdict, dry-run-then-commit discipline as the
+Field Notebook import (`import_field_notebook`, migration 0028; run by
+`scripts/fn-import.sh`). Every imported candidate and application carries
+`provider` / `source_provider = 'zoho_recruit'` and its Zoho id as
+`provider_ref`, and keeps its original source label through `source_key`
+(`head_hunt`, `linkedin_profile`, `linkedin_ad`, `careers_page`, `job_board`,
+`referral`, `added_by_hand`, or `imported` when Zoho's `Source` was blank) —
+never collapsed into one generic "imported" bucket unless that is what Zoho
+itself recorded.
+
+## Running it (in order)
+
+1. **Extract** — pure, no database, no secrets:
+
+   ```sh
+   cd server && npm run import:zoho-recruit:extract
+   ```
+
+   Writes `.zoho-payload.json` (the `import_zoho_recruit` payload),
+   `.zoho-files.json` (the file manifest) and `.zoho-review.json` (duplicate
+   groups, stale applications, hires, unresolvable files) to the repo root.
+   Prints counts only — never a name or an email — and exits 1 on an
+   unknown status or source (fix `server/src/zohoRecruit/mapping.ts` first).
+
+2. **Dry run** — reports what would happen, writes nothing:
+
+   ```sh
+   scripts/zoho-import.sh --dry-run
+   ```
+
+3. **Commit** — all or nothing:
+
+   ```sh
+   scripts/zoho-import.sh --commit
+   ```
+
+   Both call `public.import_zoho_recruit` as the platform admin
+   (impersonated through the JWT claims, the way `scripts/fn-import.sh`
+   does) and print the counts, refused rows, unresolved users, possible
+   duplicates and the hires table from `<payload>.report.json`. Nothing
+   from `.env.local` is printed.
+
+4. **Files** — after a committed row import, since every manifest row needs
+   its candidate already in the database:
+
+   ```sh
+   cd server && npm run import:zoho-recruit:files -- --dry-run
+   cd server && npm run import:zoho-recruit:files -- --commit
+   ```
+
+   Uploads eligible attachments as `candidate_files` (`provider
+   'zoho_recruit'`) in the private `candidate-files` bucket, at
+   `candidate/{candidate_id}/{file_id}.{ext}` — the same shape
+   `candidateFiles.ts` uses for files added from the app.
+
+## What is skipped
+
+- Notes from the Job Openings and Tasks modules — counted under
+  `notes.skipped_modules`, never imported. Candidate-level notes with no
+  application are counted under `notes.without_application`, not imported
+  either — a seam for a later `candidate_notes` slice.
+- Attachments that are calendar files, job summaries, spreadsheets,
+  `.msg`/`.rar`, parented to a job or an interview rather than a candidate,
+  or over 10 MB — each skipped with its reason and counted, never guessed.
+- Candidates never associated with any job keep their Zoho status in
+  `custom.zoho.status` only; no application is created for them.
+
+## Re-running is safe
+
+Every writer is keyed by the provider reference —
+`candidates_provider_dedupe` on candidates, `applications_provider_dedupe`
+on applications (extended the same way for `zoho_recruit` as for every
+other provider); `zoho-recruit-files.ts` skips any manifest row whose
+`provider_ref` is already in `candidate_files`. Running extract, dry run and
+commit again over the same export finds every job, candidate and
+application already there and reports them as skipped, not duplicated — so
+fixing a handful of refused rows and running the same steps again is the
+normal way to finish an import, not a special case.

@@ -95,7 +95,10 @@ grants), `access_grants` + `grant_capabilities` (unique per person × company),
 approved/rejected/cancelled), `jobs` (+`description_revision` so channels know
 what they actually published), `job_channels` (independent per-destination
 status; provider confirmation, not the click, makes it `live`), `candidates`
-(recruitment identity, never auto-merged with `people`), `applications`
+(recruitment identity, holding-wide, never auto-merged with `people`;
+history stays company-scoped through each application's own `company_id`;
+`candidate_files` beside `application_files`, at `candidate/{id}/…` in the
+same private bucket), `applications`
 (provider-retry dedupe via partial unique on `(job, provider, provider_ref)`;
 `employment_period_id unique` = **exactly one employee can ever result from one
 application** — the idempotent-hire guarantee is structural), `application_events`
@@ -169,7 +172,7 @@ policies mirror the table — anyone reads, platform admins write. Archiving
 | Compensation | self, `salary.view` | `salary.propose` / `salary.approve` |
 | Grants | self (own), `access.manage` | `access.manage` |
 | Hiring requests / jobs / channels | `jobs.view` | `jobs.request`/`jobs.edit`/`jobs.approve`; publish: `jobs.publish` |
-| Candidates / applications / offers | `candidates.view` (scoped via the candidate's applications) | `candidates.review` (same scoping), offers also `offer.approve` |
+| Candidates / applications / offers | `candidates.view` via the candidate's applications, or `candidates.source` anywhere (the holding's talent pool) | `candidates.review` via applications, or `candidates.source` anywhere; creation only through `upsert_sourced_candidate`; the contact rule through `set_contact_rule`; offers also `offer.approve` |
 | Promotions | `marketing.view` or `jobs.view` | `marketing.draft`/`approve`/`publish`, `jobs.edit` |
 | Plans / tasks | self, task owner, `tasks.view` | task owner, `tasks.complete`, `tasks.assign` |
 | Documents | self (not `hr_only`), `documents.view` | `documents.upload` |

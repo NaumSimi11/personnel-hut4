@@ -6,6 +6,7 @@ import RequestHireDialog from '@/components/RequestHireDialog.vue'
 import DecideHiringRequestDialog from '@/components/DecideHiringRequestDialog.vue'
 import JobOpeningsPanel from '@/components/hiring/JobOpeningsPanel.vue'
 import ApplicantsPanel from '@/components/hiring/ApplicantsPanel.vue'
+import TalentPoolPanel from '@/components/hiring/TalentPoolPanel.vue'
 import { useAuthStore } from '@/stores/auth'
 import { awaitingLabel } from '@/lib/companyOps'
 import { deliverNotifications, deliverySentence } from '@/lib/notificationsApi'
@@ -35,17 +36,20 @@ const router = useRouter()
 const route = useRoute()
 const auth = useAuthStore()
 
-// Requests · Job openings · Applicants (plan 044) — the prototype's Recruitment tabs, on the URL.
-const TABS = [
+// Requests · Job openings · Applicants (plan 044) — the prototype's Recruitment
+// tabs, on the URL. The Talent pool (plan 052) is holding-wide and exists only
+// for pool holders; an unknown or hidden tab falls back to the requests.
+type TabId = 'requests' | 'openings' | 'applicants' | 'pool'
+const TABS = computed<{ id: TabId; label: string }[]>(() => [
   { id: 'requests', label: 'Hiring requests' },
   { id: 'openings', label: 'Job openings' },
   { id: 'applicants', label: 'Applicants' },
-] as const
-type TabId = (typeof TABS)[number]['id']
+  ...(auth.isAdmin || auth.canAnywhere('candidates.source') ? [{ id: 'pool' as const, label: 'Talent pool' }] : []),
+])
 const activeTab = computed<TabId>(() => {
   const raw = route.query.tab
   const id = Array.isArray(raw) ? raw[0] : raw
-  return TABS.some((t) => t.id === id) ? (id as TabId) : 'requests'
+  return TABS.value.some((t) => t.id === id) ? (id as TabId) : 'requests'
 })
 function selectTab(id: TabId): void {
   void router.replace({ query: { ...route.query, tab: id } })
@@ -253,6 +257,7 @@ onMounted(load)
 
     <JobOpeningsPanel v-if="activeTab === 'openings'" />
     <ApplicantsPanel v-else-if="activeTab === 'applicants'" />
+    <TalentPoolPanel v-else-if="activeTab === 'pool'" />
     <div v-else class="card">
       <div class="card-head">
         <div>

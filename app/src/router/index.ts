@@ -82,6 +82,12 @@ export const router = createRouter({
           component: () => import('@/pages/ApplicationPage.vue'),
         },
         {
+          // The candidate's own record (plan 052): one person across every job.
+          path: 'hiring/candidates/:candidateId',
+          name: 'candidate',
+          component: () => import('@/pages/CandidatePage.vue'),
+        },
+        {
           path: 'reports',
           name: 'reports',
           component: () => import('@/pages/ReportsPage.vue'),

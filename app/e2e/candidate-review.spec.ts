@@ -111,11 +111,15 @@ test('candidate page: files behind signed links, screening answers, decision, no
   await page.getByRole('button', { name: 'Sign in' }).click()
   await page.waitForURL(/\/overview/)
 
-  // From the job's Applications tab, the row links to the candidate page.
+  // From the job's Applications tab, the row's name links a pool holder (the
+  // admin here) to the candidate record since 052; the application page — the
+  // subject of this spec — is opened directly.
   const { data: job } = await db.from('jobs').select('id').eq('title', JOB_TITLE).single()
   await page.goto(`/hiring/jobs/${job?.id}?tab=applications`)
   const row = page.locator('.application-row', { hasText: CANDIDATE_NAME })
   await row.getByRole('link', { name: CANDIDATE_NAME }).click()
+  await expect(page).toHaveURL(/\/hiring\/candidates\/[0-9a-f-]{36}$/)
+  await page.goto(`/hiring/applications/${applicationId}`)
   await expect(page).toHaveURL(new RegExp(`/hiring/applications/${applicationId}$`))
   await expect(page.getByRole('heading', { name: CANDIDATE_NAME })).toBeVisible()
   await expect(page.getByText(CANDIDATE_EMAIL)).toBeVisible()

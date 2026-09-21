@@ -3,7 +3,8 @@ import { expect, test } from '@playwright/test'
 
 /**
  * Bulk CVs: HR drops the files they have on a laptop into a job, each
- * becomes a candidate at "New" with the CV attached; a name is guessed from
+ * becomes a candidate at "New" with the CV on their record (candidate_files
+ * since 052 — it follows the person to every job); a name is guessed from
  * the file name and can be corrected before saving. Seeds an open job at
  * Snowball.
  */
@@ -43,6 +44,13 @@ async function cleanup(): Promise<void> {
   }
   await db.from('applications').delete().in('job_id', jobIds)
   const candidateIds = [...new Set((apps ?? []).map((a) => a.candidate_id))]
+  // The CVs live under candidate/<id>/ since 052; the candidate_files rows go
+  // with the candidate (on delete cascade), the objects do not.
+  for (const candidateId of candidateIds) {
+    const { data: objects } = await db.storage.from('candidate-files').list(`candidate/${candidateId}`)
+    const paths = (objects ?? []).map((o) => `candidate/${candidateId}/${o.name}`)
+    if (paths.length) await db.storage.from('candidate-files').remove(paths)
+  }
   if (candidateIds.length) await db.from('candidates').delete().in('id', candidateIds)
   await db.from('jobs').delete().in('id', jobIds)
 }
@@ -95,21 +103,27 @@ test('drop three CVs → names guessed and corrected → three candidates with t
   await dialog.getByRole('button', { name: /Save 3 candidates/ }).click()
   await expect(dialog).toBeHidden()
 
-  // All three on the Applications tab, each with the CV in the database.
+  // All three on the Applications tab, each with the CV on their candidate
+  // record (candidate_files, not application_files, since 052).
   for (const name of ['Ana Ilievska', 'Marko Petrov', 'Elena Trajkovska']) {
     await expect(page.getByText(name, { exact: true }).first()).toBeVisible()
   }
-  const { data: apps } = await db
-    .from('applications')
-    .select('stage_key, candidate:candidates(full_name, email), application_files(kind, original_name)')
-    .eq('job_id', jobId)
-  expect(apps).toHaveLength(3)
-  for (const a of apps ?? []) {
-    expect(a.stage_key).toBe('new')
-    expect(a.application_files).toHaveLength(1)
-    expect(a.application_files[0]?.kind).toBe('cv')
+  type AppRow = {
+    stage_key: string
+    candidate: { full_name: string; email: string; candidate_files: { kind: string; original_name: string }[] }
   }
-  const elena = (apps ?? []).find((a) => (a.candidate as unknown as { full_name: string }).full_name === 'Elena Trajkovska')
-  expect((elena?.candidate as unknown as { email: string }).email).toBe('elena@example.test')
-  expect(elena?.application_files[0]?.original_name).toBe('CV.pdf')
+  const { data } = await db
+    .from('applications')
+    .select('stage_key, candidate:candidates(full_name, email, candidate_files(kind, original_name))')
+    .eq('job_id', jobId)
+  const apps = (data ?? []) as unknown as AppRow[]
+  expect(apps).toHaveLength(3)
+  for (const a of apps) {
+    expect(a.stage_key).toBe('new')
+    expect(a.candidate.candidate_files).toHaveLength(1)
+    expect(a.candidate.candidate_files[0]?.kind).toBe('cv')
+  }
+  const elena = apps.find((a) => a.candidate.full_name === 'Elena Trajkovska')
+  expect(elena?.candidate.email).toBe('elena@example.test')
+  expect(elena?.candidate.candidate_files[0]?.original_name).toBe('CV.pdf')
 })

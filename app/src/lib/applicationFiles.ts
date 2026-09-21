@@ -23,6 +23,11 @@ const EXTENSION_BY_TYPE: Record<string, string> = {
 
 export const FILE_ACCEPT = Object.keys(EXTENSION_BY_TYPE).join(',')
 
+/** The file extension for an accepted MIME type; `bin` for anything else. */
+export function extensionFor(mimeType: string): string {
+  return EXTENSION_BY_TYPE[mimeType] ?? 'bin'
+}
+
 export const FILE_KINDS = [
   { key: 'cv', label: 'CV / résumé' },
   { key: 'cover_letter', label: 'Cover letter' },
@@ -39,7 +44,7 @@ export function validateApplicationFile(file: { type: string; size: number; name
 }
 
 export function fileObjectPath(applicationId: string, fileId: string, mimeType: string): string {
-  return `${applicationId}/${fileId}.${EXTENSION_BY_TYPE[mimeType] ?? 'bin'}`
+  return `${applicationId}/${fileId}.${extensionFor(mimeType)}`
 }
 
 export function formatBytes(bytes: number): string {

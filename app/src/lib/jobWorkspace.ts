@@ -166,7 +166,15 @@ export function promotionActions(
   return actions
 }
 
+/**
+ * RLS refusals as sentences; the RPCs already speak in sentences and are
+ * shown verbatim. A candidates write (`… policy for table "candidates"`) is
+ * holding-wide, so it names the two capabilities that open it.
+ */
 export function friendlyRecruitmentError(message: string): string {
+  if (/row-level security.*"candidates"/.test(message)) {
+    return 'This needs the "Work the talent pool" capability, or "Record interview feedback" where the candidate applied.'
+  }
   if (/row-level security/.test(message)) return 'You do not have permission for this action in this company.'
   return message
 }

@@ -282,6 +282,7 @@ export type Database = {
           rejected_reason: string | null
           screening_answers: Json
           source_channel_key: string | null
+          source_key: string | null
           source_provider: string | null
           stage_key: string
           updated_at: string
@@ -303,6 +304,7 @@ export type Database = {
           rejected_reason?: string | null
           screening_answers?: Json
           source_channel_key?: string | null
+          source_key?: string | null
           source_provider?: string | null
           stage_key?: string
           updated_at?: string
@@ -324,6 +326,7 @@ export type Database = {
           rejected_reason?: string | null
           screening_answers?: Json
           source_channel_key?: string | null
+          source_key?: string | null
           source_provider?: string | null
           stage_key?: string
           updated_at?: string
@@ -370,6 +373,13 @@ export type Database = {
             columns: ["source_channel_key"]
             isOneToOne: false
             referencedRelation: "channels"
+            referencedColumns: ["key"]
+          },
+          {
+            foreignKeyName: "applications_source_key_fkey"
+            columns: ["source_key"]
+            isOneToOne: false
+            referencedRelation: "candidate_sources"
             referencedColumns: ["key"]
           },
           {
@@ -723,35 +733,198 @@ export type Database = {
           },
         ]
       }
+      candidate_files: {
+        Row: {
+          candidate_id: string
+          created_at: string
+          extracted_text: string | null
+          id: string
+          kind: string
+          mime_type: string
+          original_name: string
+          provider: string | null
+          provider_ref: string | null
+          size_bytes: number
+          storage_path: string
+          uploaded_by: string | null
+        }
+        Insert: {
+          candidate_id: string
+          created_at?: string
+          extracted_text?: string | null
+          id?: string
+          kind?: string
+          mime_type: string
+          original_name: string
+          provider?: string | null
+          provider_ref?: string | null
+          size_bytes: number
+          storage_path: string
+          uploaded_by?: string | null
+        }
+        Update: {
+          candidate_id?: string
+          created_at?: string
+          extracted_text?: string | null
+          id?: string
+          kind?: string
+          mime_type?: string
+          original_name?: string
+          provider?: string | null
+          provider_ref?: string | null
+          size_bytes?: number
+          storage_path?: string
+          uploaded_by?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "candidate_files_candidate_id_fkey"
+            columns: ["candidate_id"]
+            isOneToOne: false
+            referencedRelation: "candidates"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "candidate_files_uploaded_by_fkey"
+            columns: ["uploaded_by"]
+            isOneToOne: false
+            referencedRelation: "people"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      candidate_sources: {
+        Row: {
+          archived_at: string | null
+          key: string
+          label: string
+          sort_order: number
+        }
+        Insert: {
+          archived_at?: string | null
+          key: string
+          label: string
+          sort_order?: number
+        }
+        Update: {
+          archived_at?: string | null
+          key?: string
+          label?: string
+          sort_order?: number
+        }
+        Relationships: []
+      }
       candidates: {
         Row: {
+          archived_at: string | null
+          contact_again_after: string | null
+          contact_later: boolean
           created_at: string
+          current_employer: string | null
+          current_title: string | null
           custom: Json
+          do_not_contact: boolean
+          do_not_contact_at: string | null
+          do_not_contact_by: string | null
+          do_not_contact_reason: string | null
           email: string | null
           full_name: string
           id: string
+          last_activity_at: string
+          linkedin_key: string | null
+          linkedin_url: string | null
+          location: string | null
+          name_key: string | null
           phone: string | null
+          phone_key: string | null
+          provider: string
+          provider_ref: string | null
+          referred_by: string | null
+          skills: string[]
+          source_key: string
+          sourced_by: string | null
+          summary: string | null
           updated_at: string
         }
         Insert: {
+          archived_at?: string | null
+          contact_again_after?: string | null
+          contact_later?: boolean
           created_at?: string
+          current_employer?: string | null
+          current_title?: string | null
           custom?: Json
+          do_not_contact?: boolean
+          do_not_contact_at?: string | null
+          do_not_contact_by?: string | null
+          do_not_contact_reason?: string | null
           email?: string | null
           full_name: string
           id?: string
+          last_activity_at?: string
+          linkedin_url?: string | null
+          location?: string | null
           phone?: string | null
+          provider?: string
+          provider_ref?: string | null
+          referred_by?: string | null
+          skills?: string[]
+          source_key?: string
+          sourced_by?: string | null
+          summary?: string | null
           updated_at?: string
         }
         Update: {
+          archived_at?: string | null
+          contact_again_after?: string | null
+          contact_later?: boolean
           created_at?: string
+          current_employer?: string | null
+          current_title?: string | null
           custom?: Json
+          do_not_contact?: boolean
+          do_not_contact_at?: string | null
+          do_not_contact_by?: string | null
+          do_not_contact_reason?: string | null
           email?: string | null
           full_name?: string
           id?: string
+          last_activity_at?: string
+          linkedin_url?: string | null
+          location?: string | null
           phone?: string | null
+          provider?: string
+          provider_ref?: string | null
+          referred_by?: string | null
+          skills?: string[]
+          source_key?: string
+          sourced_by?: string | null
+          summary?: string | null
           updated_at?: string
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "candidates_do_not_contact_by_fkey"
+            columns: ["do_not_contact_by"]
+            isOneToOne: false
+            referencedRelation: "people"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "candidates_source_key_fkey"
+            columns: ["source_key"]
+            isOneToOne: false
+            referencedRelation: "candidate_sources"
+            referencedColumns: ["key"]
+          },
+          {
+            foreignKeyName: "candidates_sourced_by_fkey"
+            columns: ["sourced_by"]
+            isOneToOne: false
+            referencedRelation: "people"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       capabilities: {
         Row: {
@@ -4700,6 +4873,15 @@ export type Database = {
         Returns: Json
       }
       acknowledge_policy: { Args: { p_policy_id: string }; Returns: Json }
+      add_candidate_to_job: {
+        Args: {
+          p_candidate_id: string
+          p_job_id: string
+          p_override_wait?: boolean
+          p_source_key?: string
+        }
+        Returns: Json
+      }
       add_kit_item: {
         Args: { p_item: string; p_request_id: string }
         Returns: Json
@@ -4876,6 +5058,10 @@ export type Database = {
         Args: { p_commit?: boolean; p_company_id: string; p_rows: Json }
         Returns: Json
       }
+      import_zoho_recruit: {
+        Args: { p_commit?: boolean; p_payload: Json }
+        Returns: Json
+      }
       issue_asset: { Args: { p_assignment_id: string }; Returns: Json }
       issue_kit_item: {
         Args: { p_asset_id?: string; p_index: number; p_request_id: string }
@@ -4884,6 +5070,10 @@ export type Database = {
       kudos_overview: { Args: { p_month?: string }; Returns: Json }
       leave_balance: {
         Args: { p_company_id: string; p_person_id: string; p_year: number }
+        Returns: Json
+      }
+      link_hired_application: {
+        Args: { p_application_id: string; p_person_id?: string | null }
         Returns: Json
       }
       mark_handover_sent: { Args: { p_id: string }; Returns: Json }
@@ -5024,6 +5214,7 @@ export type Database = {
         }
         Returns: Json
       }
+      search_candidates: { Args: { p: Json }; Returns: Json }
       send_welcome_note: {
         Args: { p_plan_id: string; p_to?: string }
         Returns: Json
@@ -5032,6 +5223,7 @@ export type Database = {
         Args: { p_path?: string; p_person_id: string }
         Returns: Json
       }
+      set_contact_rule: { Args: { p: Json; p_candidate_id: string }; Returns: Json }
       set_first_day_details: {
         Args: { p: Json; p_company_id: string }
         Returns: Json
@@ -5098,6 +5290,10 @@ export type Database = {
         Returns: Json
       }
       update_kudos: { Args: { p: Json; p_id: string }; Returns: Json }
+      upsert_sourced_candidate: {
+        Args: { p: Json; p_provider: string; p_ref?: string | null }
+        Returns: Json
+      }
       upsert_template_task: { Args: { p: Json }; Returns: Json }
       welcome_note_data: { Args: { p_queue_id: string }; Returns: Json }
       welcome_note_text: { Args: { p_plan_id: string }; Returns: Json }

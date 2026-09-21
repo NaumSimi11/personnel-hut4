@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   JOB_STEPS,
   currentStep,
+  friendlyRecruitmentError,
   jobStatusActions,
   promotionActions,
   salvageQuestions,
@@ -154,5 +155,26 @@ describe('salvageQuestions', () => {
   it('refuses a value that is not a list, so saving cannot wipe it', () => {
     expect(salvageQuestions({ not: 'a list' })).toEqual({ questions: [], lossy: true })
     expect(salvageQuestions(null).lossy).toBe(true)
+  })
+})
+
+describe('friendlyRecruitmentError', () => {
+  it('names the two capabilities that open a candidates write', () => {
+    expect(friendlyRecruitmentError('new row violates row-level security policy for table "candidates"')).toBe(
+      'This needs the "Work the talent pool" capability, or "Record interview feedback" where the candidate applied.',
+    )
+  })
+
+  it('keeps the generic sentence for every other table', () => {
+    expect(friendlyRecruitmentError('new row violates row-level security policy for table "candidate_files"')).toBe(
+      'You do not have permission for this action in this company.',
+    )
+    expect(friendlyRecruitmentError('new row violates row-level security policy for table "jobs"')).toBe(
+      'You do not have permission for this action in this company.',
+    )
+  })
+
+  it('shows the sentences the RPCs speak verbatim', () => {
+    expect(friendlyRecruitmentError('Ana asked not to be contacted again.')).toBe('Ana asked not to be contacted again.')
   })
 })

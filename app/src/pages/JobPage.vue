@@ -6,6 +6,7 @@ import { useAuthStore } from '@/stores/auth'
 import { candidateQueue, candidateNextStep } from '@/lib/hiringJourney'
 import AddCandidateDialog from '@/components/AddCandidateDialog.vue'
 import UploadCvsDialog from '@/components/UploadCvsDialog.vue'
+import PickFromPoolDialog from '@/components/PickFromPoolDialog.vue'
 import AddEmployeeDialog from '@/components/AddEmployeeDialog.vue'
 import { useDialogStore } from '@/stores/dialogs'
 import JobStepper from '@/components/JobStepper.vue'
@@ -71,7 +72,16 @@ type ApplicationRow = {
   employment_period_id: string | null
   next_action: string | null
   next_action_due: string | null
-  candidate: { id: string; full_name: string; email: string | null; phone: string | null } | null
+  source_key: string | null
+  source: { label: string } | null
+  candidate: {
+    id: string
+    full_name: string
+    email: string | null
+    phone: string | null
+    do_not_contact: boolean
+    contact_again_after: string | null
+  } | null
   owner: { full_name: string } | null
   employment_period: { person_id: string } | null
 }
@@ -103,6 +113,7 @@ const questionsUnreadable = ref(false)
 
 const addCandidateDialog = ref<InstanceType<typeof AddCandidateDialog> | null>(null)
 const uploadCvsDialog = ref<InstanceType<typeof UploadCvsDialog> | null>(null)
+const pickFromPoolDialog = ref<InstanceType<typeof PickFromPoolDialog> | null>(null)
 const confirmHireDialog = ref<InstanceType<typeof AddEmployeeDialog> | null>(null)
 const dialogs = useDialogStore()
 const channelsPanel = ref<InstanceType<typeof JobChannelsPanel> | null>(null)
@@ -119,6 +130,12 @@ function selectTab(id: TabId): void {
 }
 
 const canEdit = computed(() => (job.value ? auth.can(job.value.company_id, 'jobs.edit') : false))
+// A hint only: the pool RPCs and RLS decide (plan 052).
+const canSource = computed(() => auth.isAdmin || auth.canAnywhere('candidates.source'))
+// Candidates with an open application here — the pool picker's "In pipeline".
+const inPipeline = computed(() =>
+  applications.value.flatMap((a) => (a.candidate && !isTerminal(a.stage_key) ? [a.candidate.id] : [])),
+)
 const hiredCount = computed(() => applications.value.filter((a) => a.stage_key === 'hired').length)
 const activeCount = computed(
   () => applications.value.filter((a) => !['hired', 'rejected', 'withdrawn'].includes(a.stage_key)).length,
@@ -217,8 +234,9 @@ async function loadApplications(): Promise<void> {
   const { data, error: err } = await supabase
     .from('applications')
     .select(
-      `id, stage_key, employment_period_id, next_action, next_action_due,
-       candidate:candidates(id, full_name, email, phone),
+      `id, stage_key, employment_period_id, next_action, next_action_due, source_key,
+       source:candidate_sources(label),
+       candidate:candidates(id, full_name, email, phone, do_not_contact, contact_again_after),
        owner:people!applications_owner_id_fkey(full_name),
        employment_period:employment_periods!applications_employment_period_id_fkey(person_id)`,
     )
@@ -626,6 +644,9 @@ onMounted(async () => {
             <p>Candidates moving through this job's pipeline.</p>
           </div>
           <div class="head-actions">
+            <button v-if="canSource" class="button secondary" type="button" data-testid="source-from-pool" @click="pickFromPoolDialog?.open()">
+              Source from pool
+            </button>
             <button class="button secondary" type="button" @click="addCandidateDialog?.open()">
               Add candidate
             </button>
@@ -640,15 +661,20 @@ onMounted(async () => {
         <div v-else>
           <div v-for="a in applications" :key="a.id" class="application-row">
             <div class="row-text">
-              <router-link class="candidate-link" :to="{ name: 'application', params: { applicationId: a.id } }">
+              <router-link
+                class="candidate-link"
+                :to="canSource && a.candidate ? { name: 'candidate', params: { candidateId: a.candidate.id } } : { name: 'application', params: { applicationId: a.id } }"
+              >
                 <strong>{{ a.candidate?.full_name ?? '—' }}</strong>
               </router-link>
               <small>
                 {{ a.candidate?.email ?? '—' }}
+                <template v-if="a.source"> · via {{ a.source.label }}</template>
                 <template v-if="a.owner"> · {{ a.owner.full_name }}</template>
                 <template v-if="a.next_action"> · next: {{ a.next_action }}<template v-if="a.next_action_due"> by {{ a.next_action_due }}</template></template>
               </small>
             </div>
+            <span v-if="a.candidate?.do_not_contact" class="badge amber">Do not contact</span>
             <span class="badge" :class="stageBadgeClass(a.stage_key)">{{ a.stage_key }}</span>
             <div class="row-actions">
               <router-link
@@ -709,6 +735,15 @@ onMounted(async () => {
       ref="uploadCvsDialog"
       :job-id="job.id"
       :company-id="job.company_id"
+      @created="loadApplications"
+    />
+    <PickFromPoolDialog
+      v-if="job"
+      ref="pickFromPoolDialog"
+      :job-id="job.id"
+      :company-id="job.company_id"
+      :job-title="job.title"
+      :in-pipeline="inPipeline"
       @created="loadApplications"
     />
     <AddEmployeeDialog ref="confirmHireDialog" @created="onHired" />

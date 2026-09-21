@@ -8,6 +8,8 @@
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
     "sync:zoho": "tsx src/zoho/run.ts",
+    "import:zoho-recruit:extract": "cd .. && tsx server/scripts/zoho-recruit-extract.ts docs/Data_001/Data docs/Attachments_001 --tz Europe/Skopje --out .zoho-payload.json --files .zoho-files.json --review .zoho-review.json",
+    "import:zoho-recruit:files": "tsx scripts/zoho-recruit-files.ts",
     "build:vercel": "cd ../app && npm run build && cd ../server && node scripts/build-vercel.mjs"
   },
   "dependencies": {
@@ -22,6 +24,7 @@
   "devDependencies": {
     "@types/node": "^22.10.2",
     "@types/pdfmake": "^0.3.3",
+    "csv-parse": "^7.0.2",
     "esbuild": "^0.28.2",
     "typescript": "~5.6.2",
     "vitest": "^2.1.8"

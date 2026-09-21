@@ -200,7 +200,7 @@ export async function registerCareersRoutes(app: FastifyInstance): Promise<void>
         if (!candidateId) {
           const { data: created, error: candErr } = await db
             .from('candidates')
-            .insert({ full_name: input.name, email: input.email, phone: input.phone || null })
+            .insert({ full_name: input.name, email: input.email, phone: input.phone || null, provider: 'careers', source_key: 'careers_page' })
             .select('id')
             .single()
           if (candErr || !created) {
@@ -217,6 +217,7 @@ export async function registerCareersRoutes(app: FastifyInstance): Promise<void>
             company_id: company.id,
             candidate_id: candidateId,
             source_channel_key: 'careers',
+            source_key: 'careers_page',
             screening_answers: checked.answers,
           })
           .select('id')

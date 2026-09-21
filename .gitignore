@@ -12,6 +12,10 @@ playwright-report/
 .claude/
 .playwright-mcp/
 .fn-payload*.json
+.zoho-payload*.json
+.zoho-files*.json
+.zoho-review*.json
+.zoho-report*.json
 server/public/
 supabase/.temp/
 

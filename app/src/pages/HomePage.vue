@@ -250,10 +250,14 @@ async function load(): Promise<void> {
     snapshotRes,
     candidateAssignments,
   ] = await Promise.all([
+    // The pipeline of live roles (plan 052): the imported history sits on closed
+    // jobs, and PostgREST would silently cut the list at 1,000 rows anyway.
     supabase
       .from('applications')
-      .select('id, job_id, stage_key, received_at, candidate:candidates(full_name), job:jobs(title, company:companies(name))')
-      .order('received_at', { ascending: false }),  // every application the viewer may see: the pipeline counts all of them
+      .select('id, job_id, stage_key, received_at, candidate:candidates(full_name), job:jobs!inner(title, status, company:companies(name))')
+      .in('job.status', ['ready', 'open', 'on_hold'])
+      .order('received_at', { ascending: false })
+      .limit(1000),
     supabase.from('jobs').select('id, title, status, company:companies(name), request:hiring_requests!jobs_hiring_request_id_fkey(headcount)').in('status', ['ready', 'open']),
     supabase
       .from('hiring_requests')

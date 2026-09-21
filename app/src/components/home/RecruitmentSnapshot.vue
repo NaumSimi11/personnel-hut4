@@ -49,7 +49,7 @@ function badgeClass(stage: string): string {
         <div class="card-head">
           <div>
             <h2>Applicant pipeline</h2>
-            <p>Every application you may see, by stage.</p>
+            <p>The pipeline of live roles — every application to them you may see, by stage.</p>
           </div>
           <router-link class="button secondary small-btn" :to="{ name: 'hiring', query: { tab: 'applicants' } }">All applicants</router-link>
         </div>

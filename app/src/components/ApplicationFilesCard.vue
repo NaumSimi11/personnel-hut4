@@ -162,7 +162,7 @@ onMounted(load)
   <div class="card">
     <div class="card-head">
       <div>
-        <h2>Files</h2>
+        <h2>Files for this application</h2>
         <p>Private to people who may review this candidate. Links expire in two minutes.</p>
       </div>
     </div>

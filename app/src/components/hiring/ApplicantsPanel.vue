@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { supabase } from '@/lib/supabase'
 import CompanyFilter from '@/components/CompanyFilter.vue'
 import { PIPELINE_STAGES } from '@/lib/dashboard'
@@ -10,13 +10,20 @@ import { applicantRows, type ApplicantLite, type ApplicantRow } from '@/lib/hiri
  * every job the viewer may see, newest first, with company, stage and a
  * search over name, position and email. Adding a candidate stays on the
  * job (a candidate always applies to a role) — "Open job" takes you there.
+ * The stage filter travels to the query and the list is capped (plan 052):
+ * PostgREST would otherwise cut the imported history at 1,000 rows silently.
  */
+const PAGE_CAP = 1000
+const CLOSED_STAGES = '(hired,rejected,withdrawn)'
+const CAPPED_NOTICE = 'Showing the newest 1,000 — narrow the filters to see older ones.'
+
 const loading = ref(true)
 const error = ref<string | null>(null)
 const applications = ref<ApplicantLite[]>([])
 const companyId = ref('')
 const stage = ref('live')
 const search = ref('')
+const capped = computed(() => applications.value.length === PAGE_CAP)
 
 const companies = computed(() => {
   const seen = new Map<string, string>()
@@ -35,12 +42,15 @@ function badgeClass(stageKey: string): string {
 async function load(): Promise<void> {
   loading.value = true
   error.value = null
-  const { data, error: err } = await supabase
+  const stageKey = stage.value
+  let query = supabase
     .from('applications')
     .select(
       'id, company_id, stage_key, received_at, next_action, next_action_due, candidate:candidates(full_name, email), job:jobs(id, title, company:companies(name)), owner:people!applications_owner_id_fkey(full_name)',
     )
-    .order('received_at', { ascending: false })
+  if (stageKey === 'live') query = query.not('stage_key', 'in', CLOSED_STAGES)
+  else if (stageKey !== 'all') query = query.eq('stage_key', stageKey)
+  const { data, error: err } = await query.order('received_at', { ascending: false }).limit(PAGE_CAP)
   loading.value = false
   if (err) {
     error.value = 'Could not load the applicants.'
@@ -51,6 +61,7 @@ async function load(): Promise<void> {
 }
 
 onMounted(load)
+watch(stage, load)
 </script>
 
 <template>
@@ -77,6 +88,7 @@ onMounted(load)
     <div v-else-if="loading" class="empty">Loading applicants…</div>
     <div v-else-if="!rows.length" class="empty">No applicants match. Add candidates or upload CVs from a job.</div>
     <div v-else class="table-wrap">
+      <p v-if="capped" class="capped-note" role="status" data-testid="applicants-capped">{{ CAPPED_NOTICE }}</p>
       <table>
         <thead>
           <tr>
@@ -113,6 +125,7 @@ onMounted(load)
 <style scoped>
 .filters { display: flex; gap: 10px; flex-wrap: wrap; align-items: end; }
 .search, .stage-filter select { border: 1px solid var(--line); background: #fff; padding: 8px 10px; font-size: 12px; color: var(--ink); min-width: 180px; }
+.capped-note { margin: 0; padding: 10px 24px; font-size: 12px; color: var(--muted); background: #fafbf9; border-bottom: 1px solid var(--line); }
 table { width: 100%; border-collapse: collapse; font-size: 12px; }
 th { text-align: left; font-size: 11px; font-weight: 550; color: var(--muted); padding: 10px 24px; border-bottom: 1px solid var(--line); }
 td { padding: 12px 24px; border-bottom: 1px solid var(--line); vertical-align: middle; }

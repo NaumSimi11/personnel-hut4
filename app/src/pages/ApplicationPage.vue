@@ -8,8 +8,12 @@ import ApplicationFilesCard from '@/components/ApplicationFilesCard.vue'
 import ApplicationInterviewsCard from '@/components/ApplicationInterviewsCard.vue'
 import ApplicationOfferCard from '@/components/ApplicationOfferCard.vue'
 import AddEmployeeDialog from '@/components/AddEmployeeDialog.vue'
+import CandidateFilesCard from '@/components/CandidateFilesCard.vue'
+import ImportedHireCard, { type ZohoHire } from '@/components/ImportedHireCard.vue'
 import RejectApplicationDialog from '@/components/RejectApplicationDialog.vue'
 import { friendlyRecruitmentError, salvageQuestions } from '@/lib/jobWorkspace'
+import { contactBadge, type ContactRule } from '@/lib/candidatePool'
+import { todayDb } from '@/lib/compensation'
 import { answersFromRows, mergeAnswers, type AnswerRow } from '@/lib/screeningAnswers'
 import CandidateHandoffDialog, { type HandoffPayload } from '@/components/CandidateHandoffDialog.vue'
 import { deliverNotifications, deliverySentence } from '@/lib/notificationsApi'
@@ -25,7 +29,20 @@ import { missingRecordMessage } from '@/lib/missingRecord'
  * decision panel — a named owner, the next action and its date, the stage
  * actions, and a reasoned rejection or withdrawal. Interviews with blind
  * scorecards and the offer state machine (plan 018b) sit in the same column.
+ * Since plan 052 the candidate is a holding-wide record: their files follow
+ * them to every job, the contact rule shows beside the stage, and an
+ * imported hire asks HR which employee record it belongs to.
  */
+
+type Candidate = ContactRule & {
+  id: string
+  full_name: string
+  email: string | null
+  phone: string | null
+  linkedin_url: string | null
+  do_not_contact_reason: string | null
+  custom: unknown
+}
 
 type Application = {
   id: string
@@ -37,12 +54,14 @@ type Application = {
   next_action: string | null
   next_action_due: string | null
   source_channel_key: string | null
+  source_key: string | null
   received_at: string
   rejected_reason: string | null
   withdrawn_reason: string | null
   screening_answers: unknown
   employment_period_id: string | null
-  candidate: { id: string; full_name: string; email: string | null; phone: string | null } | null
+  custom: unknown
+  candidate: Candidate | null
   job: {
     id: string
     title: string
@@ -81,6 +100,7 @@ const onboardingGaps = computed(() => onboarding.value?.plan_tasks.filter(t => t
 const events = ref<EventRow[]>([])
 const people = ref<{ id: string; full_name: string }[]>([])
 const channelLabels = ref<Record<string, string>>({})
+const sourceLabels = ref<Record<string, string>>({})
 const loading = ref(true)
 const error = ref<string | null>(null)
 
@@ -175,6 +195,25 @@ const canReview = computed(() =>
 const isTerminal = computed(() => ['hired', 'rejected', 'withdrawn'].includes(application.value?.stage_key ?? ''))
 const nextStages = computed(() => STAGE_NEXT[application.value?.stage_key ?? ''] ?? [])
 
+// Pool holders may open the candidate's record; everyone else stays on the application.
+const canOpenCandidate = computed(() => auth.isAdmin || auth.canAnywhere('candidates.source'))
+// The source (052) wins over the careers channel; a row with neither was added by hand.
+const viaLabel = computed(() => {
+  const a = application.value
+  if (!a) return 'added by hand'
+  return sourceLabels.value[a.source_key ?? ''] ?? channelLabels.value[a.source_channel_key ?? ''] ?? 'added by hand'
+})
+const contactRule = computed(() => (application.value?.candidate ? contactBadge(application.value.candidate, todayDb()) : ''))
+// The Zoho import never creates a person: a hired application without an
+// employment record asks HR to confirm the proposed one (employment.edit).
+const importedHire = computed<ZohoHire | null>(() => {
+  const a = application.value
+  if (!a || a.stage_key !== 'hired' || a.employment_period_id) return null
+  const custom = a.custom as { zoho?: ZohoHire | null } | null
+  if (!custom || typeof custom !== 'object' || !custom.zoho || typeof custom.zoho !== 'object') return null
+  return auth.can(a.company_id, 'employment.edit') ? custom.zoho : null
+})
+
 const decisionInput = z.object({
   ownerId: z.union([z.literal(''), z.string().uuid()]),
   nextAction: z.string().trim().max(200, 'Keep the next action under 200 characters.'),
@@ -205,13 +244,14 @@ function eventLabel(e: EventRow): string {
 async function load(): Promise<void> {
   loading.value = true
   error.value = null
-  const [appRes, eventsRes, peopleRes, channelsRes] = await Promise.all([
+  const [appRes, eventsRes, peopleRes, channelsRes, sourcesRes] = await Promise.all([
     supabase
       .from('applications')
       .select(
-        `id, job_id, company_id, stage_key, updated_at, owner_id, next_action, next_action_due, source_channel_key,
-         received_at, rejected_reason, withdrawn_reason, screening_answers, employment_period_id,
-         candidate:candidates(id, full_name, email, phone),
+        `id, job_id, company_id, stage_key, updated_at, owner_id, next_action, next_action_due, source_channel_key, source_key,
+         received_at, rejected_reason, withdrawn_reason, screening_answers, employment_period_id, custom,
+         candidate:candidates(id, full_name, email, phone, linkedin_url, do_not_contact, do_not_contact_reason,
+           contact_later, contact_again_after, custom),
          job:jobs(id, title, screening_questions, scorecard_criteria, company:companies(name)),
          owner:people!applications_owner_id_fkey(full_name),
          employment_period:employment_periods!applications_employment_period_id_fkey(person_id)`,
@@ -225,6 +265,7 @@ async function load(): Promise<void> {
       .order('created_at', { ascending: false }),
     supabase.from('people').select('id, full_name').order('full_name'),
     supabase.from('channels').select('key, label'),
+    supabase.from('candidate_sources').select('key, label'),
   ])
   if (appRes.error || !appRes.data) {
     error.value = missingRecordMessage({
@@ -249,6 +290,7 @@ async function load(): Promise<void> {
   events.value = (eventsRes.data ?? []) as EventRow[]
   people.value = peopleRes.data ?? []
   channelLabels.value = Object.fromEntries((channelsRes.data ?? []).map((c) => [c.key, c.label]))
+  sourceLabels.value = Object.fromEntries((sourcesRes.data ?? []).map((s) => [s.key, s.label]))
 
   const questions = salvageQuestions(application.value.job?.screening_questions).questions
   answerRows.value = mergeAnswers(questions, application.value.screening_answers)
@@ -429,16 +471,37 @@ onMounted(load)
           <div class="eyebrow">
             Candidate · {{ application.job?.title ?? '—' }} · {{ application.job?.company?.name ?? '—' }}
           </div>
-          <h1>{{ application.candidate?.full_name ?? '—' }}</h1>
+          <h1>
+            <router-link
+              v-if="canOpenCandidate && application.candidate"
+              class="candidate-link"
+              data-testid="open-candidate"
+              :to="{ name: 'candidate', params: { candidateId: application.candidate.id } }"
+            >
+              {{ application.candidate.full_name }}
+            </router-link>
+            <template v-else>{{ application.candidate?.full_name ?? '—' }}</template>
+          </h1>
           <p class="meta">
             <template v-if="application.candidate?.email">{{ application.candidate.email }}</template>
             <template v-else>no email</template>
             <template v-if="application.candidate?.phone"> · {{ application.candidate.phone }}</template>
-            · via {{ channelLabels[application.source_channel_key ?? ''] ?? 'added by hand' }}
+            · via {{ viaLabel }}
             · received {{ new Date(application.received_at).toLocaleDateString() }}
           </p>
         </div>
-        <span class="badge stage-badge" :class="stageBadgeClass(application.stage_key)">{{ application.stage_key }}</span>
+        <div class="head-badges">
+          <span class="badge stage-badge" :class="stageBadgeClass(application.stage_key)">{{ application.stage_key }}</span>
+          <span
+            v-if="contactRule"
+            class="badge contact-badge"
+            :class="contactRule === 'Do not contact' ? 'amber' : 'blue'"
+            :title="contactRule === 'Do not contact' ? application.candidate?.do_not_contact_reason ?? undefined : undefined"
+            data-testid="contact-badge"
+          >
+            {{ contactRule }}
+          </span>
+        </div>
       </div>
 
       <section class="card journey-focus" aria-label="Candidate next step">
@@ -468,12 +531,24 @@ onMounted(load)
         <router-link v-if="onboarding" class="button" :to="{ name: 'onboarding-plan', params: { planId: onboarding.id } }">Open onboarding</router-link>
         <router-link v-if="application.employment_period?.person_id" class="button secondary" :to="{ name: 'person', params: { personId: application.employment_period.person_id } }">View employee record</router-link>
       </section>
+      <ImportedHireCard
+        v-if="importedHire"
+        :application-id="application.id"
+        :company-id="application.company_id"
+        :zoho="importedHire"
+        @changed="load"
+      />
 
       <div class="layout">
         <div class="main-column">
           <section id="candidate-review" tabindex="-1" aria-label="Candidate files">
           <ApplicationFilesCard :application-id="application.id" :company-id="application.company_id" :can-review="canReview" />
-
+          <CandidateFilesCard
+            v-if="application.candidate"
+            :candidate-id="application.candidate.id"
+            :can-edit="canReview"
+            heading="Candidate's files — shared across their applications"
+          />
           </section>
           <div id="candidate-answers" class="card" tabindex="-1">
             <div class="card-head">
@@ -704,6 +779,10 @@ section[id], #candidate-decision { scroll-margin-top: 20px; }
   margin-bottom: 22px;
 }
 .meta { margin: 4px 0 0; font-size: 11px; color: var(--muted); }
+.candidate-link { color: inherit; text-decoration: none; }
+.candidate-link:hover { color: var(--green); text-decoration: underline; }
+.head-badges { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+#candidate-review { display: flex; flex-direction: column; gap: 18px; }
 .layout { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 18px; align-items: start; }
 @media (max-width: 960px) { .layout { grid-template-columns: 1fr; } }
 .main-column, .side-column { display: flex; flex-direction: column; gap: 18px; }

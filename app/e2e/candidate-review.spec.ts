@@ -122,7 +122,9 @@ test('candidate page: files behind signed links, screening answers, decision, no
   await expect(page.locator('.stage-badge')).toHaveText('new')
 
   // Files: upload a CV; it lists with size and a download that works only when signed.
-  const files = page.locator('.card', { hasText: 'Files' })
+  // Two files cards sit on the page since 052 (this application's and the candidate's);
+  // `hasText` is a substring match, so name the heading in full.
+  const files = page.locator('.card', { hasText: 'Files for this application' })
   await files.locator('#file-kind').selectOption('cv')
   await files.locator('#file-input').setInputFiles({ name: 'cathy-cv.pdf', mimeType: 'application/pdf', buffer: PDF })
   await files.getByRole('button', { name: 'Upload' }).click()

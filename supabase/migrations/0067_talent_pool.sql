@@ -97,6 +97,14 @@ language sql immutable strict as $$
   select case when position('@' in p) > 1 then lower(left(p, 1) || '***@' || split_part(p, '@', 2)) end
 $$;
 
+-- A payload's `custom` as an object, or nothing. A JSON null passes the shape
+-- check and coalesce keeps it (a jsonb scalar is not SQL NULL); `{} || null`
+-- is then an array, and custom->'zoho'->>'id' finds nothing on it. Internal.
+create or replace function app.jsonb_object_or_empty(p jsonb) returns jsonb
+language sql immutable as $$
+  select case when jsonb_typeof(p) = 'object' then p else '{}'::jsonb end
+$$;
+
 -- --------------------------------------------------- columns and indexes
 alter table public.candidates
   -- like applications.source_provider: plain text, never an FK to providers
@@ -161,6 +169,11 @@ update public.candidates c
                max(greatest(a.received_at, a.updated_at)) as last_at
           from public.applications a group by a.candidate_id) x
  where x.candidate_id = c.id;
+-- A candidate without applications keeps its own updated_at as the activity
+-- stamp, not the ADD COLUMN default now() (the join above never reaches it).
+update public.candidates c
+   set last_activity_at = c.updated_at
+ where not exists (select 1 from public.applications a where a.candidate_id = c.id);
 
 update public.applications
    set source_key = case source_channel_key
@@ -652,7 +665,7 @@ begin
         summary = case when p ? 'summary' then nullif(trim(p->>'summary'), '') else summary end,
         referred_by = case when p ? 'referred_by' then nullif(trim(p->>'referred_by'), '') else referred_by end,
         source_key = case when nullif(p->>'source_key', '') is not null then p->>'source_key' else source_key end,
-        custom = custom || coalesce(p->'custom', '{}'::jsonb)
+        custom = custom || app.jsonb_object_or_empty(p->'custom')
         where id = v_cand.id
         returning id, source_key into v_id, v_source_key;
       v_action := 'updated';
@@ -667,7 +680,7 @@ begin
              nullif(trim(p->>'summary'), ''), nullif(trim(p->>'referred_by'), ''),
              coalesce(nullif(p->>'source_key', ''), 'imported'),
              coalesce(nullif(p->>'sourced_by', '')::uuid, v_me),
-             coalesce(p->'custom', '{}'::jsonb),
+             app.jsonb_object_or_empty(p->'custom'),
              c.created_at, coalesce(nullif(p->>'last_activity_at', '')::timestamptz, c.created_at)
       from (select coalesce(nullif(p->>'created_at', '')::timestamptz, now()) as created_at) c
       returning id, source_key into v_id, v_source_key;
@@ -715,7 +728,7 @@ begin
             nullif(trim(p->>'summary'), ''), nullif(trim(p->>'referred_by'), ''),
             coalesce(nullif(p->>'source_key', ''), 'added_by_hand'),
             case when app.is_admin() then coalesce(nullif(p->>'sourced_by', '')::uuid, v_me) else v_me end,
-            coalesce(p->'custom', '{}'::jsonb))
+            app.jsonb_object_or_empty(p->'custom'))
     returning id, source_key into v_id, v_source_key;
     v_action := 'created';
   end if;
@@ -952,7 +965,7 @@ begin
   end if;
   if p_person_id is null then
     update public.applications
-      set custom = jsonb_set(custom, '{zoho}', coalesce(custom->'zoho', '{}'::jsonb)
+      set custom = jsonb_set(custom, '{zoho}', app.jsonb_object_or_empty(custom->'zoho')
             || jsonb_build_object('proposed_person', null, 'link_declined_by', v_me, 'link_declined_at', now()))
       where id = p_application_id;
     return jsonb_build_object('linked', false);
@@ -1015,6 +1028,7 @@ declare
   v_info jsonb;
   v_cinfo jsonb;
   v_id uuid;
+  v_existing uuid;
   v_company uuid;
   v_person uuid;
   v_email text;
@@ -1242,6 +1256,22 @@ begin
       insert into pg_temp.zoho_import_rows values ('application', v_row->>'zoho_id', jsonb_build_object('id', v_id, 'create', false));
       continue;
     end if;
+    if v_final not in ('hired', 'rejected', 'withdrawn') then
+      -- An open application from another source (HR added the same person to
+      -- an imported job by hand between runs) is refused here, by the
+      -- applications_one_open_per_candidate rule, not as a wrapped unique
+      -- violation in pass 2. A new candidate or job carries a placeholder id
+      -- and matches nothing.
+      select id into v_existing from public.applications
+        where job_id = (v_info->>'id')::uuid and candidate_id = (v_cinfo->>'id')::uuid
+          and stage_key not in ('hired', 'rejected', 'withdrawn');
+      if v_existing is not null then
+        v_verdicts := v_verdicts || jsonb_build_object('kind', 'application', 'ref', v_row->>'zoho_id',
+          'problems', to_jsonb(array[format('already has an open application for this job (id %s)', v_existing)]));
+        v_refused := v_refused + 1;
+        continue;
+      end if;
+    end if;
     v_id := gen_random_uuid();
     v_apps_created := v_apps_created + 1;
     if v_stale then v_stale_closed := v_stale_closed + 1; end if;
@@ -1330,8 +1360,8 @@ begin
       insert into public.jobs (id, company_id, title, description, status, custom, created_at, updated_at)
       values ((v_info->>'id')::uuid, (v_info->>'company_id')::uuid, trim(v_row->>'title'), v_row->>'description',
               v_row->>'status',
-              coalesce(v_row->'custom', '{}'::jsonb) || jsonb_build_object('zoho',
-                coalesce(v_row->'custom'->'zoho', '{}'::jsonb)
+              app.jsonb_object_or_empty(v_row->'custom') || jsonb_build_object('zoho',
+                app.jsonb_object_or_empty(v_row->'custom'->'zoho')
                 || jsonb_build_object('id', v_row->>'zoho_id', 'display_id', v_row->>'display_id')),
               coalesce(nullif(v_row->>'created_at', '')::timestamptz, now()),
               coalesce(nullif(v_row->>'modified_at', '')::timestamptz, nullif(v_row->>'created_at', '')::timestamptz, now()));
@@ -1363,7 +1393,7 @@ begin
              case when coalesce((v_row->>'do_not_contact')::boolean, false)
                   then (v_user_person->>coalesce(v_row->>'do_not_contact_by_zoho_id', ''))::uuid end,
              coalesce((v_row->>'contact_later')::boolean, false), null,
-             coalesce(v_row->'custom', '{}'::jsonb),
+             app.jsonb_object_or_empty(v_row->'custom'),
              c.created_at,
              coalesce(nullif(v_row->>'updated_at', '')::timestamptz, c.created_at),
              coalesce(nullif(v_row->>'last_activity_at', '')::timestamptz, nullif(v_row->>'updated_at', '')::timestamptz, c.created_at)
@@ -1392,8 +1422,8 @@ begin
              c.received_at, c.received_at, coalesce(nullif(v_row->>'modified_at', '')::timestamptz, c.received_at),
              case when v_final = 'withdrawn' then coalesce(nullif(v_row->>'withdrawn_reason', ''), case when v_stale then 'Job closed' end) end,
              case when v_final = 'rejected' then nullif(v_row->>'rejected_reason', '') end,
-             coalesce(v_row->'custom', '{}'::jsonb) || jsonb_build_object('zoho',
-               coalesce(v_row->'custom'->'zoho', '{}'::jsonb) || jsonb_strip_nulls(jsonb_build_object(
+             app.jsonb_object_or_empty(v_row->'custom') || jsonb_build_object('zoho',
+               app.jsonb_object_or_empty(v_row->'custom'->'zoho') || jsonb_strip_nulls(jsonb_build_object(
                  'associated_id', v_row->>'zoho_id', 'status', v_row->>'zoho_status', 'stage', v_row->>'zoho_stage',
                  'created_by', v_row->'custom'->'zoho'->>'created_by',
                  'modified_by', coalesce(v_user_name->>coalesce(v_row->>'modified_by_zoho_id', ''), v_row->>'modified_by_zoho_id'),
@@ -1487,17 +1517,23 @@ end $$;
 -- Policy expressions and generated columns run as the calling role.
 grant execute on function
   app.can_source_candidates(), app.candidate_object_candidate(text),
-  app.phone_key(text), app.name_key(text), app.linkedin_key(text), app.mask_email(text),
-  app.assert_contactable(uuid, boolean)
+  app.phone_key(text), app.name_key(text), app.linkedin_key(text), app.mask_email(text)
 to authenticated;
--- postgres-only callers
+-- postgres-only callers. assert_contactable is among them: its only callers
+-- are the t0_guard_contact trigger function and open_application, both
+-- security definer owned by postgres; callable by hand it would tell any
+-- signed-in user who knows a uuid the candidate's name, archived state and
+-- contact rule. The careers route (service role) never needs it either.
 revoke all on function
   app.open_application(uuid, uuid, text, boolean),
+  app.assert_contactable(uuid, boolean),
+  app.jsonb_object_or_empty(jsonb),
   app.candidate_payload_problems(jsonb),
   app.candidate_skills(jsonb),
   app.candidate_matches(text, text, text, text, uuid),
   app.candidate_match_hint(uuid, text)
 from public;
+revoke all on function app.assert_contactable(uuid, boolean) from authenticated, service_role;
 revoke all on function
   public.upsert_sourced_candidate(text, text, jsonb),
   public.add_candidate_to_job(uuid, uuid, text, boolean),

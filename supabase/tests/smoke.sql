@@ -5001,6 +5001,14 @@ begin
   delete from public.candidates where id = '80000000-0000-0000-0000-000000000671';
   get diagnostics n = row_count;
   assert n = 0, 'only admins delete a candidate';
+  -- The contact-rule check is not callable by hand: it would tell anyone who
+  -- knows a uuid the name, the archived state and the rule of a candidate
+  -- they cannot see. Only the trigger and the RPCs (definer, postgres) call it.
+  begin
+    perform app.assert_contactable('80000000-0000-0000-0000-000000000672', false);
+    raise exception 'FAIL: a reviewer called assert_contactable directly';
+  exception when insufficient_privilege then null;
+  end;
 end $$;
 reset role;
 
@@ -5124,6 +5132,15 @@ begin
   assert r->>'action' = 'updated' and (r->>'id')::uuid = v_lr, 'the same ref updates in place: ' || r::text;
   assert (select current_title from public.candidates where id = v_lr) = 'Senior Dev', 'the title changed';
   assert (select created_at from public.candidates where id = v_lr) = '2024-03-01T00:00:00Z'::timestamptz, 'created_at unchanged';
+  -- A JSON-null custom is "no custom": stored as {}, and merged into an
+  -- existing record it never turns custom into an array.
+  r := public.upsert_sourced_candidate('linkedin_recruiter', 'LR-1', '{"full_name":"Lin Ked","custom":null}');
+  assert r->>'action' = 'updated'
+     and (select custom from public.candidates where id = v_lr) = '{}'::jsonb, 'null custom merges to an object: ' || r::text;
+  r := public.upsert_sourced_candidate('manual', null,
+    '{"full_name":"Null Custom","email":"nullcustom@example.test","ignore_matches":true,"custom":null}');
+  assert r->>'action' = 'created'
+     and (select custom from public.candidates where id = (r->>'id')::uuid) = '{}'::jsonb, 'null custom is stored as {}: ' || r::text;
   r := public.upsert_sourced_candidate('linkedin_recruiter', 'LR-2', '{"full_name":"Lin Kedd","email":"newpool@example.test"}');
   assert r->>'action' = 'created' and exists (select 1 from jsonb_array_elements(r->'possible_duplicates') d
     where d->>'full_name' = 'New Pool' and d->>'match' = 'email'), 'possible duplicates name the first: ' || r::text;
@@ -5352,7 +5369,8 @@ begin
         'modified_at', '2024-03-01T09:00:00Z', 'date_closed', '2024-03-01T00:00:00Z',
         'custom', jsonb_build_object('zoho', jsonb_build_object('department', 'HUT 4'))),
       jsonb_build_object('zoho_id', 'ZJ-2', 'display_id', 'ZR_2_JOB', 'company_code', 'A', 'title', 'Zoho Open Role',
-        'status', 'open', 'created_at', '2024-04-01T09:00:00Z', 'modified_at', '2024-05-01T09:00:00Z'),
+        'status', 'open', 'created_at', '2024-04-01T09:00:00Z', 'modified_at', '2024-05-01T09:00:00Z',
+        'custom', null),   -- a JSON null: the re-run must still find custom.zoho.id
       jsonb_build_object('zoho_id', 'ZJ-3', 'display_id', 'ZR_3_JOB', 'company_code', 'A', 'title', 'Zoho Cancelled Role',
         'status', 'closed', 'created_at', '2024-01-05T09:00:00Z', 'modified_at', '2024-02-20T09:00:00Z')),
     'candidates', jsonb_build_array(
@@ -5368,7 +5386,7 @@ begin
         'do_not_contact_at', '2024-03-02T10:00:00Z', 'do_not_contact_by_zoho_id', 'U-1', 'owner_zoho_id', 'U-2',
         'created_at', '2024-01-20T10:00:00Z', 'last_activity_at', (current_date - 89)::text),
       jsonb_build_object('zoho_id', 'ZT-3', 'display_id', 'ZR_3_CAND', 'full_name', 'Ked Lin', 'source_key', 'head_hunt',
-        'created_at', '2024-01-05T10:00:00Z', 'last_activity_at', '2024-02-20T10:00:00Z')),
+        'created_at', '2024-01-05T10:00:00Z', 'last_activity_at', '2024-02-20T10:00:00Z', 'custom', null)),
     'applications', jsonb_build_array(
       jsonb_build_object('zoho_id', 'ZA-1', 'candidate_zoho_id', 'ZT-1', 'job_zoho_id', 'ZJ-1', 'stage_key', 'screening',
         'stale_closed', true, 'zoho_status', 'Contacted', 'zoho_stage', 'Screening',
@@ -5383,7 +5401,8 @@ begin
         'zoho_status', 'Hired', 'received_at', '2024-01-06T10:00:00Z', 'modified_at', '2024-02-15T10:00:00Z',
         'hired_date', '2024-02-15'),
       jsonb_build_object('zoho_id', 'ZA-5', 'candidate_zoho_id', 'ZT-3', 'job_zoho_id', 'ZJ-3', 'stage_key', 'new',
-        'stale_closed', true, 'zoho_status', 'Associated', 'received_at', '2024-01-06T11:00:00Z', 'modified_at', '2024-01-06T11:00:00Z')),
+        'stale_closed', true, 'zoho_status', 'Associated', 'received_at', '2024-01-06T11:00:00Z', 'modified_at', '2024-01-06T11:00:00Z',
+        'custom', null)),
     'notes', jsonb_build_array(
       jsonb_build_object('zoho_id', 'ZN-1', 'application_zoho_id', 'ZA-3', 'kind', 'Call', 'body', 'Spoke on the phone.',
         'actor_zoho_id', 'U-1', 'actor_name', 'Alex Director', 'created_at', '2024-05-06T09:00:00Z'))
@@ -5458,6 +5477,10 @@ begin
     'owner resolved, custom kept';
   assert (select status || '|' || (custom->'zoho'->>'department') from public.jobs where custom->'zoho'->>'id' = 'ZJ-1') = 'filled|HUT 4',
     'the job keeps its Zoho facts';
+  assert (select custom from public.candidates where provider = 'zoho_recruit' and provider_ref = 'ZT-3') = '{}'::jsonb
+     and (select jsonb_typeof(custom) || '|' || (custom->'zoho'->>'display_id') from public.jobs where custom->'zoho'->>'id' = 'ZJ-2')
+         = 'object|ZR_2_JOB',
+    'a JSON-null custom imports as an object';
   assert exists (select 1 from public.activity_log where entity_type = 'zoho_recruit_import'
                  and actor_person_id = '20000000-0000-0000-0000-000000000004'), 'the import is logged';
 
@@ -5493,6 +5516,46 @@ begin
   exception when insufficient_privilege then
     if sqlerrm not like '%Importing from Zoho Recruit needs platform admin access.%' then raise; end if;
   end;
+end $$;
+reset role;
+set app.test_uid = '';
+
+-- An open application from another source (HR added the same person to an
+-- imported job by hand between runs) refuses the Zoho row in pass 1, named,
+-- not as a wrapped unique violation in pass 2.
+do $$
+declare v_open uuid;
+begin
+  insert into public.applications (job_id, company_id, candidate_id, stage_key)
+    select j.id, j.company_id, c.id, 'screening'
+    from public.jobs j, public.candidates c
+    where j.custom->'zoho'->>'id' = 'ZJ-2' and c.provider = 'zoho_recruit' and c.provider_ref = 'ZT-2'
+    returning id into v_open;
+  perform set_config('app.zoho_open_app', v_open::text, false);
+end $$;
+set app.test_uid = '00000000-0000-0000-0000-000000000004';  -- Ada
+set role authenticated;
+do $$
+declare r jsonb; p jsonb;
+begin
+  p := jsonb_set(current_setting('app.zoho_payload')::jsonb, '{applications}',
+         (current_setting('app.zoho_payload')::jsonb)->'applications' || jsonb_build_object(
+           'zoho_id', 'ZA-6', 'candidate_zoho_id', 'ZT-2', 'job_zoho_id', 'ZJ-2', 'stage_key', 'screening',
+           'zoho_status', 'Contacted', 'received_at', '2024-06-01T10:00:00Z', 'modified_at', '2024-06-02T10:00:00Z'));
+  r := public.import_zoho_recruit(p, false);
+  assert (r->'counts'->>'refused')::int = 1 and (r->'counts'->>'applications_skipped')::int = 5
+     and (r->'counts'->>'applications_created')::int = 0, 'the hand-made open application refuses ZA-6: ' || (r->'counts')::text;
+  assert (select count(*) from jsonb_array_elements(r->'rows') x
+          where x->>'kind' = 'application' and x->>'ref' = 'ZA-6'
+            and x->'problems'->>0 = format('already has an open application for this job (id %s)', current_setting('app.zoho_open_app'))) = 1,
+    'the refusal names the open application: ' || (r->'rows')::text;
+  begin
+    perform public.import_zoho_recruit(p, true);
+    raise exception 'FAIL: committed over an open application';
+  exception when raise_exception then
+    if sqlerrm not like '%Import refused: 1 rows have problems.%' then raise; end if;
+  end;
+  assert (select count(*) from public.applications where source_provider = 'zoho_recruit') = 5, 'nothing written';
 end $$;
 reset role;
 

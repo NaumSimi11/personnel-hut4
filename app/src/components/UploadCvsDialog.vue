@@ -137,14 +137,20 @@ async function saveOne(i: number): Promise<void> {
   }
 }
 
-/** A choice on a duplicate row is final: it re-runs the save at once. */
+/**
+ * A choice on a duplicate row is final: it re-runs the save at once. The
+ * buttons unmount as the row turns `saving`; the state check keeps a second
+ * click from sending the choice twice regardless.
+ */
 async function attach(i: number, candidateId: string): Promise<void> {
+  if (rows.value[i]?.state !== 'duplicate') return
   setRow(i, { attachTo: candidateId, ignoreMatches: false })
   await saveOne(i)
   finish()
 }
 
 async function createNew(i: number): Promise<void> {
+  if (rows.value[i]?.state !== 'duplicate') return
   setRow(i, { attachTo: null, ignoreMatches: true })
   await saveOne(i)
   finish()

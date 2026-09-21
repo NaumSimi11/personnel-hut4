@@ -92,6 +92,9 @@ function back(): void {
 }
 
 async function save(choice: { attach_to?: string; ignore_matches?: boolean }): Promise<void> {
+  // One call at a time: a second click while the RPC runs would create the
+  // duplicate the hint exists to prevent (both calls pass ignore_matches).
+  if (busy.value) return
   error.value = null
   const parsed = input.safeParse(form.value)
   if (!parsed.success) {
@@ -136,7 +139,7 @@ async function save(choice: { attach_to?: string; ignore_matches?: boolean }): P
 <template>
   <dialog ref="dialog" class="add-candidate" :aria-labelledby="matches ? 'candidate-matches-title' : 'add-candidate-title'">
     <div v-if="matches" class="body">
-      <CandidateMatches :matches="matches" :mode="poolMode ? 'pool' : 'job'" @attach="attach" @create-new="createNew" @back="back" />
+      <CandidateMatches :matches="matches" :mode="poolMode ? 'pool' : 'job'" :busy="busy" @attach="attach" @create-new="createNew" @back="back" />
       <p v-if="error" class="error-note" role="alert">{{ error }}</p>
       <p v-if="busy" class="saving">Saving…</p>
     </div>

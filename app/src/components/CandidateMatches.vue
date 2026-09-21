@@ -17,9 +17,10 @@ import {
  * one match, goes back to the form, or creates a new record anyway; the
  * database never merges by itself. In `job` mode a match can be attached to
  * the job when the RPC would allow it (attachable, not flagged); in `pool`
- * mode there is nothing to attach to.
+ * mode there is nothing to attach to. `busy` (the dialog's save in flight)
+ * disables every button so a double-click cannot send the choice twice.
  */
-defineProps<{ matches: CandidateMatch[]; mode: 'job' | 'pool' }>()
+withDefaults(defineProps<{ matches: CandidateMatch[]; mode: 'job' | 'pool'; busy?: boolean }>(), { busy: false })
 defineEmits<{ attach: [id: string]; createNew: []; back: [] }>()
 
 const today = todayDb()
@@ -59,6 +60,7 @@ function detailLine(m: CandidateMatch): string {
               class="button small-btn"
               type="button"
               :data-testid="`match-attach-${m.id}`"
+              :disabled="busy"
               @click="$emit('attach', m.id)"
             >
               Attach to this job
@@ -78,8 +80,8 @@ function detailLine(m: CandidateMatch): string {
       </li>
     </ul>
     <div class="actions">
-      <button class="button secondary" type="button" @click="$emit('back')">Back</button>
-      <button class="button secondary" type="button" data-testid="match-create-new" @click="$emit('createNew')">
+      <button class="button secondary" type="button" data-testid="match-back" :disabled="busy" @click="$emit('back')">Back</button>
+      <button class="button secondary" type="button" data-testid="match-create-new" :disabled="busy" @click="$emit('createNew')">
         Create a new candidate anyway
       </button>
     </div>

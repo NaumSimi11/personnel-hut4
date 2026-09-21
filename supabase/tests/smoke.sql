@@ -881,11 +881,10 @@ begin
   assert (select created_by from public.offers where id = 'd0000000-0000-0000-0000-000000000002')
          = '20000000-0000-0000-0000-000000000002', 'created_by cannot be changed';
   perform public.advance_offer('d0000000-0000-0000-0000-000000000002', 'in_approval', null);
-  begin
-    perform public.advance_offer('d0000000-0000-0000-0000-000000000002', 'approved', null);
-    raise exception 'FAIL: author approved their own offer after tampering';
-  exception when insufficient_privilege then null;
-  end;
+  -- Since 0046 the author may approve their own offer; approved_by records that they did.
+  perform public.advance_offer('d0000000-0000-0000-0000-000000000002', 'approved', null);
+  assert (select status || '|' || approved_by from public.offers where id = 'd0000000-0000-0000-0000-000000000002')
+         = 'approved|20000000-0000-0000-0000-000000000002', 'the author''s own approval is recorded on the offer (0046)';
   update public.scorecards set company_id = '10000000-0000-0000-0000-00000000000b'
     where id = 'c0000000-0000-0000-0000-000000000001';
   get diagnostics n = row_count;

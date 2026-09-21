@@ -84,7 +84,12 @@ prototype in `../prototype` is the UI spec. Updated as milestones land.
    deduction per company) with the MK contribution rules once the
    maintainer and the accountant decide them; pro-rating of annual and
    daily records; the accountant's address under Settings → Handover.
-5. **Later, per blueprint** — recruitment channel integrations (need
+5. **Plan 052 — the talent pool** ([plans/052-talent-pool.md](../plans/052-talent-pool.md)):
+   candidates as a holding-wide record with sources, the contact rule and
+   files, dedupe at every door, and the Zoho Recruit history imported
+   (decisions D1–D8 await the maintainer).
+6. **Later, per blueprint** — the outreach sub-statuses inside Screening
+   (the seam 052 leaves), recruitment channel integrations (need
    credentials), payroll allowances beyond one-off bonuses.
 
 ## Standing rules

@@ -18,3 +18,10 @@ supabase/.temp/
 # The holding equipment workbook: real names and assets, never committed.
 Spisok na oprema*.xlsx
 popis-import-review*.json
+
+# The Zoho Recruit export: 3,611 candidates and their CVs, never committed.
+docs/Data_001/
+docs/Attachments_001/
+
+# Subagent-driven-development scratch (ledger, briefs, review packages).
+.superpowers/

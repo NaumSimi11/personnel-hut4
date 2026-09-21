@@ -4810,4 +4810,754 @@ begin
 end $$;
 set app.test_uid = '';
 
+-- ================================================================ 0067
+-- The talent pool: the candidate is a holding-wide record behind
+-- candidates.source, every door dedupes without merging, the contact rule is
+-- enforced by the database, the CV lives on the candidate, and the Zoho
+-- Recruit export comes in through the same door a LinkedIn export will use.
+-- Fixtures: P1 (a Zoho row, mixed-case email on purpose), P2 (never), P3
+-- (later), job JB in B, Zed Hired employed in A, and Omar with ONLY
+-- candidates.source in A — a sourcer with no candidates.view anywhere, the
+-- sharpest proof that the pool opens no company history.
+insert into public.candidates (id, full_name, email, phone, provider, provider_ref, linkedin_url) values
+  ('80000000-0000-0000-0000-000000000671', 'Pool Person', 'Pool@Example.test', '+389 70 000 067',
+   'zoho_recruit', 'Z-1', 'https://www.linkedin.com/in/pool-person/');
+insert into public.candidates (id, full_name, do_not_contact, do_not_contact_reason, do_not_contact_at) values
+  ('80000000-0000-0000-0000-000000000672', 'Never Person', true, 'Asked us to stop.', now());
+insert into public.candidates (id, full_name, contact_later, contact_again_after) values
+  ('80000000-0000-0000-0000-000000000673', 'Later Person', true, current_date + 30);
+insert into public.jobs (id, company_id, title, status) values
+  ('70000000-0000-0000-0000-000000000067', '10000000-0000-0000-0000-00000000000b', 'Pool Role B', 'open');
+insert into public.people (id, full_name, personal_email) values
+  ('20000000-0000-0000-0000-000000000067', 'Zed Hired', 'zed@example.test');
+insert into public.employment_periods (id, person_id, company_id, job_title, status, start_date) values
+  ('30000000-0000-0000-0000-000000000067', '20000000-0000-0000-0000-000000000067',
+   '10000000-0000-0000-0000-00000000000a', 'Engineer', 'active', current_date - 100);
+create temp table omar_added as
+  select g.id as grant_id, v.cap as capability_key
+  from public.access_grants g, (values ('candidates.source')) v(cap)
+  where g.person_id = '20000000-0000-0000-0000-000000000003'
+    and g.company_id = '10000000-0000-0000-0000-00000000000a'
+    and not exists (select 1 from public.grant_capabilities gc where gc.grant_id = g.id and gc.capability_key = v.cap);
+insert into public.grant_capabilities (grant_id, capability_key) select grant_id, capability_key from omar_added;
+
+-- 1. Seeds, helpers, the backfill shape.
+do $$
+begin
+  assert (select label from public.capabilities where key = 'candidates.source') = 'Work the talent pool (holding-wide)',
+    'the pool capability is seeded';
+  assert exists (select 1 from public.capability_dependencies
+                 where capability_key = 'candidates.source' and requires_key = 'candidates.view'),
+    'the pool needs candidates.view';
+  assert (select string_agg(p.name, ',' order by p.name) from public.preset_capabilities pc
+          join public.permission_presets p on p.id = pc.preset_id
+          where pc.capability_key = 'candidates.source' and p.company_id is null) = 'Holding HR,Recruiter',
+    'Holding HR and Recruiter carry the pool; Company HR and Hiring Manager do not';
+  assert (select string_agg(key || '=' || label, ';' order by sort_order) from public.candidate_sources)
+    = 'head_hunt=Head hunt;linkedin_profile=LinkedIn profile capture;linkedin_ad=LinkedIn advertisement;'
+      'careers_page=Company careers page;job_board=Job board or advertisement;referral=Referral;'
+      'added_by_hand=Added by hand;imported=Imported, source unknown',
+    'eight sources with their labels';
+  assert (select label from public.candidate_sources where key = 'careers_page')
+         = (select label from public.channels where key = 'careers'),
+    'careers_page equals the careers channel label';
+  assert exists (select 1 from pg_indexes where indexname = 'applications_candidate_idx'),
+    'applications (candidate_id) is indexed';
+  assert (select provider || '|' || source_key from public.candidates where id = '80000000-0000-0000-0000-000000000001')
+         = 'manual|added_by_hand', 'Cathy is a manual, hand-added record';
+  assert app.phone_key('077597288') = '77597288' and app.phone_key('+389 70 813 118') = '70813118'
+     and app.phone_key('0038978316858') = '78316858' and app.phone_key('12345') is null, 'phone keys';
+  assert app.name_key('Dimitar (Benjamin) Iliev') = 'dimitar iliev' and app.name_key('Iliev Dimitar') = 'dimitar iliev'
+     and app.name_key('Fredrik Möllersten') = 'fredrik mollersten', 'name keys';
+  assert app.name_key('Петар Петров') = 'петар петров', 'Cyrillic stays Cyrillic';
+  assert app.linkedin_key('https://www.linkedin.com/in/John-Doe/?trk=x') = 'john-doe'
+     and app.linkedin_key('https://example.com/in/x') is null, 'linkedin keys';
+  assert app.mask_email('pool@example.test') = 'p***@example.test' and app.mask_email('nope') is null, 'masked email';
+  assert (select phone_key || '|' || name_key || '|' || linkedin_key from public.candidates
+          where id = '80000000-0000-0000-0000-000000000671') = '70000067|person pool|pool-person',
+    'P1 keys are generated';
+end $$;
+
+-- 2. Alex (candidates.review in A, no pool): the 0006 fallback is gone and
+-- a candidate is born only through the RPC.
+set app.test_uid = '00000000-0000-0000-0000-000000000001';
+set role authenticated;
+do $$
+begin
+  assert exists (select 1 from public.candidates where id = '80000000-0000-0000-0000-000000000001'),
+    'Alex sees Cathy through her A application';
+  assert not exists (select 1 from public.candidates where id in
+    ('80000000-0000-0000-0000-000000000671', '80000000-0000-0000-0000-000000000672', '80000000-0000-0000-0000-000000000673')),
+    'application-less candidates are invisible to a reviewer';
+  begin
+    insert into public.candidates (full_name) values ('Direct Insert');
+    raise exception 'FAIL: a reviewer inserted a candidate directly';
+  exception when insufficient_privilege then null;
+  end;
+  begin
+    perform public.upsert_sourced_candidate('manual', null, '{"full_name":"No Job"}');
+    raise exception 'FAIL: added to the pool without the capability';
+  exception when insufficient_privilege then
+    if sqlerrm not like '%Adding to the talent pool needs the "Work the talent pool" capability.%' then raise; end if;
+  end;
+  begin
+    perform public.upsert_sourced_candidate('linkedin_recruiter', 'LR-0', '{"full_name":"Prov Rec"}');
+    raise exception 'FAIL: imported a provider record without the capability';
+  exception when insufficient_privilege then
+    if sqlerrm not like '%Importing provider records needs the "Work the talent pool" capability.%' then raise; end if;
+  end;
+end $$;
+
+-- 3. Alex adds to job A: a match is offered without exposing the record and
+-- nothing is written; attaching needs a real identity match.
+do $$
+declare r jsonb; n int;
+begin
+  select count(*) into n from public.candidates;
+  r := public.upsert_sourced_candidate('manual', null, jsonb_build_object(
+    'full_name', 'Pool Person', 'email', 'pool@example.test', 'job_id', '70000000-0000-0000-0000-000000000001'));
+  assert r->>'action' = 'matches' and jsonb_array_length(r->'matches') = 1, 'one match offered: ' || r::text;
+  assert r->'matches'->0->>'match' = 'email' and not (r->'matches'->0->>'visible')::boolean
+     and (r->'matches'->0->>'attachable')::boolean, 'an email match is attachable but not visible: ' || r::text;
+  assert r->'matches'->0->>'email' = 'p***@example.test' and r->'matches'->0->>'phone' is null
+     and r->'matches'->0->'applications' = '[]'::jsonb and r->'matches'->0->>'last_activity_at' is null,
+    'masked email, no phone, no history: ' || r::text;
+  assert (select count(*) from public.candidates) = n, 'nothing is written on a match';
+  r := public.upsert_sourced_candidate('manual', null, jsonb_build_object(
+    'full_name', 'Person Pool', 'job_id', '70000000-0000-0000-0000-000000000001'));
+  assert r->>'action' = 'matches' and r->'matches'->0->>'match' = 'name'
+     and not (r->'matches'->0->>'attachable')::boolean, 'a name match is a suggestion, not attachable: ' || r::text;
+  begin
+    perform public.upsert_sourced_candidate('manual', null, jsonb_build_object(
+      'full_name', 'Person Pool', 'attach_to', '80000000-0000-0000-0000-000000000671',
+      'job_id', '70000000-0000-0000-0000-000000000001'));
+    raise exception 'FAIL: attached on a name alone';
+  exception when insufficient_privilege then
+    if sqlerrm not like '%You cannot attach to that candidate.%' then raise; end if;
+  end;
+  r := public.upsert_sourced_candidate('manual', null, jsonb_build_object(
+    'full_name', 'Person Pool', 'email', 'pool@example.test', 'attach_to', '80000000-0000-0000-0000-000000000671',
+    'job_id', '70000000-0000-0000-0000-000000000001'));
+  assert r->>'action' = 'attached' and r->>'id' = '80000000-0000-0000-0000-000000000671'
+     and r->>'application_id' is not null, 'attached by email: ' || r::text;
+  assert (select stage_key || '|' || source_key || '|' || company_id from public.applications
+          where id = (r->>'application_id')::uuid) = 'new|added_by_hand|10000000-0000-0000-0000-00000000000a',
+    'an A application at new, added by hand';
+  assert exists (select 1 from public.candidates where id = '80000000-0000-0000-0000-000000000671'), 'P1 is visible to Alex now';
+  assert (select count(*) from public.applications where candidate_id = '80000000-0000-0000-0000-000000000671') = 1,
+    'one application for P1';
+  begin
+    perform public.upsert_sourced_candidate('manual', null, jsonb_build_object(
+      'full_name', 'Person Pool', 'email', 'pool@example.test', 'attach_to', '80000000-0000-0000-0000-000000000671',
+      'job_id', '70000000-0000-0000-0000-000000000001'));
+    raise exception 'FAIL: a second open application for the same job';
+  exception when raise_exception then
+    if sqlerrm not like '%already has an open application for this job.%' then raise; end if;
+  end;
+  r := public.upsert_sourced_candidate('manual', null, jsonb_build_object(
+    'full_name', 'Person Pool', 'email', 'other@example.test', 'ignore_matches', true,
+    'job_id', '70000000-0000-0000-0000-000000000001'));
+  assert r->>'action' = 'created' and r->>'application_id' is not null, 'ignoring the matches creates: ' || r::text;
+  assert (select sourced_by::text || '|' || provider || '|' || source_key from public.candidates where id = (r->>'id')::uuid)
+         = '20000000-0000-0000-0000-000000000001|manual|added_by_hand', 'sourced by Alex, manual';
+end $$;
+reset role;
+-- A superuser insert with app.test_uid still set (the 0039 fixture shape):
+-- the contact guard lets Cathy through and the touch passes the field guard.
+insert into public.applications (id, job_id, company_id, candidate_id) values
+  ('90000000-0000-0000-0000-000000000067', '70000000-0000-0000-0000-000000000067',
+   '10000000-0000-0000-0000-00000000000b', '80000000-0000-0000-0000-000000000001');
+
+-- 4. Alex edits identity where the candidate applied; provenance, the
+-- contact rule and the pool fields are locked; only admins delete.
+set role authenticated;
+do $$
+declare n int;
+begin
+  update public.candidates set phone = '+389 70 000 068' where id = '80000000-0000-0000-0000-000000000671';
+  get diagnostics n = row_count;
+  assert n = 1, 'a reviewer edits identity fields where the candidate applied';
+  assert (select phone_key from public.candidates where id = '80000000-0000-0000-0000-000000000671') = '70000068',
+    'the phone key follows the phone';
+  begin
+    update public.candidates set source_key = 'head_hunt' where id = '80000000-0000-0000-0000-000000000671';
+    raise exception 'FAIL: a reviewer changed the source';
+  exception when insufficient_privilege then
+    if sqlerrm not like '%Changing talent-pool fields needs the "Work the talent pool" capability.%' then raise; end if;
+  end;
+  begin
+    update public.candidates set do_not_contact = true, do_not_contact_reason = 'x'
+      where id = '80000000-0000-0000-0000-000000000671';
+    raise exception 'FAIL: a reviewer changed the contact rule';
+  exception when insufficient_privilege then
+    if sqlerrm not like '%Change the contact rule from the candidate''s record.%' then raise; end if;
+  end;
+  begin
+    update public.candidates set provider_ref = 'Z-9' where id = '80000000-0000-0000-0000-000000000671';
+    raise exception 'FAIL: a reviewer changed the provenance';
+  exception when insufficient_privilege then
+    if sqlerrm not like '%Where a candidate came from is not editable.%' then raise; end if;
+  end;
+  delete from public.candidates where id = '80000000-0000-0000-0000-000000000671';
+  get diagnostics n = row_count;
+  assert n = 0, 'only admins delete a candidate';
+end $$;
+reset role;
+
+-- 5. Bea (Company HR in B): the pool opens nothing; the wall holds for a
+-- direct insert, without the reason she may not see.
+set app.test_uid = '00000000-0000-0000-0000-000000000005';
+set role authenticated;
+do $$
+begin
+  begin
+    perform public.add_candidate_to_job('80000000-0000-0000-0000-000000000671', '70000000-0000-0000-0000-000000000067');
+    raise exception 'FAIL: Bea added a candidate she cannot see';
+  exception when insufficient_privilege then
+    if sqlerrm not like '%You cannot see that candidate.%' then raise; end if;
+  end;
+  begin
+    insert into public.applications (job_id, company_id, candidate_id) values
+      ('70000000-0000-0000-0000-000000000067', '10000000-0000-0000-0000-00000000000b', '80000000-0000-0000-0000-000000000672');
+    raise exception 'FAIL: a direct insert bypassed the contact rule';
+  exception when raise_exception then
+    if sqlerrm not like '%Never Person asked not to be contacted again.%' or sqlerrm like '%Asked us to stop%' then raise; end if;
+  end;
+  begin
+    perform public.add_candidate_to_job('80000000-0000-0000-0000-000000000671', '70000000-0000-0000-0000-000000000001');
+    raise exception 'FAIL: Bea added to a Company A job';
+  exception when insufficient_privilege then
+    if sqlerrm not like '%"Record interview feedback" capability in Company A.%' then raise; end if;
+  end;
+end $$;
+reset role;
+
+-- 6. Omar (candidates.source only): the whole pool, none of the history.
+set app.test_uid = '00000000-0000-0000-0000-000000000003';
+set role authenticated;
+do $$
+declare r jsonb;
+begin
+  assert (select count(*) from public.candidates where id in
+    ('80000000-0000-0000-0000-000000000671', '80000000-0000-0000-0000-000000000672', '80000000-0000-0000-0000-000000000673')) = 3,
+    'a sourcer sees the whole pool';
+  assert (select count(*) from public.applications) = 0, 'and no company history';
+  r := public.search_candidates('{"q":"pool"}');
+  assert exists (select 1 from jsonb_array_elements(r->'rows') x where x->>'id' = '80000000-0000-0000-0000-000000000671'),
+    'search by name: ' || r::text;
+  r := public.search_candidates('{"q":"070 000 068"}');
+  assert exists (select 1 from jsonb_array_elements(r->'rows') x where x->>'id' = '80000000-0000-0000-0000-000000000671'),
+    'search by phone: ' || r::text;
+  r := public.search_candidates('{"contact":"do_not_contact"}');
+  assert exists (select 1 from jsonb_array_elements(r->'rows') x where x->>'id' = '80000000-0000-0000-0000-000000000672')
+     and not exists (select 1 from jsonb_array_elements(r->'rows') x where x->>'id' in
+       ('80000000-0000-0000-0000-000000000671', '80000000-0000-0000-0000-000000000673')),
+    'the never filter: ' || r::text;
+  r := public.search_candidates('{"contact":"wait"}');
+  assert exists (select 1 from jsonb_array_elements(r->'rows') x where x->>'id' = '80000000-0000-0000-0000-000000000673')
+     and not exists (select 1 from jsonb_array_elements(r->'rows') x where x->>'id' in
+       ('80000000-0000-0000-0000-000000000671', '80000000-0000-0000-0000-000000000672')),
+    'the wait filter: ' || r::text;
+  r := public.search_candidates('{"activity":"90d"}');
+  assert (select count(*) from jsonb_array_elements(r->'rows') x where x->>'id' in
+    ('80000000-0000-0000-0000-000000000671', '80000000-0000-0000-0000-000000000672', '80000000-0000-0000-0000-000000000673')) = 3,
+    'recent activity: all three: ' || r::text;
+  r := public.search_candidates('{"company_id":"10000000-0000-0000-0000-00000000000a"}');
+  assert (r->>'total')::int = 0, 'a company filter needs candidates.view there: ' || r::text;
+  r := public.search_candidates('{}');
+  assert (r->>'total')::int >= 3 and not exists (select 1 from jsonb_array_elements(r->'rows') x where x->'applications' <> '[]'::jsonb),
+    'every row shows no applications to a sourcer without candidates.view: ' || r::text;
+  begin
+    perform public.add_candidate_to_job('80000000-0000-0000-0000-000000000671', '70000000-0000-0000-0000-000000000001');
+    raise exception 'FAIL: a sourcer added to a job without review there';
+  exception when insufficient_privilege then
+    if sqlerrm not like '%"Record interview feedback" capability in Company A.%' then raise; end if;
+  end;
+end $$;
+reset role;
+set app.test_uid = '00000000-0000-0000-0000-000000000005';  -- Bea
+set role authenticated;
+do $$
+begin
+  begin
+    perform public.search_candidates('{}');
+    raise exception 'FAIL: Bea searched the pool';
+  exception when insufficient_privilege then
+    if sqlerrm not like '%The talent pool needs the "Work the talent pool" capability.%' then raise; end if;
+  end;
+end $$;
+reset role;
+set app.test_uid = '00000000-0000-0000-0000-000000000001';  -- Alex
+set role authenticated;
+do $$
+begin
+  begin
+    perform public.search_candidates('{}');
+    raise exception 'FAIL: Alex searched the pool';
+  exception when insufficient_privilege then null;
+  end;
+end $$;
+reset role;
+
+-- 7. Omar sources: a manual record, a provider-keyed record created then
+-- updated in place, a possible duplicate reported and never merged.
+set app.test_uid = '00000000-0000-0000-0000-000000000003';
+set role authenticated;
+do $$
+declare r jsonb; v_lr uuid;
+begin
+  r := public.upsert_sourced_candidate('manual', null,
+    '{"full_name":"New Pool","email":"newpool@example.test","source_key":"head_hunt"}');
+  assert r->>'action' = 'created', 'created: ' || r::text;
+  assert (select sourced_by::text || '|' || coalesce(provider_ref, 'null') || '|' || source_key from public.candidates
+          where id = (r->>'id')::uuid) = '20000000-0000-0000-0000-000000000003|null|head_hunt',
+    'sourced by Omar, no provider reference';
+  r := public.upsert_sourced_candidate('linkedin_recruiter', 'LR-1',
+    '{"full_name":"Lin Ked","current_title":"Dev","created_at":"2024-03-01T00:00:00Z"}');
+  assert r->>'action' = 'created', 'a provider record is created: ' || r::text;
+  v_lr := (r->>'id')::uuid;
+  assert (select created_at from public.candidates where id = v_lr) = '2024-03-01T00:00:00Z'::timestamptz
+     and (select last_activity_at = created_at from public.candidates where id = v_lr),
+    'created_at honoured, activity starts there';
+  r := public.upsert_sourced_candidate('linkedin_recruiter', 'LR-1',
+    '{"full_name":"Lin Ked","current_title":"Senior Dev","created_at":"2024-03-01T00:00:00Z"}');
+  assert r->>'action' = 'updated' and (r->>'id')::uuid = v_lr, 'the same ref updates in place: ' || r::text;
+  assert (select current_title from public.candidates where id = v_lr) = 'Senior Dev', 'the title changed';
+  assert (select created_at from public.candidates where id = v_lr) = '2024-03-01T00:00:00Z'::timestamptz, 'created_at unchanged';
+  r := public.upsert_sourced_candidate('linkedin_recruiter', 'LR-2', '{"full_name":"Lin Kedd","email":"newpool@example.test"}');
+  assert r->>'action' = 'created' and exists (select 1 from jsonb_array_elements(r->'possible_duplicates') d
+    where d->>'full_name' = 'New Pool' and d->>'match' = 'email'), 'possible duplicates name the first: ' || r::text;
+  begin
+    perform public.upsert_sourced_candidate('manual', 'X-1', '{"full_name":"Man Ref"}');
+    raise exception 'FAIL: a manual record with a reference';
+  exception when invalid_parameter_value then
+    if sqlerrm not like '%Manual records carry no provider reference.%' then raise; end if;
+  end;
+  begin
+    perform public.upsert_sourced_candidate('manual', null, '{"full_name":"X"}');
+    raise exception 'FAIL: a one-letter name';
+  exception when invalid_parameter_value then
+    if sqlerrm not like '%Enter the candidate''s full name (2 to 200 characters).%' then raise; end if;
+  end;
+  begin
+    perform public.upsert_sourced_candidate('manual', null, '{"full_name":"Nope Source","source_key":"nope"}');
+    raise exception 'FAIL: an unknown source';
+  exception when invalid_parameter_value then
+    if sqlerrm not like '%Unknown candidate source "nope".%' then raise; end if;
+  end;
+end $$;
+reset role;
+
+-- 8. The contact rule on the record, enforced at every door.
+set app.test_uid = '00000000-0000-0000-0000-000000000003';  -- Omar
+set role authenticated;
+do $$
+declare r jsonb;
+begin
+  begin
+    perform public.set_contact_rule('80000000-0000-0000-0000-000000000671', '{"rule":"never"}');
+    raise exception 'FAIL: never without a reason';
+  exception when invalid_parameter_value then
+    if sqlerrm not like '%Say why this person must not be contacted again.%' then raise; end if;
+  end;
+  r := public.set_contact_rule('80000000-0000-0000-0000-000000000671', '{"rule":"never","reason":"Asked us to stop"}');
+  assert (r->>'do_not_contact')::boolean and r->>'do_not_contact_by' = '20000000-0000-0000-0000-000000000003'
+     and r->>'do_not_contact_at' is not null, 'never: ' || r::text;
+end $$;
+reset role;
+set app.test_uid = '00000000-0000-0000-0000-000000000004';  -- Ada
+set role authenticated;
+do $$
+begin
+  begin
+    perform public.add_candidate_to_job('80000000-0000-0000-0000-000000000671', '70000000-0000-0000-0000-000000000067');
+    raise exception 'FAIL: added a never-contact candidate';
+  exception when raise_exception then
+    if sqlerrm not like '%Pool Person asked not to be contacted again: Asked us to stop%' then raise; end if;
+  end;
+end $$;
+reset role;
+set app.test_uid = '00000000-0000-0000-0000-000000000003';  -- Omar
+set role authenticated;
+do $$
+declare r jsonb;
+begin
+  r := public.set_contact_rule('80000000-0000-0000-0000-000000000671',
+    jsonb_build_object('rule', 'later', 'contact_again_after', (current_date + 10)::text));
+  assert not (r->>'do_not_contact')::boolean and r->>'do_not_contact_reason' is null and (r->>'contact_later')::boolean
+     and (r->>'contact_again_after')::date = current_date + 10, 'later clears never: ' || r::text;
+end $$;
+reset role;
+set app.test_uid = '00000000-0000-0000-0000-000000000004';  -- Ada
+set role authenticated;
+do $$
+declare r jsonb;
+begin
+  begin
+    perform public.add_candidate_to_job('80000000-0000-0000-0000-000000000673', '70000000-0000-0000-0000-000000000001');
+    raise exception 'FAIL: added a contact-later candidate without overriding';
+  exception when raise_exception then
+    if sqlerrm not like '%Later Person asked to be contacted after%' then raise; end if;
+  end;
+  r := public.add_candidate_to_job('80000000-0000-0000-0000-000000000673', '70000000-0000-0000-0000-000000000001',
+                                   p_override_wait => true);
+  assert (select stage_key || '|' || source_key || '|' || company_id from public.applications
+          where id = (r->>'application_id')::uuid) = 'new|head_hunt|10000000-0000-0000-0000-00000000000a',
+    'overridden: an A application at new, head hunt';
+end $$;
+reset role;
+set app.test_uid = '00000000-0000-0000-0000-000000000003';  -- Omar
+set role authenticated;
+do $$
+declare r jsonb;
+begin
+  r := public.set_contact_rule('80000000-0000-0000-0000-000000000671', '{"rule":"ok"}');
+  assert not (r->>'do_not_contact')::boolean and not (r->>'contact_later')::boolean
+     and r->>'contact_again_after' is null and r->>'do_not_contact_reason' is null and r->>'do_not_contact_by' is null,
+    'ok clears everything: ' || r::text;
+end $$;
+reset role;
+set app.test_uid = '00000000-0000-0000-0000-000000000001';  -- Alex
+set role authenticated;
+do $$
+begin
+  begin
+    perform public.set_contact_rule('80000000-0000-0000-0000-000000000671', '{"rule":"ok"}');
+    raise exception 'FAIL: a reviewer changed the contact rule through the RPC';
+  exception when insufficient_privilege then
+    if sqlerrm not like '%Changing the contact rule needs the "Work the talent pool" capability.%' then raise; end if;
+  end;
+end $$;
+reset role;
+
+-- 9. Files on the candidate, objects at candidate/{id}/…, beside the 0013 shape.
+set app.test_uid = '00000000-0000-0000-0000-000000000003';  -- Omar
+set role authenticated;
+do $$
+begin
+  insert into public.candidate_files (candidate_id, kind, storage_path, original_name, mime_type, size_bytes, uploaded_by)
+    values ('80000000-0000-0000-0000-000000000672', 'cv', 'candidate/80000000-0000-0000-0000-000000000672/g.pdf',
+            'g.pdf', 'application/pdf', 10, '20000000-0000-0000-0000-000000000003');
+  insert into storage.objects (bucket_id, name) values
+    ('candidate-files', 'candidate/80000000-0000-0000-0000-000000000672/g.pdf');
+  insert into public.candidate_files (candidate_id, kind, storage_path, original_name, mime_type, size_bytes, uploaded_by)
+    values ('80000000-0000-0000-0000-000000000671', 'cv', 'candidate/80000000-0000-0000-0000-000000000671/h.pdf',
+            'h.pdf', 'application/pdf', 10, '20000000-0000-0000-0000-000000000003');
+  insert into storage.objects (bucket_id, name) values
+    ('candidate-files', 'candidate/80000000-0000-0000-0000-000000000671/h.pdf');
+  begin
+    insert into public.candidate_files (candidate_id, kind, storage_path, original_name, mime_type, size_bytes, provider)
+      values ('80000000-0000-0000-0000-000000000672', 'cv', 'candidate/80000000-0000-0000-0000-000000000672/z.pdf',
+              'z.pdf', 'application/pdf', 10, 'zoho_recruit');
+    raise exception 'FAIL: an imported-shaped row from the app';
+  exception when insufficient_privilege then null;
+  end;
+  begin
+    insert into public.candidate_files (candidate_id, kind, storage_path, original_name, mime_type, size_bytes)
+      values ('80000000-0000-0000-0000-000000000672', 'cv', 'candidate/80000000-0000-0000-0000-000000000673/x.pdf',
+              'x.pdf', 'application/pdf', 10);
+    raise exception 'FAIL: a path under another candidate';
+  exception when check_violation then null;
+  end;
+  begin
+    insert into storage.objects (bucket_id, name) values ('candidate-files', 'candidate/not-a-uuid/x.pdf');
+    raise exception 'FAIL: a malformed pool path was writable by a sourcer';
+  exception when insufficient_privilege then null;
+  end;
+end $$;
+reset role;
+set app.test_uid = '00000000-0000-0000-0000-000000000001';  -- Alex
+set role authenticated;
+do $$
+begin
+  assert (select count(*) from storage.objects where bucket_id = 'candidate-files'
+          and name like 'candidate/80000000-0000-0000-0000-000000000671/%') = 1, 'Alex reads P1 objects (P1 applied to A)';
+  assert (select count(*) from storage.objects where bucket_id = 'candidate-files'
+          and name like 'candidate/80000000-0000-0000-0000-000000000672/%') = 0, 'and none of P2';
+  assert (select count(*) from public.candidate_files where candidate_id = '80000000-0000-0000-0000-000000000671') = 1
+     and (select count(*) from public.candidate_files where candidate_id = '80000000-0000-0000-0000-000000000672') = 0,
+    'the rows follow the same rule';
+  begin
+    insert into storage.objects (bucket_id, name) values ('candidate-files', 'candidate/not-a-uuid/x.pdf');
+    raise exception 'FAIL: a malformed pool path was writable by a reviewer';
+  exception when insufficient_privilege then null;
+  end;
+  insert into storage.objects (bucket_id, name) values ('candidate-files', '90000000-0000-0000-0000-000000000001/f67.pdf');
+  assert (select public from storage.buckets where id = 'candidate-files') = false, 'the bucket is still private';
+end $$;
+reset role;
+set app.test_uid = '00000000-0000-0000-0000-000000000005';  -- Bea
+set role authenticated;
+do $$
+begin
+  assert (select count(*) from storage.objects where bucket_id = 'candidate-files' and name like 'candidate/%') = 0,
+    'Bea reads no pool objects';
+  assert (select count(*) from public.candidate_files) = 0, 'nor pool file rows';
+end $$;
+reset role;
+set app.test_uid = '';
+
+-- 10. Activity moves forward only; the audit trail is redacted and silent on the touch.
+do $$
+declare v_app uuid; v_before timestamptz; n int;
+begin
+  select id into v_app from public.applications
+    where candidate_id = '80000000-0000-0000-0000-000000000671' and job_id = '70000000-0000-0000-0000-000000000001';
+  assert (select last_activity_at from public.candidates where id = '80000000-0000-0000-0000-000000000671')
+         >= (select received_at from public.applications where id = v_app), 'the application touched the candidate';
+  select last_activity_at into v_before from public.candidates where id = '80000000-0000-0000-0000-000000000671';
+  insert into public.application_events (application_id, kind, body, created_at) values (v_app, 'note', 'Old note', '2023-01-01');
+  assert (select last_activity_at from public.candidates where id = '80000000-0000-0000-0000-000000000671') = v_before,
+    'an old event never moves activity backwards';
+  assert not exists (select 1 from public.activity_log where entity_type = 'candidates'
+                     and entity_id = '80000000-0000-0000-0000-000000000671' and company_id is not null),
+    'candidate audit rows carry no company';
+  assert exists (select 1 from public.activity_log where entity_type = 'candidates'
+                 and entity_id = '80000000-0000-0000-0000-000000000671' and after ? 'do_not_contact'),
+    'the contact flag is in the trail';
+  assert not exists (select 1 from public.activity_log where entity_type = 'candidates'
+                     and entity_id = '80000000-0000-0000-0000-000000000671'
+                     and (coalesce(after, '{}') ?| array['email', 'phone', 'custom'] or coalesce(before, '{}') ?| array['email', 'phone', 'custom'])),
+    'email, phone and custom are redacted';
+  select count(*) into n from public.activity_log where entity_type = 'candidates' and entity_id = '80000000-0000-0000-0000-000000000671';
+  assert n = 5, 'the fixture insert, the phone edit and three contact-rule writes are audited, nothing from the touch: ' || n;
+end $$;
+
+-- 11. The report attributes by source label.
+set app.test_uid = '00000000-0000-0000-0000-000000000001';  -- Alex
+set role authenticated;
+do $$
+declare r jsonb;
+begin
+  r := public.recruitment_report('10000000-0000-0000-0000-00000000000a', current_date - 1, current_date + 1);
+  assert exists (select 1 from jsonb_array_elements(r->'sources') s where s->>'source' = 'Added by hand'),
+    'the attached application counts as added by hand: ' || (r->'sources')::text;
+  assert exists (select 1 from jsonb_array_elements(r->'sources') s where s->>'source' = 'Head hunt'),
+    'the override application counts as head hunt: ' || (r->'sources')::text;
+end $$;
+reset role;
+set app.test_uid = '';
+
+-- 12. The Zoho Recruit import: dry run, commit, idempotent re-run, refusal.
+do $$
+begin
+  perform set_config('app.zoho_payload', jsonb_build_object(
+    'exported_at', '2026-09-21T00:00:00Z', 'timezone_assumed', 'Europe/Skopje',
+    'users', jsonb_build_array(
+      jsonb_build_object('zoho_id', 'U-1', 'email', 'alex@a.test', 'name', 'Alex Director'),
+      jsonb_build_object('zoho_id', 'U-2', 'email', 'nobody@zoho.test', 'name', 'Nobody Zoho')),
+    'jobs', jsonb_build_array(
+      jsonb_build_object('zoho_id', 'ZJ-1', 'display_id', 'ZR_1_JOB', 'company_code', 'A', 'title', 'Zoho Filled Role',
+        'description', 'Filled long ago', 'status', 'filled', 'created_at', '2024-01-10T09:00:00Z',
+        'modified_at', '2024-03-01T09:00:00Z', 'date_closed', '2024-03-01T00:00:00Z',
+        'custom', jsonb_build_object('zoho', jsonb_build_object('department', 'HUT 4'))),
+      jsonb_build_object('zoho_id', 'ZJ-2', 'display_id', 'ZR_2_JOB', 'company_code', 'A', 'title', 'Zoho Open Role',
+        'status', 'open', 'created_at', '2024-04-01T09:00:00Z', 'modified_at', '2024-05-01T09:00:00Z'),
+      jsonb_build_object('zoho_id', 'ZJ-3', 'display_id', 'ZR_3_JOB', 'company_code', 'A', 'title', 'Zoho Cancelled Role',
+        'status', 'closed', 'created_at', '2024-01-05T09:00:00Z', 'modified_at', '2024-02-20T09:00:00Z')),
+    'candidates', jsonb_build_array(
+      jsonb_build_object('zoho_id', 'ZT-1', 'display_id', 'ZR_1_CAND', 'full_name', 'Zoho One', 'email', 'zoho.one@example.test',
+        'phone', '+389 71 111 111', 'linkedin_url', 'https://www.linkedin.com/in/zoho-one', 'source_key', 'linkedin_profile',
+        'current_title', 'Analyst', 'skills', jsonb_build_array('SQL', 'Excel'), 'owner_zoho_id', 'U-1',
+        'created_at', '2024-01-15T10:00:00Z', 'updated_at', '2024-05-06T10:00:00Z', 'last_activity_at', '2024-06-01T10:00:00Z',
+        'custom', jsonb_build_object('education', jsonb_build_array(jsonb_build_object('institute', 'UKIM', 'degree', 'BSc')),
+                                     'zoho', jsonb_build_object('status', 'Contacted'))),
+      jsonb_build_object('zoho_id', 'ZT-2', 'display_id', 'ZR_2_CAND', 'full_name', 'Zed Twin', 'email', 'zed@example.test',
+        'source_key', 'head_hunt', 'do_not_contact', true,
+        'do_not_contact_reason', 'Zoho Recruit: NEVER to be contacted again (set by Alex Director on 01 Mar 2024)',
+        'do_not_contact_at', '2024-03-02T10:00:00Z', 'do_not_contact_by_zoho_id', 'U-1', 'owner_zoho_id', 'U-2',
+        'created_at', '2024-01-20T10:00:00Z', 'last_activity_at', (current_date - 89)::text),
+      jsonb_build_object('zoho_id', 'ZT-3', 'display_id', 'ZR_3_CAND', 'full_name', 'Ked Lin', 'source_key', 'head_hunt',
+        'created_at', '2024-01-05T10:00:00Z', 'last_activity_at', '2024-02-20T10:00:00Z')),
+    'applications', jsonb_build_array(
+      jsonb_build_object('zoho_id', 'ZA-1', 'candidate_zoho_id', 'ZT-1', 'job_zoho_id', 'ZJ-1', 'stage_key', 'screening',
+        'stale_closed', true, 'zoho_status', 'Contacted', 'zoho_stage', 'Screening',
+        'received_at', '2024-01-16T10:00:00Z', 'modified_at', '2024-02-02T10:00:00Z', 'modified_by_zoho_id', 'U-1'),
+      jsonb_build_object('zoho_id', 'ZA-2', 'candidate_zoho_id', 'ZT-2', 'job_zoho_id', 'ZJ-1', 'stage_key', 'hired',
+        'zoho_status', 'Hired', 'received_at', '2024-01-21T10:00:00Z', 'modified_at', (current_date - 90)::text,
+        'modified_by_zoho_id', 'U-1', 'hired_date', (current_date - 90)::text, 'hired_by_zoho_id', 'U-1'),
+      jsonb_build_object('zoho_id', 'ZA-3', 'candidate_zoho_id', 'ZT-1', 'job_zoho_id', 'ZJ-2', 'stage_key', 'screening',
+        'zoho_status', 'Interested', 'received_at', '2024-04-02T10:00:00Z', 'modified_at', '2024-05-05T10:00:00Z',
+        'modified_by_zoho_id', 'U-2'),
+      jsonb_build_object('zoho_id', 'ZA-4', 'candidate_zoho_id', 'ZT-3', 'job_zoho_id', 'ZJ-1', 'stage_key', 'hired',
+        'zoho_status', 'Hired', 'received_at', '2024-01-06T10:00:00Z', 'modified_at', '2024-02-15T10:00:00Z',
+        'hired_date', '2024-02-15'),
+      jsonb_build_object('zoho_id', 'ZA-5', 'candidate_zoho_id', 'ZT-3', 'job_zoho_id', 'ZJ-3', 'stage_key', 'new',
+        'stale_closed', true, 'zoho_status', 'Associated', 'received_at', '2024-01-06T11:00:00Z', 'modified_at', '2024-01-06T11:00:00Z')),
+    'notes', jsonb_build_array(
+      jsonb_build_object('zoho_id', 'ZN-1', 'application_zoho_id', 'ZA-3', 'kind', 'Call', 'body', 'Spoke on the phone.',
+        'actor_zoho_id', 'U-1', 'actor_name', 'Alex Director', 'created_at', '2024-05-06T09:00:00Z'))
+  )::text, false);
+end $$;
+set app.test_uid = '00000000-0000-0000-0000-000000000004';  -- Ada
+set role authenticated;
+do $$
+declare r jsonb; p jsonb := current_setting('app.zoho_payload')::jsonb; h jsonb; v_za1 uuid; v_za2 uuid; v_za3 uuid; v_za5 uuid;
+begin
+  -- Dry run: decides everything, writes nothing.
+  r := public.import_zoho_recruit(p, false);
+  assert not (r->>'committed')::boolean, 'dry run';
+  assert (r->'counts'->>'candidates_created')::int = 3 and (r->'counts'->>'applications_created')::int = 5
+     and (r->'counts'->>'jobs_created')::int = 3 and (r->'counts'->>'stale_closed')::int = 2
+     and (r->'counts'->>'refused')::int = 0, 'dry-run counts: ' || (r->'counts')::text;
+  assert (r->'counts'->>'users_unresolved')::int = 1 and jsonb_array_length(r->'users'->'unresolved') = 1
+     and r->'users'->'unresolved'->0->>'email' = 'nobody@zoho.test', 'one unresolved user: ' || (r->'users')::text;
+  select x into h from jsonb_array_elements(r->'hires') x where x->>'candidate' = 'Zed Twin';
+  assert h->'proposal'->>'person_id' = '20000000-0000-0000-0000-000000000067' and h->'proposal'->>'match' = 'email',
+    'the hire proposes Zed by email: ' || (r->'hires')::text;
+  select x into h from jsonb_array_elements(r->'hires') x where x->>'candidate' = 'Ked Lin';
+  assert h is not null and jsonb_typeof(h->'proposal') = 'null', 'no proposal without an identity: ' || (r->'hires')::text;
+  assert (r->'counts'->>'possible_duplicates')::int = 1 and r->'possible_duplicates'->0->>'existing_name' = 'Lin Ked'
+     and r->'possible_duplicates'->0->>'match' = 'name', 'a name match against a non-Zoho row is reported: ' || (r->'possible_duplicates')::text;
+  assert (select count(*) from public.candidates where provider = 'zoho_recruit' and provider_ref like 'ZT-%') = 0,
+    'the dry run wrote nothing';
+  assert exists (select 1 from jsonb_array_elements(r->'assumptions') a where a->>'kind' = 'close_date_assumed' and a->>'job' = 'ZJ-3')
+     and exists (select 1 from jsonb_array_elements(r->'assumptions') a where a->>'kind' = 'department' and a->>'department' = 'HUT 4')
+     and exists (select 1 from jsonb_array_elements(r->'assumptions') a where a->>'kind' = 'synthesised_reason' and a->>'candidate' = 'ZT-2'),
+    'assumptions are listed: ' || (r->'assumptions')::text;
+
+  -- Commit.
+  r := public.import_zoho_recruit(p, true);
+  assert (r->>'committed')::boolean and (r->'counts'->>'candidates_created')::int = 3
+     and (r->'counts'->>'events_created')::int = 6 and (r->'counts'->>'notes_created')::int = 1,
+    'committed: ' || (r->'counts')::text;
+  select id into v_za1 from public.applications where source_provider = 'zoho_recruit' and provider_ref = 'ZA-1';
+  select id into v_za2 from public.applications where source_provider = 'zoho_recruit' and provider_ref = 'ZA-2';
+  select id into v_za3 from public.applications where source_provider = 'zoho_recruit' and provider_ref = 'ZA-3';
+  select id into v_za5 from public.applications where source_provider = 'zoho_recruit' and provider_ref = 'ZA-5';
+  assert (select stage_key || '|' || withdrawn_reason || '|' || source_key from public.applications where id = v_za1)
+         = 'withdrawn|Job closed|linkedin_profile', 'a stale row is withdrawn, job closed, with the candidate''s source';
+  assert (select string_agg(coalesce(from_stage_key, 'null') || '>' || to_stage_key || '@' || created_at::text, ';' order by created_at)
+          from public.application_events where application_id = v_za1 and kind = 'stage_change')
+         = 'null>screening@' || '2024-02-02T10:00:00Z'::timestamptz::text || ';screening>withdrawn@' || '2024-03-01T00:00:00Z'::timestamptz::text,
+    'two events: the Zoho stage on its date, then the close on the job''s date';
+  assert (select stage_key from public.applications where id = v_za5) = 'withdrawn'
+     and (select count(*) from public.application_events where application_id = v_za5) = 1
+     and (select from_stage_key || '>' || to_stage_key || '@' || created_at::text from public.application_events where application_id = v_za5)
+         = 'new>withdrawn@' || '2024-02-20T09:00:00Z'::timestamptz::text
+     and (select (custom->'zoho'->>'close_date_assumed')::boolean from public.applications where id = v_za5),
+    'a stale row at new gets one event dated the job''s modified time, close date assumed';
+  assert (select created_at from public.application_events where application_id = v_za2 and to_stage_key = 'hired')
+         = ((current_date - 90)::timestamp at time zone 'UTC'), 'the hire is dated its hired date at 00:00 UTC';
+  assert (select custom->'zoho'->'proposed_person'->>'id' from public.applications where id = v_za2)
+         = '20000000-0000-0000-0000-000000000067'
+     and (select employment_period_id from public.applications where id = v_za2) is null,
+    'the proposal is on the row; nothing is linked until HR confirms';
+  assert (select count(*) from public.application_events where application_id = v_za3 and kind = 'note'
+          and actor_id = '20000000-0000-0000-0000-000000000001' and body like '[Zoho Call · 06 May 2024 · Alex Director] Spoke on the phone.') = 1,
+    'the note carries the Zoho prefix and the resolved actor';
+  assert (select do_not_contact and do_not_contact_at = '2024-03-02T10:00:00Z'::timestamptz
+                 and do_not_contact_by = '20000000-0000-0000-0000-000000000001'
+          from public.candidates where provider = 'zoho_recruit' and provider_ref = 'ZT-2'),
+    'the contact rule comes in as given';
+  assert (select last_activity_at from public.candidates where provider = 'zoho_recruit' and provider_ref = 'ZT-1')
+         = '2024-06-01T10:00:00Z'::timestamptz, 'last activity is Zoho''s';
+  assert (select sourced_by from public.candidates where provider = 'zoho_recruit' and provider_ref = 'ZT-1')
+         = '20000000-0000-0000-0000-000000000001'
+     and (select custom->'education'->0->>'institute' from public.candidates where provider = 'zoho_recruit' and provider_ref = 'ZT-1') = 'UKIM',
+    'owner resolved, custom kept';
+  assert (select status || '|' || (custom->'zoho'->>'department') from public.jobs where custom->'zoho'->>'id' = 'ZJ-1') = 'filled|HUT 4',
+    'the job keeps its Zoho facts';
+  assert exists (select 1 from public.activity_log where entity_type = 'zoho_recruit_import'
+                 and actor_person_id = '20000000-0000-0000-0000-000000000004'), 'the import is logged';
+
+  -- Commit again: everything is skipped, nothing new.
+  r := public.import_zoho_recruit(p, true);
+  assert (r->'counts'->>'candidates_skipped')::int = 3 and (r->'counts'->>'applications_skipped')::int = 5
+     and (r->'counts'->>'jobs_skipped')::int = 3 and (r->'counts'->>'candidates_created')::int = 0
+     and (r->'counts'->>'events_created')::int = 0 and (r->'counts'->>'notes_created')::int = 0,
+    'a re-run skips: ' || (r->'counts')::text;
+  assert (select count(*) from public.candidates where provider = 'zoho_recruit' and provider_ref like 'ZT-%') = 3
+     and (select count(*) from public.applications where source_provider = 'zoho_recruit') = 5
+     and (select count(*) from public.application_events where application_id in (v_za1, v_za2, v_za3, v_za5)) = 6,
+    'no new rows on a re-run';
+
+  -- An unknown company refuses the commit and writes nothing.
+  begin
+    perform public.import_zoho_recruit(jsonb_set(p, '{jobs}', (select jsonb_agg(j || '{"company_code":"ZZ"}'::jsonb)
+                                                              from jsonb_array_elements(p->'jobs') j)), true);
+    raise exception 'FAIL: committed with an unknown company';
+  exception when raise_exception then
+    if sqlerrm not like '%Import refused: % rows have problems. Fix the extract and run again.%' then raise; end if;
+  end;
+  assert (select count(*) from public.jobs where custom->'zoho'->>'id' like 'ZJ-%') = 3, 'nothing written on a refusal';
+end $$;
+reset role;
+set app.test_uid = '00000000-0000-0000-0000-000000000001';  -- Alex
+set role authenticated;
+do $$
+begin
+  begin
+    perform public.import_zoho_recruit(current_setting('app.zoho_payload')::jsonb, false);
+    raise exception 'FAIL: a non-admin ran the import';
+  exception when insufficient_privilege then
+    if sqlerrm not like '%Importing from Zoho Recruit needs platform admin access.%' then raise; end if;
+  end;
+end $$;
+reset role;
+
+-- 13. HR confirms the employee record for an imported hire.
+set app.test_uid = '00000000-0000-0000-0000-000000000001';  -- Alex (employment.edit in A)
+set role authenticated;
+do $$
+declare r jsonb; v_za2 uuid; v_za3 uuid;
+begin
+  select id into v_za2 from public.applications where source_provider = 'zoho_recruit' and provider_ref = 'ZA-2';
+  select id into v_za3 from public.applications where source_provider = 'zoho_recruit' and provider_ref = 'ZA-3';
+  perform set_config('app.za4', (select id::text from public.applications where source_provider = 'zoho_recruit' and provider_ref = 'ZA-4'), false);
+  r := public.link_hired_application(v_za2, '20000000-0000-0000-0000-000000000067');
+  assert (r->>'linked')::boolean and r->>'employment_period_id' = '30000000-0000-0000-0000-000000000067'
+     and r->>'person_id' = '20000000-0000-0000-0000-000000000067', 'linked to Zed''s A period: ' || r::text;
+  assert (select employment_period_id from public.applications where id = v_za2) = '30000000-0000-0000-0000-000000000067',
+    'the application carries the period';
+  assert exists (select 1 from public.application_events where application_id = v_za2 and kind = 'note'
+                 and actor_id = '20000000-0000-0000-0000-000000000001'
+                 and body = 'Linked to the employee record of Zed Hired by Alex Director.'), 'a note records the link';
+  begin
+    perform public.link_hired_application(v_za2, '20000000-0000-0000-0000-000000000067');
+    raise exception 'FAIL: linked twice';
+  exception when invalid_parameter_value then
+    if sqlerrm not like '%This application is already linked to an employee record.%' then raise; end if;
+  end;
+  begin
+    perform public.link_hired_application(v_za3, '20000000-0000-0000-0000-000000000067');
+    raise exception 'FAIL: linked a screening application';
+  exception when invalid_parameter_value then
+    if sqlerrm not like '%Only hired applications can be linked to an employee record.%' then raise; end if;
+  end;
+end $$;
+reset role;
+set app.test_uid = '00000000-0000-0000-0000-000000000005';  -- Bea
+set role authenticated;
+do $$
+begin
+  begin
+    -- Bea cannot even read the A application; the id comes from Alex's block.
+    perform public.link_hired_application(current_setting('app.za4')::uuid, '20000000-0000-0000-0000-000000000067');
+    raise exception 'FAIL: Bea linked a hire in A';
+  exception when insufficient_privilege then
+    if sqlerrm not like '%Linking a hire needs the "Edit employment information" capability in this company.%' then raise; end if;
+  end;
+end $$;
+reset role;
+set app.test_uid = '00000000-0000-0000-0000-000000000004';  -- Ada
+set role authenticated;
+do $$
+declare r jsonb; v_za4 uuid;
+begin
+  select id into v_za4 from public.applications where source_provider = 'zoho_recruit' and provider_ref = 'ZA-4';
+  r := public.link_hired_application(v_za4, null);
+  assert not (r->>'linked')::boolean, 'declined: ' || r::text;
+  assert (select jsonb_typeof(custom->'zoho'->'proposed_person') = 'null'
+                 and custom->'zoho'->>'link_declined_by' = '20000000-0000-0000-0000-000000000004'
+          from public.applications where id = v_za4), 'the proposal is cleared and the decline recorded';
+end $$;
+reset role;
+
+-- 14. Tail: Omar is back to what he held before this block.
+set app.test_uid = '';
+delete from public.grant_capabilities gc using omar_added a
+  where gc.grant_id = a.grant_id and gc.capability_key = a.capability_key;
+drop table omar_added;
+
 select 'SMOKE TESTS PASSED' as result;

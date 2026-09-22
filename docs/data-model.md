@@ -117,6 +117,25 @@ and promotions to approved / published require `marketing.approve` /
 Service paths (no user JWT, `auth.uid()` null) bypass the gates; signed-in users
 cannot.
 
+**Outreach sub-statuses (migration 0069)** — `application_sub_statuses` (`key`,
+`stage_key` referencing `application_stages`, `label`, `sort_order`,
+`archived_at`) is a second recruitment lookup beside `candidate_sources`,
+holding-wide, seeded only for `new` (`applied`, `sourced`,
+`contact_attempted`) and `screening` (`contacted`, `interested`,
+`awaiting_evaluation`, `qualified`) — the other five stages carry none, so
+the blueprint's seven-stage count stands. `applications.sub_status_key` is
+set by the trigger `t3_sub_status`, never by the client: on insert it reads
+`source_key` (`sourced` for `head_hunt`/`linkedin_profile`/`imported`, else
+`applied`); on a stage change it takes the new stage's first sub-status by
+`sort_order`, or null where the stage has none. `application_events` gained
+an `outreach` kind plus `from_sub_status_key`/`to_sub_status_key`, written
+only by `log_outreach` — one RPC for one application or many, all-or-nothing.
+"Not responding" is derived, never stored: `app.not_responding` (mirrored by
+`recruitment_report`'s attention count and by `lib/outreach.ts` for the
+badge) is true for an open application on a live job (`ready`/`open`/
+`on_hold`) at `sourced`/`contact_attempted`/`contacted` whose last activity
+is more than 30 days old, compared as UTC calendar dates.
+
 **0004 operations** — `task_templates`/`template_tasks` (copied into plans on
 assignment; editing templates never rewrites active plans), `plans`/`plan_tasks`
 (critical = pre-start readiness; blocked/skipped are distinct states with

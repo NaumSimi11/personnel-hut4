@@ -193,3 +193,64 @@ commit again over the same export finds every job, candidate and
 application already there and reports them as skipped, not duplicated — so
 fixing a handful of refused rows and running the same steps again is the
 normal way to finish an import, not a special case.
+
+## The history: notes, interviews, reviews
+
+A second, later import (plan 055, migration 0070) over the same export:
+`server/src/zohoRecruit/history.ts` builds the payload for
+`public.import_zoho_history(payload, commit)`, the seam plan 052 left open —
+the person-level notes it only counted, and the interviews/reviews whose
+Zoho ids it preserved but never turned into rows.
+
+**What comes in.** Three kinds, each mapped in `history.ts`:
+
+- **Candidate notes** — every Candidates-module note not already attached to
+  an application by the first import; Zoho's note type maps to
+  `candidate_notes.kind`: `Notes` → `note`, `Call` → `call`, `LinkedIn Msgs *`
+  → `message`, `Meeting` → `meeting`, `Change Status` → `status_change`,
+  `Association`/`Unassociation` → themselves, `General Review` → `review`,
+  `TASK` → `task`, `Others` (or anything unrecognised) → `other`.
+- **Interviews** — become `interviews` rows on the matching application: the
+  Zoho name decides `kind` (`phone` when it contains "Phone", else `other`,
+  the name itself kept in `custom.zoho.name`); `status` is `cancelled` for a
+  Cancelled row, else `completed`; the Zoho "Interview Status" is kept
+  verbatim as the outcome, in `custom.zoho.outcome`.
+- **Reviews** — become `scorecards` on the matching interview: Zoho's 1–4
+  rating is both the scorecard's `rating` and its `recommendation` —
+  4 → `strong_yes`, 3 → `yes`, 2 → `no`, 1 → `strong_no`.
+
+**What is skipped, and why** — every skip is counted by reason in
+`import_zoho_history`'s report, never guessed into place:
+
+- Notes from the Interviews, Job Openings and Tasks modules
+  (`notes.skipped_modules`) — out of scope, as in the first import.
+- A note already attached to an application by the first import
+  (`notes.already_attached`) — the extract leaves it out of the payload
+  entirely, since that note's path stays 052's, not this one's.
+- An interview whose (candidate, job) pair is not an already-imported
+  application (`application_missing`) — the live export had 5.
+- A review whose interview was never created, because its own row was
+  skipped (`interview_missing`) — the live export had 20.
+- A review whose (interview, author) pair already has a scorecard
+  (`duplicate_author`) — but a **null** author is never a duplicate of
+  anything: several unresolved reviewers, or the same unresolved reviewer
+  more than once, all import as separate scorecards on one interview. The
+  live export's 15 reviews by the same unresolved author on one interview
+  came in as 15 separate scorecards, not one.
+
+**Running it (in order)**, after the row import above:
+
+```sh
+npm --prefix server run import:zoho-history:extract   # writes .zoho-history.json, prints counts
+scripts/zoho-import.sh --dry-run --history             # reports; nothing written
+scripts/zoho-import.sh --commit  --history              # all or nothing
+```
+
+The dry run and commit report the same shape as the row import's — counts,
+plus the skipped rows grouped by kind and reason (counts only, never a
+name) — printed by the same `scripts/zoho-import.sh`.
+
+Re-running is safe the same way: `candidate_notes`, `interviews` and
+`scorecards` each carry a unique partial index on `(provider, provider_ref)`,
+so a second dry run over the same export reports every row `already_imported`
+and a second commit writes nothing new.

@@ -136,6 +136,36 @@ badge) is true for an open application on a live job (`ready`/`open`/
 `on_hold`) at `sourced`/`contact_attempted`/`contacted` whose last activity
 is more than 30 days old, compared as UTC calendar dates.
 
+**Candidate notes, and the Zoho interviews and reviews (migration 0070)** —
+`candidate_notes` (`id`, `candidate_id`, `company_id` nullable, `kind`, `body`,
+`actor_id`/`actor_name`, `occurred_at`, `provider`/`provider_ref`, `custom
+jsonb`) joins `application_sub_statuses` and `candidate_sources` as the
+recruitment domain's third addition since 0003. A note is about the person,
+not about one job: `company_id` is null unless the note was written from a
+company's side, in which case that company's `candidates.view` holders read
+it too. Reading is otherwise the pool capability
+(`app.can_source_candidates()`); there is no client insert or update policy —
+`add_candidate_note` (the caller as `actor_id`, no company) and the import are
+the only writers. A note has no edit path (it is history), so the audit
+trigger fires only on delete, and deleting is the author's own
+(`actor_id = app.current_person_id()`) or an admin's. `kind` is a ten-value
+CHECK list (`note, call, message, meeting, status_change, association,
+unassociation, review, task, other`) mapped from Zoho's note types; the
+verbatim Zoho type is kept in `custom.zoho.type`.
+
+The same migration gives `interviews` and `scorecards` the columns an
+imported history needs. `interviews` gains `provider`, `provider_ref`,
+`custom jsonb` — the Zoho interview's name, outcome, any unresolved
+interviewer names and its cancellation reason live under `custom.zoho`;
+resolved interviewers still become ordinary `interview_panel` rows.
+`scorecards.author_id` becomes nullable and the table gains `author_name text`
+(plus `provider`/`provider_ref`), so a Zoho reviewer who was never linked to a
+person still shows on the card by name; a CHECK
+(`author_id is not null or author_name is not null`) keeps a scorecard from
+being anonymous on both sides. Both tables carry a unique partial index on
+`(provider, provider_ref)`, so re-running the import finds its own rows and
+writes nothing twice.
+
 **0004 operations** — `task_templates`/`template_tasks` (copied into plans on
 assignment; editing templates never rewrites active plans), `plans`/`plan_tasks`
 (critical = pre-start readiness; blocked/skipped are distinct states with

@@ -40,6 +40,7 @@ const body = ref('')
 const viewer = computed(() => ({ personId: auth.personId, isAdmin: auth.isAdmin }))
 
 async function load(page: number): Promise<void> {
+  error.value = null
   if (page === 0) loading.value = true
   else loadingMore.value = true
   try {

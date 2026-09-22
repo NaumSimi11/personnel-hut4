@@ -40,7 +40,6 @@ export type CandidateNoteRow = {
   actor_id: string | null
   actor_name: string | null
   occurred_at: string
-  provider: string | null
   actor: { full_name: string } | null
 }
 
@@ -68,7 +67,7 @@ export async function listCandidateNotes(candidateId: string, page: number): Pro
   const { data, error } = await supabase
     .from('candidate_notes')
     .select(
-      `id, kind, body, actor_id, actor_name, occurred_at, provider,
+      `id, kind, body, actor_id, actor_name, occurred_at,
        actor:people!candidate_notes_actor_id_fkey(full_name)`,
     )
     .eq('candidate_id', candidateId)

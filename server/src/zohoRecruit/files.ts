@@ -137,6 +137,8 @@ export function htmlToText(html: string): string {
     .replace(/<[^>]+>/g, ' ')
   return decodeEntities(text)
     .replace(/\u00a0/g, ' ')
+    // Postgres text can't hold a NUL; one of these captures had one raw.
+    .replace(/\u0000/g, '')
     .replace(/[ \t\f\v\r]+/g, ' ')
     .replace(/ ?\n ?/g, '\n')
     .replace(/\n{2,}/g, '\n')

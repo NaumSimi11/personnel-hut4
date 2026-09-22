@@ -131,6 +131,10 @@ describe('htmlToText', () => {
   it('caps at 100 kB', () => {
     expect(htmlToText('<p>' + 'a'.repeat(200_000) + '</p>')).toHaveLength(100 * 1024)
   })
+
+  it('strips a raw NUL; Postgres text can\'t hold one', () => {
+    expect(htmlToText('<p>Sales\u0000 lead</p>')).toBe('Sales lead')
+  })
 })
 
 describe('buildFilesManifest', () => {

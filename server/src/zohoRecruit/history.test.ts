@@ -189,12 +189,17 @@ describe('the interview mapping (D3)', () => {
     })
   })
 
-  it('a missing From is no stamp and the default hour', () => {
+  it('a missing From is no stamp, the default hour, and a problem — import_zoho_history refuses a null scheduled_at', () => {
     expect(interviewsById.get('Zrecruit_10000000000000701')).toMatchObject({
       scheduled_at: null,
       duration_minutes: 60,
       interviewer_zoho_ids: [],
       owner_zoho_id: null,
+    })
+    expect(problems).toContainEqual({
+      kind: 'interview',
+      ref: 'Zrecruit_10000000000000701',
+      message: 'the interview has no From date',
     })
   })
 
@@ -245,8 +250,15 @@ describe('the review mapping (D4)', () => {
 
   it('a rating outside 1..4 is a problem and the row stays out', () => {
     expect(reviewsById.has('Zrecruit_10000000000000804')).toBe(false)
-    expect(problems).toEqual([{ kind: 'review', ref: 'Zrecruit_10000000000000804', message: 'Rating "5.0" is not 1..4' }])
-    expect(counts.problems).toBe(1)
+    expect(problems).toContainEqual({ kind: 'review', ref: 'Zrecruit_10000000000000804', message: 'Rating "5.0" is not 1..4' })
+  })
+
+  it('counts both problems — the dateless interview and the out-of-range rating', () => {
+    expect(problems).toEqual([
+      { kind: 'interview', ref: 'Zrecruit_10000000000000701', message: 'the interview has no From date' },
+      { kind: 'review', ref: 'Zrecruit_10000000000000804', message: 'Rating "5.0" is not 1..4' },
+    ])
+    expect(counts.problems).toBe(2)
   })
 
   it('counts the matched interview, the unmatched one and the second review by the same author', () => {

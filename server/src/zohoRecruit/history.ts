@@ -8,10 +8,11 @@ import { rewriteMentions } from './mapping.js'
 /**
  * The export → the `import_zoho_history` payload (plan 055 D2–D4): the
  * person-level candidate notes, the interviews and the reviews. Pure: rows
- * in, JSON out. Nothing is guessed — a date that cannot be read or a rating
- * outside 1..4 is a problem, and the rows the SQL must decide about (an
- * unmatched interview, a duplicate review) stay in the payload and are only
- * counted here.
+ * in, JSON out. Nothing is guessed — a date that cannot be read, an
+ * interview with no From at all (import_zoho_history refuses a null
+ * scheduled_at at commit) or a rating outside 1..4 is a problem, and the
+ * rows the SQL must decide about (an unmatched interview, a duplicate
+ * review) stay in the payload and are only counted here.
  *
  * The note prefix is deliberately not built here: D2 attaches it only when
  * the actor could not be linked to a person, which `import_zoho_history`
@@ -265,6 +266,12 @@ function buildInterview(i: CsvRow, ctx: Ctx): HistoryInterview {
   const ref = i['Interview Id']
   const name = blank(i['Interview Name']) ?? ''
   const scheduledAt = stamp(ctx, 'interview', ref, 'From', i.From)
+  // A blank From is a valid "no stamp" for `stamp()`, but import_zoho_history
+  // refuses a null scheduled_at at commit — an unparseable From already
+  // raised a problem above, so this only covers the blank case.
+  if (scheduledAt === null && blank(i.From) === null) {
+    ctx.problems.push({ kind: 'interview', ref, message: 'the interview has no From date' })
+  }
   const endsAt = stamp(ctx, 'interview', ref, 'To', i.To)
   const status = blank(i['Interview Status'])
   return {

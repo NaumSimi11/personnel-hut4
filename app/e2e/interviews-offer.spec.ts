@@ -28,15 +28,42 @@ function serviceClient() {
 let applicationId = ''
 let colleagueId = ''
 
+/**
+ * A delete whose failure must not pass unnoticed: a foreign key with no
+ * cascade rule (handover_sends → plans / people, it_requests → plan_tasks /
+ * people) makes the delete below it fail, and PostgREST reports that in the
+ * response rather than by throwing — so the hired candidate stayed behind.
+ */
+async function drop(label: string, run: PromiseLike<{ error: { message: string } | null }>): Promise<void> {
+  const { error } = await run
+  if (error) console.warn(`[cleanup] ${label}: ${error.message}`)
+}
+
 async function cleanup(): Promise<void> {
   const db = serviceClient()
-  // The hire creates a person + employment + onboarding plan for the candidate.
-  const { data: hired } = await db.from('people').select('id').eq('work_email', CANDIDATE_EMAIL)
+  // The hire creates a person + employment + onboarding plan for the candidate,
+  // and puts the candidate's email on the record as personal (plan 046) — so
+  // both address columns are asked for.
+  const { data: hired } = await db
+    .from('people')
+    .select('id')
+    .or(`work_email.eq.${CANDIDATE_EMAIL},personal_email.eq.${CANDIDATE_EMAIL}`)
   for (const p of hired ?? []) {
     const { data: plans } = await db.from('plans').select('id').eq('person_id', p.id)
     const planIds = (plans ?? []).map((x) => x.id)
-    if (planIds.length) await db.from('plan_tasks').delete().in('plan_id', planIds)
-    await db.from('plans').delete().eq('person_id', p.id)
+    const { data: tasks } = planIds.length
+      ? await db.from('plan_tasks').select('id').in('plan_id', planIds)
+      : { data: [] as { id: string }[] }
+    const taskIds = (tasks ?? []).map((t) => t.id)
+    // Confirming the hire raises handover_sends (0041) and onboarding can raise
+    // it_requests (0004); neither FK cascades, so they pin the plan, its tasks
+    // and the person. They go before the plans / periods / people deletes.
+    await drop('handover_sends by person', db.from('handover_sends').delete().eq('person_id', p.id))
+    if (planIds.length) await drop('handover_sends by plan', db.from('handover_sends').delete().in('plan_id', planIds))
+    await drop('it_requests by person', db.from('it_requests').delete().eq('person_id', p.id))
+    if (taskIds.length) await drop('it_requests by task', db.from('it_requests').delete().in('plan_task_id', taskIds))
+    if (planIds.length) await drop('plan_tasks', db.from('plan_tasks').delete().in('plan_id', planIds))
+    await drop('plans', db.from('plans').delete().eq('person_id', p.id))
   }
   const { data: jobs } = await db.from('jobs').select('id').eq('title', JOB_TITLE)
   const jobIds = (jobs ?? []).map((j) => j.id)
@@ -50,13 +77,17 @@ async function cleanup(): Promise<void> {
       await db.from('application_events').delete().in('application_id', appIds)
       await db.from('applications').update({ employment_period_id: null }).in('id', appIds)
     }
-    for (const p of hired ?? []) await db.from('employment_periods').delete().eq('person_id', p.id)
     await db.from('applications').delete().in('job_id', jobIds)
     const candidateIds = [...new Set((apps ?? []).map((a) => a.candidate_id))]
     if (candidateIds.length) await db.from('candidates').delete().in('id', candidateIds)
     await db.from('jobs').delete().in('id', jobIds)
   }
-  for (const p of hired ?? []) await db.from('people').delete().eq('id', p.id)
+  // The periods go last: the applications that pointed at them are nulled or
+  // deleted above, so nothing is left holding the person.
+  for (const p of hired ?? []) {
+    await drop('employment_periods', db.from('employment_periods').delete().eq('person_id', p.id))
+    await drop('people', db.from('people').delete().eq('id', p.id))
+  }
   await db.from('candidates').delete().eq('email', CANDIDATE_EMAIL)
   await db.from('people').delete().eq('full_name', COLLEAGUE_NAME)
 }

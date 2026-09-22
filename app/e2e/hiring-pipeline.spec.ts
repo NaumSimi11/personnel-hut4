@@ -22,10 +22,25 @@ function serviceClient() {
   return createClient(url, key, { auth: { persistSession: false, autoRefreshToken: false } })
 }
 
+/**
+ * A delete whose failure must not pass unnoticed. A foreign key with no
+ * cascade rule (handover_sends → plans / people, it_requests → plan_tasks /
+ * people) makes the delete below it fail, and PostgREST reports that in the
+ * response rather than by throwing — so a broken cleanup used to leave one
+ * more hired "E2E Pipeline Candidate" behind on every run, until the
+ * directory step matched three rows at once.
+ */
+async function drop(label: string, run: PromiseLike<{ error: { message: string } | null }>): Promise<void> {
+  const { error } = await run
+  if (error) console.warn(`[cleanup] ${label}: ${error.message}`)
+}
+
 async function cleanup(): Promise<void> {
   const db = serviceClient()
 
-  // 1. plan_tasks + plans for the employment period this test's hire creates.
+  // 1. What the hire leaves on the person, newest reference first: the
+  // handover sends and IT requests that pin the plan, its tasks and the person
+  // itself, then plan_tasks + plans for the employment period.
   // The hire puts the candidate's email on the record as personal (plan 046).
   const { data: matches } = await db
     .from('people')
@@ -37,12 +52,26 @@ async function cleanup(): Promise<void> {
       .select('id')
       .eq('person_id', person.id)
     const periodIds = (periods ?? []).map((p) => p.id)
-    if (periodIds.length) {
-      const { data: plans } = await db.from('plans').select('id').in('employment_period_id', periodIds)
-      const planIds = (plans ?? []).map((p) => p.id)
-      if (planIds.length) await db.from('plan_tasks').delete().in('plan_id', planIds)
-      await db.from('plans').delete().in('employment_period_id', periodIds)
+    const { data: plans } = await db.from('plans').select('id').eq('person_id', person.id)
+    const planIds = (plans ?? []).map((p) => p.id)
+    const { data: tasks } = planIds.length
+      ? await db.from('plan_tasks').select('id').in('plan_id', planIds)
+      : { data: [] as { id: string }[] }
+    const taskIds = (tasks ?? []).map((t) => t.id)
+
+    // Confirming the hire raises handover_sends (0041, one per recipient) and
+    // onboarding can raise it_requests (0004, plan_task_id / person_id with no
+    // on-delete rule). Both go before the plans / periods / people deletes.
+    await drop('handover_sends by person', db.from('handover_sends').delete().eq('person_id', person.id))
+    if (planIds.length) await drop('handover_sends by plan', db.from('handover_sends').delete().in('plan_id', planIds))
+    await drop('it_requests by person', db.from('it_requests').delete().eq('person_id', person.id))
+    if (taskIds.length) await drop('it_requests by task', db.from('it_requests').delete().in('plan_task_id', taskIds))
+
+    if (planIds.length) {
+      await drop('plan_tasks', db.from('plan_tasks').delete().in('plan_id', planIds))
+      await drop('plans', db.from('plans').delete().in('id', planIds))
     }
+    if (periodIds.length) await drop('plans by period', db.from('plans').delete().in('employment_period_id', periodIds))
   }
 
   // 2. application_events, applications, candidates by name/email.
@@ -59,8 +88,8 @@ async function cleanup(): Promise<void> {
 
   // 3. employment_periods + people by either email.
   for (const person of matches ?? []) {
-    await db.from('employment_periods').delete().eq('person_id', person.id)
-    await db.from('people').delete().eq('id', person.id)
+    await drop('employment_periods', db.from('employment_periods').delete().eq('person_id', person.id))
+    await drop('people', db.from('people').delete().eq('id', person.id))
   }
 
   // 4. jobs by title.

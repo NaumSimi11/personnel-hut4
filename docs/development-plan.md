@@ -66,6 +66,7 @@ prototype in `../prototype` is the UI spec. Updated as milestones land.
 | Policies as a library and the welcome note (plan 045, fifth slice): a policy may be written in the app rather than attached, six holding-wide drafts seeded with summaries and a starting text for HR to edit and publish, the person reads a text policy inline in My workspace, "Policies acknowledged" ticks itself; first-day details per company; the welcome note built from the record — role, start date, manager, where to come and what to bring, the policies to read — previewed on the checklist, sent to the personal address by default through the notification queue and filed as a PDF, ticking its line | migration 0043 + plan 050 | smoke for text publishing rules, the acknowledgement tick (company scope, history kept), first-day details, the note text, sending to either address, skipped without one, the PDF queue; server unit for the PDF; unit for the card; E2E welcome (text policy → details → hire → send → PDF → the person acknowledges → the line ticks) |
 | Kudos values, bonuses and the net estimate (plan 045, sixth and last slice — the programme is complete): the holding's five kudos values tagging a kudos with a pill on the wall, a Kudos page where admins and people.view holders record a kudos on a colleague's behalf with a date, filter by month, count per value, edit and remove; bonuses per person waiting for the next prepared period in their currency and travelling with it, released when the period is reopened; per company tax rate and flat deduction under Settings giving every prepared line bonus / gross / tax / deductions / net, totals and the CSV carrying both, marked as the accountant's estimate until the real contribution rules are decided | migration 0044 + plan 051 | smoke for the values, the wall, management gates, the sweep and its waiting count, the estimate per line, reopen releasing and recomputing, approve refused until prepared again, audit redaction; unit for the forms, the net math mirror, totals, CSV; E2E bonuses (settings → bonus → prepare → net → reopen → pending → prepare again → approve) and kudos (value → on behalf → pill → edit → remove → retire) |
 | Talent pool: the candidate as a holding-wide record behind a new `candidates.source` capability (Holding HR, Recruiter), sources as a lookup (head hunt, LinkedIn profile / ad, careers page, job board, referral, by hand, imported), the contact rule (never / contact later) enforced by the database at every door, files on the candidate (`candidate_files`, `candidate/{id}/…` in the private bucket), one creation door `upsert_sourced_candidate` that offers matches (email, phone tail, LinkedIn slug, folded name) and never merges, Talent pool tab with paginated search, candidate record, Source from pool on a job; the Zoho Recruit import tooling (`import_zoho_recruit` with dry run, per-row verdicts and hire proposals HR confirms — [integrations-zoho.md](integrations-zoho.md)) | migration 0067 + plan 052 | smoke for the capability, the visibility rule, dedupe at every door, the contact rule and the import's verification pass; unit for the key mirrors, the pool filters and the Zoho mapping / dates / payload / files modules; E2E and the live Zoho import follow |
+| Search by words (plan 053, follow-up of 052): the pool search matches every query word as a word-prefix of the name key, order-free, folded on both sides — "Ana Il", "Traj Mar" find their person. | migration 0068 + plan 053 | smoke for prefix / order / folding / the negative case / the other predicates / paging; E2E talent-pool searches the plan's partial "E2E Pool" |
 
 ## Next (in order)
 
@@ -85,12 +86,12 @@ prototype in `../prototype` is the UI spec. Updated as milestones land.
    deduction per company) with the MK contribution rules once the
    maintainer and the accountant decide them; pro-rating of annual and
    daily records; the accountant's address under Settings → Handover.
-5. **Plan 052 — the talent pool, code complete** ([plans/052-talent-pool.md](../plans/052-talent-pool.md);
-   migration 0067): still needed live — apply 0067, grant `candidates.source`
-   to the Holding HR people, delete the leftover test candidate (D8); then
-   the Zoho Recruit history comes in through the import commands in
-   [integrations-zoho.md](integrations-zoho.md) (extract → dry run →
-   commit → files).
+5. **Plan 052 and 053 — live and imported** ([plans/052-talent-pool.md](../plans/052-talent-pool.md),
+   [plans/053-search-by-words.md](../plans/053-search-by-words.md); migrations 0067 + 0068 applied
+   2026-09-22; the Zoho Recruit history imported the same day — 3,611 candidates, 4,157
+   applications, 2,710 files). Still on the maintainer: grant `candidates.source` to the Holding HR
+   people (D4: no backfill); HR confirms the 16 proposed hires from their application pages. Open
+   follow-ups are listed in [session-handoff.yaml](session-handoff.yaml) `follow_ups_from_052`.
 6. **Later, per blueprint** — the outreach sub-statuses inside Screening
    (the seam 052 leaves), recruitment channel integrations (need
    credentials), payroll allowances beyond one-off bonuses.

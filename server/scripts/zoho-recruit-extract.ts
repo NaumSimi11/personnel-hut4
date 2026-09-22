@@ -60,7 +60,7 @@ function main(): number {
   say(`jobs per company: ${JSON.stringify(counts.jobs)} · unresolved departments: ${counts.unresolved_departments}`)
   say(`notes: ${JSON.stringify(counts.notes)}`)
   say(`files: eligible ${files.counts.eligible} · text-only ${files.counts.text_only} · skipped ${files.counts.skipped} ${JSON.stringify(files.skipped)}`)
-  say(`review: same-LinkedIn groups ${review.same_linkedin_by_key.length} by key / ${review.same_linkedin_by_url.length} by URL · same-name groups ${review.same_name_groups.length} · never associated ${review.never_associated.length} · stale ${review.stale_applications.length} · hires ${review.hires.length} · synthesised reasons ${review.synthesised_reasons.length} · date problems ${review.problems.length}`)
+  say(`review: same-LinkedIn groups ${review.same_linkedin_by_key.length} by key / ${review.same_linkedin_by_url.length} by URL · same-name groups ${review.same_name_groups.length} · never associated ${review.never_associated.length} · stale ${review.stale_applications.length} · hires ${review.hires.length} · synthesised reasons ${review.synthesised_reasons.length} · problems ${review.problems.length}`)
   say(`unknown statuses: ${JSON.stringify(unknown.statuses)} · unknown sources: ${JSON.stringify(unknown.sources)}`)
   if (unknown.statuses.length || unknown.sources.length) {
     process.stderr.write(`${TAG} unknown statuses or sources: fix mapping.ts before importing.\n`)

@@ -7,6 +7,7 @@ import {
   buildFilesManifest,
   classifyAttachment,
   htmlToText,
+  isGenericAccount,
   mimeFor,
   originalNameOf,
   parseCsvSize,
@@ -52,6 +53,15 @@ describe('mimeFor', () => {
     expect(mimeFor('a.png')).toBe('image/png')
     expect(mimeFor('a.html')).toBe('text/html')
     expect(mimeFor('a.xyz')).toBeNull()
+  })
+})
+
+describe('isGenericAccount', () => {
+  it('hr@ and admin@ never name a person; any other work email may', () => {
+    expect(isGenericAccount('hr@example.test')).toBe(true)
+    expect(isGenericAccount(' Admin@Example.test ')).toBe(true)
+    expect(isGenericAccount('ana@example.test')).toBe(false)
+    expect(isGenericAccount(null)).toBe(false)
   })
 })
 

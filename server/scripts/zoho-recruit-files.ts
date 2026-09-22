@@ -17,7 +17,7 @@ import path from 'node:path'
 import { randomUUID } from 'node:crypto'
 import { fileURLToPath } from 'node:url'
 import { createClient, type SupabaseClient } from '@supabase/supabase-js'
-import { htmlToText, planUpload, type ManifestRow, type UploadPlan } from '../src/zohoRecruit/files.js'
+import { htmlToText, isGenericAccount, planUpload, type ManifestRow, type UploadPlan } from '../src/zohoRecruit/files.js'
 
 const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')
 const BUCKET = 'candidate-files'
@@ -69,7 +69,9 @@ async function decide(client: SupabaseClient, manifest: ManifestRow[]): Promise<
     const id = candidateId.get(row.candidate_zoho_id)
     if (!id) return { row, skip: 'candidate not imported' }
     if (!fs.existsSync(row.path)) return { row, skip: 'not on disk' }
-    return { row, plan: planUpload(row, id, randomUUID(), TZ), uploadedBy: row.owner_email ? (personByEmail.get(row.owner_email) ?? null) : null }
+    // The rule pass 1 applies to its users: a generic account never names a person.
+    const owner = row.owner_email && !isGenericAccount(row.owner_email) ? row.owner_email : null
+    return { row, plan: planUpload(row, id, randomUUID(), TZ), uploadedBy: owner ? (personByEmail.get(owner) ?? null) : null }
   })
 }
 

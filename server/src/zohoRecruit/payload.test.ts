@@ -280,6 +280,16 @@ describe('buildPayload over the synthetic export', () => {
     expect(r.review.problems).toEqual([{ kind: 'candidate', ref: C3, message: 'Created Time "31/12/2025 10:00 AM" is not a date' }])
     expect(r.payload.candidates.find((c) => c.zoho_id === C3)?.created_at).toBeNull()
   })
+
+  it('records an association whose job is not in the export as a problem and leaves it out', () => {
+    const orphan = { ...exp.associations[0], 'Associated Id': 'Zrecruit_10000000000000599', 'Job Opening ID': 'Zrecruit_10000000000000999' }
+    const r = buildPayload({ ...exp, associations: [...exp.associations, orphan] }, { tz: TZ, exportedAt: 'x' })
+    expect(r.payload.applications).toHaveLength(payload.applications.length)
+    expect(r.counts.problems).toBe(1)
+    expect(r.review.problems).toEqual([
+      { kind: 'application', ref: 'Zrecruit_10000000000000599', message: 'Job Opening ID "Zrecruit_10000000000000999" is not in the jobs export' },
+    ])
+  })
 })
 
 describe('zoho-recruit-extract.ts end to end over the fixture folder', () => {

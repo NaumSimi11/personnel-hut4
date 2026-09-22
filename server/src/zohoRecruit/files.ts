@@ -12,6 +12,18 @@ import { longDate, parseUsDateTime } from './dates.js'
 export const FILE_MAX_BYTES = 10 * 1024 * 1024
 export const TEXT_MAX_CHARS = 100 * 1024
 
+/**
+ * The generic hr@ / admin@ mailboxes never name a person. Pass 1 of the row
+ * import (import_zoho_recruit, migration 0067) applies this rule to its
+ * users; the files script applies it to uploaded_by.
+ */
+export const GENERIC_ACCOUNT_PREFIXES = ['hr@', 'admin@'] as const
+
+export function isGenericAccount(email: string | null | undefined): boolean {
+  const e = (email ?? '').trim().toLowerCase()
+  return GENERIC_ACCOUNT_PREFIXES.some((p) => e.startsWith(p))
+}
+
 export type ParentKind = 'candidate' | 'job' | 'interview' | 'note' | 'unknown'
 export type AttachmentParent = { kind: ParentKind; candidateZohoId: string | null }
 export type AttachmentRow = { attachmentId: string; fileName: string; category: string; parent: AttachmentParent }

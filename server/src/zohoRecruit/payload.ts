@@ -486,9 +486,16 @@ export function buildPayload(exp: ZohoExport, opts: { tz: string; exportedAt: st
       return { row: buildCandidate(c, educationByCandidate.get(c['Candidate Id']) ?? [], flags, ctx), flags }
     })
 
+  // An association to a job the export does not carry is a problem, never a
+  // guess: reported like a date that cannot be read, and the row stays out.
   const applications = exp.associations
-    .filter((a) => !unknownStatus.has(a['Candidate Status']) && jobById.has(a['Job Opening ID']))
-    .map((a) => buildApplication(a, jobById.get(a['Job Opening ID']) as PayloadJob, ctx))
+    .filter((a) => !unknownStatus.has(a['Candidate Status']))
+    .flatMap((a) => {
+      const job = jobById.get(a['Job Opening ID'])
+      if (job) return [buildApplication(a, job, ctx)]
+      ctx.problems.push({ kind: 'application', ref: a['Associated Id'], message: `Job Opening ID "${a['Job Opening ID']}" is not in the jobs export` })
+      return []
+    })
   const pairs = new Map(applications.map((a) => [`${a.candidate_zoho_id}|${a.job_zoho_id}`, a.zoho_id]))
   const interviews = new Map(exp.interviews.map((i) => [i['Interview Id'], `${i['Candidate ID']}|${i['Job Opening ID']}`]))
   const noteCounts = { attached: 0, without_application: 0, skipped_modules: 0 }

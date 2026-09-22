@@ -130,3 +130,55 @@ export function emptyScorecardForm(criteria: Criterion[]): ScorecardForm {
 export function recommendationLabel(key: string): string {
   return RECOMMENDATIONS.find((r) => r.key === key)?.label ?? key
 }
+
+// ------------------------------------------------------ imported interviews
+
+/** Provider value of a row the Zoho history import wrote (plan 055). */
+export const ZOHO_PROVIDER = 'zoho_recruit'
+
+/** What custom.zoho carries on an imported interview; every field optional there. */
+export type ZohoInterviewMeta = {
+  name: string | null
+  outcome: string | null
+  interviewers: string[]
+}
+
+function textOrNull(value: unknown): string | null {
+  return typeof value === 'string' && value.trim() !== '' ? value.trim() : null
+}
+
+/**
+ * custom.zoho as the import writes it (D3): `name`, `outcome`, and the
+ * `interviewers` we could not link to people. `custom` is unknown JSON, so
+ * every field is checked and junk is dropped; null when there is no zoho
+ * object at all.
+ */
+export function zohoInterviewMeta(custom: unknown): ZohoInterviewMeta | null {
+  if (!custom || typeof custom !== 'object' || Array.isArray(custom)) return null
+  const zoho = (custom as { zoho?: unknown }).zoho
+  if (!zoho || typeof zoho !== 'object' || Array.isArray(zoho)) return null
+  const record = zoho as Record<string, unknown>
+  const interviewers = Array.isArray(record.interviewers)
+    ? record.interviewers.flatMap((v) => {
+        const name = textOrNull(v)
+        return name ? [name] : []
+      })
+    : []
+  return { name: textOrNull(record.name), outcome: textOrNull(record.outcome), interviewers }
+}
+
+type ImportedInterview = { provider: string | null; custom: unknown }
+
+/** "Imported from Zoho Recruit · <name> · outcome: <…>" for an imported row; null otherwise. */
+export function interviewImportLine(i: ImportedInterview): string | null {
+  if (i.provider !== ZOHO_PROVIDER) return null
+  const meta = zohoInterviewMeta(i.custom)
+  return `Imported from Zoho Recruit · ${meta?.name ?? 'Interview'} · outcome: ${meta?.outcome ?? '—'}`
+}
+
+/** The interviewers the import could not link, after the panel; null when none. */
+export function interviewUnresolvedPanelLine(i: ImportedInterview): string | null {
+  if (i.provider !== ZOHO_PROVIDER) return null
+  const names = zohoInterviewMeta(i.custom)?.interviewers ?? []
+  return names.length ? `Also on the panel: ${names.join(', ')}` : null
+}

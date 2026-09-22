@@ -7,7 +7,9 @@ import {
   INTERVIEW_KINDS,
   RECOMMENDATIONS,
   emptyScorecardForm,
+  interviewImportLine,
   interviewInput,
+  interviewUnresolvedPanelLine,
   recommendationLabel,
   scorecardInput,
   type Criterion,
@@ -20,7 +22,9 @@ import {
  * Scheduling and scoring need candidates.review. Scorecards are blind: the
  * database hides colleagues' cards from a panel member until their own is
  * in — the list below simply shows what comes back, plus a note explaining
- * why it may be short.
+ * why it may be short. An interview the Zoho history import wrote (plan
+ * 055) renders like any other, with a line saying where it came from; its
+ * scorecards may carry an author name instead of a linked person.
  */
 
 type Interview = {
@@ -30,10 +34,13 @@ type Interview = {
   duration_minutes: number
   location: string | null
   status: string
+  provider: string | null
+  custom: unknown
   panel: { person: { id: string; full_name: string } | null }[]
   scorecards: {
     id: string
-    author_id: string
+    author_id: string | null
+    author_name: string | null
     ratings: Rating[]
     recommendation: string
     summary: string | null
@@ -73,7 +80,7 @@ function onPanel(i: Interview): boolean {
 }
 
 function hasScored(i: Interview): boolean {
-  return i.scorecards.some((s) => s.author_id === auth.personId)
+  return i.scorecards.some((s) => s.author_id !== null && s.author_id === auth.personId)
 }
 
 /** A panel member who has not scored sees only their own (none) — say so. */
@@ -103,9 +110,9 @@ async function load(): Promise<void> {
     supabase
       .from('interviews')
       .select(
-        `id, kind, scheduled_at, duration_minutes, location, status,
+        `id, kind, scheduled_at, duration_minutes, location, status, provider, custom,
          panel:interview_panel(person:people!interview_panel_person_id_fkey(id, full_name)),
-         scorecards(id, author_id, ratings, recommendation, summary, submitted_at,
+         scorecards(id, author_id, author_name, ratings, recommendation, summary, submitted_at,
            author:people!scorecards_author_id_fkey(full_name))`,
       )
       .eq('application_id', props.applicationId)
@@ -292,7 +299,9 @@ onMounted(load)
               <template v-if="i.panel.length">
                 · panel: {{ i.panel.map((p) => p.person?.full_name ?? '—').join(', ') }}
               </template>
+              <template v-if="interviewUnresolvedPanelLine(i)"> · {{ interviewUnresolvedPanelLine(i) }}</template>
             </small>
+            <small v-if="interviewImportLine(i)" class="imported" data-testid="interview-imported">{{ interviewImportLine(i) }}</small>
             <small v-if="tally(i)" class="tally">{{ tally(i) }}</small>
           </div>
           <span class="badge" :class="i.status === 'completed' ? 'green' : i.status === 'cancelled' ? '' : 'blue'">
@@ -380,7 +389,7 @@ onMounted(load)
 
         <div v-for="s in i.scorecards" :key="s.id" class="scorecard-row">
           <div class="scorecard-head">
-            <strong>{{ s.author?.full_name ?? 'A colleague' }}</strong>
+            <strong>{{ s.author?.full_name ?? s.author_name ?? '—' }}</strong>
             <span class="badge" :class="s.recommendation.endsWith('yes') ? 'green' : 'amber'">
               {{ recommendationLabel(s.recommendation) }}
             </span>
@@ -413,6 +422,7 @@ onMounted(load)
 .row-text strong { display: block; font-size: 12px; font-weight: 550; }
 .row-text small { display: block; font-size: 11px; color: var(--muted); margin-top: 4px; }
 .row-text .tally { color: var(--green); font-weight: 550; }
+.row-text .imported { font-style: italic; }
 .row-actions { display: flex; gap: 7px; flex-wrap: wrap; }
 .small-btn { font-size: 11px; padding: 7px 11px; }
 .blind-note { margin: 12px 0 0; font-size: 11px; color: var(--amber); }

@@ -5,6 +5,7 @@ import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/stores/auth'
 import { useDialogStore } from '@/stores/dialogs'
 import CandidateFilesCard from '@/components/CandidateFilesCard.vue'
+import CandidateNotesCard from '@/components/CandidateNotesCard.vue'
 import ContactRuleDialog from '@/components/ContactRuleDialog.vue'
 import SourceToJobDialog from '@/components/SourceToJobDialog.vue'
 import { SOURCE_FALLBACK_LABEL, contactBadge, contactState, longDate } from '@/lib/candidatePool'
@@ -16,9 +17,10 @@ import { missingRecordMessage } from '@/lib/missingRecord'
 /**
  * The candidate's own record (plan 052): one person across every job —
  * where they came from, how they may be contacted, their applications in
- * the viewer's companies, the files that follow them, and the details a
- * reviewer or pool holder may correct. `canEditPool` / `canEditIdentity`
- * are hints; the policies, the field guard and the RPCs decide.
+ * the viewer's companies, the notes about the person (plan 055), the files
+ * that follow them, and the details a reviewer or pool holder may correct.
+ * `canEditPool` / `canEditIdentity` are hints; the policies, the field
+ * guard and the RPCs decide.
  */
 
 type Candidate = {
@@ -384,6 +386,8 @@ onMounted(load)
               </div>
             </div>
           </div>
+
+          <CandidateNotesCard :candidate-id="candidate.id" :can-add="canEditPool" />
 
           <CandidateFilesCard :candidate-id="candidate.id" :can-edit="canEditIdentity" />
 

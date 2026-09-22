@@ -841,6 +841,73 @@ export type Database = {
           },
         ]
       }
+      candidate_notes: {
+        Row: {
+          actor_id: string | null
+          actor_name: string | null
+          body: string
+          candidate_id: string
+          company_id: string | null
+          created_at: string
+          custom: Json
+          id: string
+          kind: string
+          occurred_at: string
+          provider: string | null
+          provider_ref: string | null
+        }
+        Insert: {
+          actor_id?: string | null
+          actor_name?: string | null
+          body: string
+          candidate_id: string
+          company_id?: string | null
+          created_at?: string
+          custom?: Json
+          id?: string
+          kind?: string
+          occurred_at?: string
+          provider?: string | null
+          provider_ref?: string | null
+        }
+        Update: {
+          actor_id?: string | null
+          actor_name?: string | null
+          body?: string
+          candidate_id?: string
+          company_id?: string | null
+          created_at?: string
+          custom?: Json
+          id?: string
+          kind?: string
+          occurred_at?: string
+          provider?: string | null
+          provider_ref?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "candidate_notes_actor_id_fkey"
+            columns: ["actor_id"]
+            isOneToOne: false
+            referencedRelation: "people"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "candidate_notes_candidate_id_fkey"
+            columns: ["candidate_id"]
+            isOneToOne: false
+            referencedRelation: "candidates"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "candidate_notes_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       candidate_sources: {
         Row: {
           archived_at: string | null
@@ -2633,11 +2700,14 @@ export type Database = {
           company_id: string
           created_at: string
           created_by: string | null
+          custom: Json
           duration_minutes: number
           id: string
           kind: string
           location: string | null
           notes: string | null
+          provider: string | null
+          provider_ref: string | null
           scheduled_at: string
           status: string
           updated_at: string
@@ -2647,11 +2717,14 @@ export type Database = {
           company_id: string
           created_at?: string
           created_by?: string | null
+          custom?: Json
           duration_minutes?: number
           id?: string
           kind?: string
           location?: string | null
           notes?: string | null
+          provider?: string | null
+          provider_ref?: string | null
           scheduled_at: string
           status?: string
           updated_at?: string
@@ -2661,11 +2734,14 @@ export type Database = {
           company_id?: string
           created_at?: string
           created_by?: string | null
+          custom?: Json
           duration_minutes?: number
           id?: string
           kind?: string
           location?: string | null
           notes?: string | null
+          provider?: string | null
+          provider_ref?: string | null
           scheduled_at?: string
           status?: string
           updated_at?: string
@@ -4612,10 +4688,13 @@ export type Database = {
       scorecards: {
         Row: {
           application_id: string
-          author_id: string
+          author_id: string | null
+          author_name: string | null
           company_id: string
           id: string
           interview_id: string
+          provider: string | null
+          provider_ref: string | null
           ratings: Json
           recommendation: string
           submitted_at: string
@@ -4624,10 +4703,13 @@ export type Database = {
         }
         Insert: {
           application_id: string
-          author_id: string
+          author_id?: string | null
+          author_name?: string | null
           company_id: string
           id?: string
           interview_id: string
+          provider?: string | null
+          provider_ref?: string | null
           ratings?: Json
           recommendation: string
           submitted_at?: string
@@ -4636,10 +4718,13 @@ export type Database = {
         }
         Update: {
           application_id?: string
-          author_id?: string
+          author_id?: string | null
+          author_name?: string | null
           company_id?: string
           id?: string
           interview_id?: string
+          provider?: string | null
+          provider_ref?: string | null
           ratings?: Json
           recommendation?: string
           submitted_at?: string
@@ -4921,6 +5006,10 @@ export type Database = {
         Returns: Json
       }
       acknowledge_policy: { Args: { p_policy_id: string }; Returns: Json }
+      add_candidate_note: {
+        Args: { p_body: string; p_candidate_id: string }
+        Returns: Json
+      }
       add_candidate_to_job: {
         Args: {
           p_candidate_id: string
@@ -5104,6 +5193,10 @@ export type Database = {
       }
       import_people: {
         Args: { p_commit?: boolean; p_company_id: string; p_rows: Json }
+        Returns: Json
+      }
+      import_zoho_history: {
+        Args: { p_commit?: boolean; p_payload: Json }
         Returns: Json
       }
       import_zoho_recruit: {

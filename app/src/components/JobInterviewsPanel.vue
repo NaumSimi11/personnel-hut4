@@ -1,14 +1,15 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { supabase } from '@/lib/supabase'
-import { INTERVIEW_KINDS, recommendationLabel } from '@/lib/interviews'
+import { INTERVIEW_KINDS, interviewImportLine, interviewUnresolvedPanelLine, recommendationLabel } from '@/lib/interviews'
 import { offerStatusLabel } from '@/lib/offers'
 
 /**
  * The job's Interviews & Offer tab (plan 018b): every scheduled interview
  * across the job's candidates, the scorecard tally each has (subject to the
  * blind rule), and where each offer stands. Actions live on the candidate
- * page; this is the recruiter's overview.
+ * page; this is the recruiter's overview. An interview the Zoho history
+ * import wrote (plan 055) says so on its own line.
  */
 
 type InterviewRow = {
@@ -16,6 +17,8 @@ type InterviewRow = {
   kind: string
   scheduled_at: string
   status: string
+  provider: string | null
+  custom: unknown
   application: { id: string; candidate: { full_name: string } | null } | null
   panel: { person: { full_name: string } | null }[]
   scorecards: { recommendation: string }[]
@@ -55,7 +58,7 @@ async function load(): Promise<void> {
     supabase
       .from('interviews')
       .select(
-        `id, kind, scheduled_at, status,
+        `id, kind, scheduled_at, status, provider, custom,
          application:applications!inner(id, job_id, candidate:candidates(full_name)),
          panel:interview_panel(person:people!interview_panel_person_id_fkey(full_name)),
          scorecards(recommendation)`,
@@ -105,8 +108,10 @@ onMounted(load)
             <small>
               {{ kindLabel(i.kind) }} · {{ new Date(i.scheduled_at).toLocaleString() }}
               <template v-if="i.panel.length"> · {{ i.panel.map((p) => p.person?.full_name ?? '—').join(', ') }}</template>
+              <template v-if="interviewUnresolvedPanelLine(i)"> · {{ interviewUnresolvedPanelLine(i) }}</template>
               · {{ tally(i) }}
             </small>
+            <small v-if="interviewImportLine(i)" class="imported" data-testid="interview-imported">{{ interviewImportLine(i) }}</small>
           </div>
           <span class="badge" :class="i.status === 'completed' ? 'green' : i.status === 'cancelled' ? '' : 'blue'">{{ i.status }}</span>
         </div>
@@ -152,6 +157,7 @@ onMounted(load)
 .row-text { flex: 1; min-width: 220px; }
 .row-text strong { display: block; font-size: 12px; font-weight: 550; }
 .row-text small { display: block; font-size: 11px; color: var(--muted); margin-top: 4px; }
+.row-text .imported { font-style: italic; }
 .candidate-link { text-decoration: none; color: inherit; }
 .candidate-link:hover strong { color: var(--green); text-decoration: underline; }
 </style>

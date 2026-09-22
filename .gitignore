@@ -16,6 +16,7 @@ playwright-report/
 .zoho-files*.json
 .zoho-review*.json
 .zoho-report*.json
+.zoho-history*.json
 server/public/
 supabase/.temp/
 

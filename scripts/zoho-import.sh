@@ -1,9 +1,16 @@
 #!/usr/bin/env bash
-# zoho-import.sh — run import_zoho_recruit (plan 052) against the Personnel
-# database as the platform admin.
+# zoho-import.sh — run import_zoho_recruit (plan 052) or, with --history,
+# import_zoho_history (plan 055) against the Personnel database as the
+# platform admin.
 #
-#   scripts/zoho-import.sh --dry-run [payload.json]   # report only, nothing written
-#   scripts/zoho-import.sh --commit  [payload.json]   # all or nothing
+#   scripts/zoho-import.sh --dry-run [payload.json]             # report only, nothing written
+#   scripts/zoho-import.sh --commit  [payload.json]             # all or nothing
+#   scripts/zoho-import.sh --dry-run --history [payload.json]   # the notes, interviews and reviews
+#   scripts/zoho-import.sh --commit  --history [payload.json]
+#
+# --history defaults the payload to .zoho-history.json and prints the
+# history report: the counts and the skipped rows grouped by reason — counts
+# only, never a name.
 #
 # The database is ZOHO_DB_URL when set (a disposable local Postgres for the
 # rehearsal), else SUPABASE_DB_URL from .env.local. The direct connection is
@@ -14,14 +21,33 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+USAGE="usage: $0 --dry-run|--commit [--history] [payload.json]"
 MODE="${1:-}"
-PAYLOAD="${2:-$ROOT/.zoho-payload.json}"
 case "$MODE" in
   --dry-run) COMMIT=false ;;
   --commit) COMMIT=true ;;
-  *) echo "usage: $0 --dry-run|--commit [payload.json]" >&2; exit 1 ;;
+  *) echo "$USAGE" >&2; exit 1 ;;
 esac
-[ -f "$PAYLOAD" ] || { echo "payload not found: $PAYLOAD (run npm run import:zoho-recruit:extract in server/ first)" >&2; exit 1; }
+shift
+HISTORY=false
+PAYLOAD=""
+for ARG in "$@"; do
+  case "$ARG" in
+    --history) HISTORY=true ;;
+    --*) echo "$USAGE" >&2; exit 1 ;;
+    *) PAYLOAD="$ARG" ;;
+  esac
+done
+if [ "$HISTORY" = true ]; then
+  FUNCTION="public.import_zoho_history"
+  EXTRACT="import:zoho-history:extract"
+  PAYLOAD="${PAYLOAD:-$ROOT/.zoho-history.json}"
+else
+  FUNCTION="public.import_zoho_recruit"
+  EXTRACT="import:zoho-recruit:extract"
+  PAYLOAD="${PAYLOAD:-$ROOT/.zoho-payload.json}"
+fi
+[ -f "$PAYLOAD" ] || { echo "payload not found: $PAYLOAD (run npm run $EXTRACT in server/ first)" >&2; exit 1; }
 if [ -n "${ZOHO_DB_URL:-}" ]; then
   URL="$ZOHO_DB_URL"
 else
@@ -45,7 +71,7 @@ trap 'rm -f "$SQLFILE"' EXIT
   echo "select set_config('request.jwt.claim.sub', '$ADMIN_UID', true),"
   echo "       set_config('request.jwt.claims', json_build_object('sub', '$ADMIN_UID', 'role', 'authenticated')::text, true),"
   echo "       set_config('app.test_uid', '$ADMIN_UID', true);"
-  printf 'select public.import_zoho_recruit($zohopayload$'
+  printf 'select %s($zohopayload$' "$FUNCTION"
   cat "$PAYLOAD"
   printf '$zohopayload$::jsonb, %s)::text;
 ' "$COMMIT"
@@ -53,6 +79,27 @@ trap 'rm -f "$SQLFILE"' EXIT
 } > "$SQLFILE"
 psql "$URL" -X -q -At -v ON_ERROR_STOP=1 -o "$REPORT" -f "$SQLFILE"
 
+if [ "$HISTORY" = true ]; then
+python - "$REPORT" <<'PY'
+import json, sys
+from collections import Counter
+# The history report (plan 055 §1): counts, the skipped rows by reason and
+# the problems. Reasons and counts only — never a candidate or a user name.
+lines = open(sys.argv[1], encoding='utf-8').read().strip().split('\n')
+r = json.loads(lines[-1])
+tag = '[zoho-import]' + (' [committed]' if r['committed'] else ' [dry run]')
+print(tag, 'counts:', json.dumps(r['counts']))
+skipped = r.get('skipped') or []
+print(tag, f'skipped rows: {len(skipped)}')
+for (kind, reason), n in sorted(Counter((s.get('kind'), s.get('reason')) for s in skipped).items()):
+    print(tag, f'   {kind} · {reason}: {n}')
+problems = r.get('problems') or []
+print(tag, f'problems: {len(problems)}')
+for p in problems:
+    print(tag, 'PROBLEM:', json.dumps(p, ensure_ascii=False))
+print(tag, 'full report:', sys.argv[1])
+PY
+else
 python - "$REPORT" <<'PY'
 import json, sys
 lines = open(sys.argv[1], encoding='utf-8').read().strip().split('\n')
@@ -83,3 +130,4 @@ for h in r['hires']:
     print(tag, f"   {h['candidate']} · {h['job']} · {h['company']} · {h.get('hired_date') or '?'} · {proposal} · {match}")
 print(tag, 'full report:', sys.argv[1])
 PY
+fi

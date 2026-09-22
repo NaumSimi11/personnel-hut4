@@ -9,6 +9,7 @@
     "typecheck": "tsc --noEmit",
     "sync:zoho": "tsx src/zoho/run.ts",
     "import:zoho-recruit:extract": "cd .. && tsx server/scripts/zoho-recruit-extract.ts docs/Data_001/Data docs/Attachments_001 --tz Europe/Skopje --out .zoho-payload.json --files .zoho-files.json --review .zoho-review.json",
+    "import:zoho-history:extract": "cd .. && tsx server/scripts/zoho-recruit-extract.ts docs/Data_001/Data --history .zoho-history.json --tz Europe/Skopje",
     "import:zoho-recruit:files": "tsx scripts/zoho-recruit-files.ts",
     "build:vercel": "cd ../app && npm run build && cd ../server && node scripts/build-vercel.mjs"
   },

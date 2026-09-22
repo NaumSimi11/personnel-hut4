@@ -255,7 +255,9 @@ describe('buildPayload over the synthetic export', () => {
       actor_zoho_id: 'Zrecruit_10000000000000101', actor_name: 'Kristina Testova', created_at: '2024-02-01T14:00:00.000Z',
     })
     expect(byId['Zrecruit_10000000000000603']).toMatchObject({ application_zoho_id: 'Zrecruit_10000000000000501', kind: 'Interview Feedback' })
-    expect(counts.notes).toEqual({ attached: 2, without_application: 2, skipped_modules: 1 })
+    // 606 (a LinkedIn message) and 607 (a job the export does not carry) are
+    // the person-level notes plan 055 imports; 052 only counts them.
+    expect(counts.notes).toEqual({ attached: 2, without_application: 4, skipped_modules: 1 })
   })
 
   it('counts and the review file', () => {

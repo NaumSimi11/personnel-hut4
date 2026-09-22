@@ -175,14 +175,12 @@ update public.candidates c
    set last_activity_at = c.updated_at
  where not exists (select 1 from public.applications a where a.candidate_id = c.id);
 
+-- Only the careers channel has a label-identical source. The linkedin, indeed
+-- and other_manual channels keep their own label through the null fallback
+-- (the "via" line and recruitment_report); a historic row is never relabelled.
 update public.applications
-   set source_key = case source_channel_key
-                      when 'careers' then 'careers_page'
-                      when 'linkedin' then 'linkedin_ad'
-                      when 'indeed' then 'job_board'
-                      when 'other_manual' then 'job_board'
-                    end
- where source_channel_key in ('careers', 'linkedin', 'indeed', 'other_manual');
+   set source_key = 'careers_page'
+ where source_channel_key = 'careers';
 
 -- --------------------------------------------- the visibility rule, rewritten
 -- One shared rule, never a parallel scope: the pool is an explicit capability
@@ -547,7 +545,9 @@ $$;
 
 -- What a picker may learn about a match: the stored name is the accepted
 -- minimum disclosure; nothing about applications the viewer may not see,
--- not even a count. `type CandidateMatch` in candidatePool.ts is this shape.
+-- not even a count. The contact rule is disclosed only where the picker can
+-- act on it (an attachable match); a name-only match carries false / null.
+-- `type CandidateMatch` in candidatePool.ts is this shape.
 create or replace function app.candidate_match_hint(p_id uuid, p_matched_by text) returns jsonb
 language sql stable security definer set search_path = public as $$
   select jsonb_build_object(
@@ -555,10 +555,10 @@ language sql stable security definer set search_path = public as $$
     'full_name', c.full_name,
     'match', p_matched_by,
     'visible', v.visible,
-    'attachable', v.visible or p_matched_by in ('email', 'phone', 'linkedin'),
-    'do_not_contact', c.do_not_contact,
-    'contact_later', c.contact_later,
-    'contact_again_after', c.contact_again_after,
+    'attachable', v.attachable,
+    'do_not_contact', v.attachable and c.do_not_contact,
+    'contact_later', v.attachable and c.contact_later,
+    'contact_again_after', case when v.attachable then c.contact_again_after end,
     'email', case when v.visible then c.email::text
                   when p_matched_by = 'email' then app.mask_email(c.email::text) end,
     'phone', case when v.visible then c.phone end,
@@ -577,7 +577,9 @@ language sql stable security definer set search_path = public as $$
         join public.jobs j on j.id = a.job_id
         join public.companies co on co.id = a.company_id), '[]'::jsonb)
       else '[]'::jsonb end)
-  from public.candidates c, lateral (select app.can_view_candidate(c.id) as visible) v
+  from public.candidates c,
+       lateral (select app.can_view_candidate(c.id) as visible) vis,
+       lateral (select vis.visible, vis.visible or p_matched_by in ('email', 'phone', 'linkedin') as attachable) v
   where c.id = p_id
 $$;
 
@@ -650,6 +652,9 @@ begin
   if v_ref is not null then
     -- A: provider-keyed. Present keys overwrite; absent keys leave the column
     -- alone; created_at, the contact rule and sourced_by are never touched.
+    -- On create, a pool holder may name sourced_by and keep the provider's
+    -- created_at: the export says who sourced the record and when. Branch C
+    -- (a hand-made record) reserves sourced_by for admins — by design.
     select * into v_cand from public.candidates
       where provider = p_provider and provider_ref = v_ref for update;
     if found then
@@ -892,10 +897,14 @@ begin
            or c.current_employer ilike v_like
            or exists (select 1 from unnest(c.skills) s where s ilike v_like))
       and (v_source is null or c.source_key = v_source)
+      -- "wait" is the assert_contactable rule (contactState in candidatePool.ts
+      -- mirrors it): a contact-later record whose date has passed is contactable.
       and (v_contact = 'any'
-           or (v_contact = 'ok' and not c.do_not_contact and not c.contact_later)
+           or (v_contact = 'ok' and not c.do_not_contact
+               and not (c.contact_later and (c.contact_again_after is null or c.contact_again_after > current_date)))
            or (v_contact = 'do_not_contact' and c.do_not_contact)
-           or (v_contact = 'wait' and c.contact_later))
+           or (v_contact = 'wait' and c.contact_later
+               and (c.contact_again_after is null or c.contact_again_after > current_date)))
       and (v_activity = 'any'
            or (v_activity = '90d' and c.last_activity_at >= now() - interval '90 days')
            or (v_activity = '1y' and c.last_activity_at >= now() - interval '1 year')
@@ -919,6 +928,9 @@ begin
              'contact_again_after', pg.contact_again_after,
              'last_activity_at', pg.last_activity_at, 'archived_at', pg.archived_at,
              'files_count', (select count(*) from public.candidate_files cf where cf.candidate_id = pg.id),
+             -- The count and the list share one visibility rule; only the list is capped.
+             'applications_count', (select count(*) from public.applications a
+                                     where a.candidate_id = pg.id and app.has_capability(a.company_id, 'candidates.view')),
              'applications', coalesce((
                select jsonb_agg(jsonb_build_object(
                         'id', a.id, 'job_id', a.job_id, 'job_title', j.title,

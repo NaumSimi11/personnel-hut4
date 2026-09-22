@@ -4816,18 +4816,31 @@ set app.test_uid = '';
 -- enforced by the database, the CV lives on the candidate, and the Zoho
 -- Recruit export comes in through the same door a LinkedIn export will use.
 -- Fixtures: P1 (a Zoho row, mixed-case email on purpose), P2 (never), P3
--- (later), job JB in B, Zed Hired employed in A, and Omar with ONLY
--- candidates.source in A — a sourcer with no candidates.view anywhere, the
--- sharpest proof that the pool opens no company history.
+-- (later), P4 (later, but the date has passed), P5 (four applications in B,
+-- for the count beside the capped list), jobs JB and JB2-4 in B, Zed Hired
+-- employed in A, and Omar with ONLY candidates.source in A — a sourcer with
+-- no candidates.view anywhere, the sharpest proof that the pool opens no
+-- company history.
 insert into public.candidates (id, full_name, email, phone, provider, provider_ref, linkedin_url) values
   ('80000000-0000-0000-0000-000000000671', 'Pool Person', 'Pool@Example.test', '+389 70 000 067',
    'zoho_recruit', 'Z-1', 'https://www.linkedin.com/in/pool-person/');
 insert into public.candidates (id, full_name, do_not_contact, do_not_contact_reason, do_not_contact_at) values
   ('80000000-0000-0000-0000-000000000672', 'Never Person', true, 'Asked us to stop.', now());
 insert into public.candidates (id, full_name, contact_later, contact_again_after) values
-  ('80000000-0000-0000-0000-000000000673', 'Later Person', true, current_date + 30);
+  ('80000000-0000-0000-0000-000000000673', 'Later Person', true, current_date + 30),
+  ('80000000-0000-0000-0000-000000000674', 'Expired Person', true, current_date - 1);
+insert into public.candidates (id, full_name) values
+  ('80000000-0000-0000-0000-000000000675', 'Busy Person');
 insert into public.jobs (id, company_id, title, status) values
-  ('70000000-0000-0000-0000-000000000067', '10000000-0000-0000-0000-00000000000b', 'Pool Role B', 'open');
+  ('70000000-0000-0000-0000-000000000067', '10000000-0000-0000-0000-00000000000b', 'Pool Role B', 'open'),
+  ('70000000-0000-0000-0000-000000000068', '10000000-0000-0000-0000-00000000000b', 'Pool Role B2', 'open'),
+  ('70000000-0000-0000-0000-000000000069', '10000000-0000-0000-0000-00000000000b', 'Pool Role B3', 'open'),
+  ('70000000-0000-0000-0000-00000000006a', '10000000-0000-0000-0000-00000000000b', 'Pool Role B4', 'open');
+insert into public.applications (id, job_id, company_id, candidate_id) values
+  ('90000000-0000-0000-0000-000000000675', '70000000-0000-0000-0000-000000000067', '10000000-0000-0000-0000-00000000000b', '80000000-0000-0000-0000-000000000675'),
+  ('90000000-0000-0000-0000-000000000676', '70000000-0000-0000-0000-000000000068', '10000000-0000-0000-0000-00000000000b', '80000000-0000-0000-0000-000000000675'),
+  ('90000000-0000-0000-0000-000000000677', '70000000-0000-0000-0000-000000000069', '10000000-0000-0000-0000-00000000000b', '80000000-0000-0000-0000-000000000675'),
+  ('90000000-0000-0000-0000-000000000678', '70000000-0000-0000-0000-00000000006a', '10000000-0000-0000-0000-00000000000b', '80000000-0000-0000-0000-000000000675');
 insert into public.people (id, full_name, personal_email) values
   ('20000000-0000-0000-0000-000000000067', 'Zed Hired', 'zed@example.test');
 insert into public.employment_periods (id, person_id, company_id, job_title, status, start_date) values
@@ -4887,7 +4900,8 @@ begin
   assert exists (select 1 from public.candidates where id = '80000000-0000-0000-0000-000000000001'),
     'Alex sees Cathy through her A application';
   assert not exists (select 1 from public.candidates where id in
-    ('80000000-0000-0000-0000-000000000671', '80000000-0000-0000-0000-000000000672', '80000000-0000-0000-0000-000000000673')),
+    ('80000000-0000-0000-0000-000000000671', '80000000-0000-0000-0000-000000000672',
+     '80000000-0000-0000-0000-000000000673', '80000000-0000-0000-0000-000000000674')),
     'application-less candidates are invisible to a reviewer';
   begin
     insert into public.candidates (full_name) values ('Direct Insert');
@@ -4927,6 +4941,18 @@ begin
     'full_name', 'Person Pool', 'job_id', '70000000-0000-0000-0000-000000000001'));
   assert r->>'action' = 'matches' and r->'matches'->0->>'match' = 'name'
      and not (r->'matches'->0->>'attachable')::boolean, 'a name match is a suggestion, not attachable: ' || r::text;
+  -- A name-only match cannot be acted on, so it carries no contact rule.
+  r := public.upsert_sourced_candidate('manual', null, jsonb_build_object(
+    'full_name', 'Person Never', 'job_id', '70000000-0000-0000-0000-000000000001'));
+  assert r->>'action' = 'matches' and r->'matches'->0->>'match' = 'name'
+     and not (r->'matches'->0->>'attachable')::boolean and not (r->'matches'->0->>'do_not_contact')::boolean,
+    'a name-only match does not disclose never: ' || r::text;
+  r := public.upsert_sourced_candidate('manual', null, jsonb_build_object(
+    'full_name', 'Person Later', 'job_id', '70000000-0000-0000-0000-000000000001'));
+  assert r->>'action' = 'matches' and r->'matches'->0->>'match' = 'name'
+     and not (r->'matches'->0->>'contact_later')::boolean and r->'matches'->0->>'contact_again_after' is null,
+    'a name-only match does not disclose contact later: ' || r::text;
+  assert (select count(*) from public.candidates) = n, 'nothing is written on a name match';
   begin
     perform public.upsert_sourced_candidate('manual', null, jsonb_build_object(
       'full_name', 'Person Pool', 'attach_to', '80000000-0000-0000-0000-000000000671',
@@ -5056,6 +5082,12 @@ begin
   r := public.search_candidates('{"q":"070 000 068"}');
   assert exists (select 1 from jsonb_array_elements(r->'rows') x where x->>'id' = '80000000-0000-0000-0000-000000000671'),
     'search by phone: ' || r::text;
+  r := public.search_candidates('{"contact":"ok"}');
+  assert exists (select 1 from jsonb_array_elements(r->'rows') x where x->>'id' = '80000000-0000-0000-0000-000000000671')
+     and exists (select 1 from jsonb_array_elements(r->'rows') x where x->>'id' = '80000000-0000-0000-0000-000000000674')
+     and not exists (select 1 from jsonb_array_elements(r->'rows') x where x->>'id' in
+       ('80000000-0000-0000-0000-000000000672', '80000000-0000-0000-0000-000000000673')),
+    'the ok filter: an expired contact-later date is contactable again: ' || r::text;
   r := public.search_candidates('{"contact":"do_not_contact"}');
   assert exists (select 1 from jsonb_array_elements(r->'rows') x where x->>'id' = '80000000-0000-0000-0000-000000000672')
      and not exists (select 1 from jsonb_array_elements(r->'rows') x where x->>'id' in
@@ -5064,8 +5096,8 @@ begin
   r := public.search_candidates('{"contact":"wait"}');
   assert exists (select 1 from jsonb_array_elements(r->'rows') x where x->>'id' = '80000000-0000-0000-0000-000000000673')
      and not exists (select 1 from jsonb_array_elements(r->'rows') x where x->>'id' in
-       ('80000000-0000-0000-0000-000000000671', '80000000-0000-0000-0000-000000000672')),
-    'the wait filter: ' || r::text;
+       ('80000000-0000-0000-0000-000000000671', '80000000-0000-0000-0000-000000000672', '80000000-0000-0000-0000-000000000674')),
+    'the wait filter: a passed date is no longer a wait: ' || r::text;
   r := public.search_candidates('{"activity":"90d"}');
   assert (select count(*) from jsonb_array_elements(r->'rows') x where x->>'id' in
     ('80000000-0000-0000-0000-000000000671', '80000000-0000-0000-0000-000000000672', '80000000-0000-0000-0000-000000000673')) = 3,
@@ -5073,14 +5105,28 @@ begin
   r := public.search_candidates('{"company_id":"10000000-0000-0000-0000-00000000000a"}');
   assert (r->>'total')::int = 0, 'a company filter needs candidates.view there: ' || r::text;
   r := public.search_candidates('{}');
-  assert (r->>'total')::int >= 3 and not exists (select 1 from jsonb_array_elements(r->'rows') x where x->'applications' <> '[]'::jsonb),
-    'every row shows no applications to a sourcer without candidates.view: ' || r::text;
+  assert (r->>'total')::int >= 3 and not exists (select 1 from jsonb_array_elements(r->'rows') x where x->'applications' <> '[]'::jsonb)
+     and not exists (select 1 from jsonb_array_elements(r->'rows') x where (x->>'applications_count')::int <> 0),
+    'every row shows no applications, and a zero count, to a sourcer without candidates.view: ' || r::text;
   begin
     perform public.add_candidate_to_job('80000000-0000-0000-0000-000000000671', '70000000-0000-0000-0000-000000000001');
     raise exception 'FAIL: a sourcer added to a job without review there';
   exception when insufficient_privilege then
     if sqlerrm not like '%"Record interview feedback" capability in Company A.%' then raise; end if;
   end;
+end $$;
+reset role;
+-- Ada (admin, candidates.view everywhere): the count is every visible
+-- application, the embedded list stays capped at three.
+set app.test_uid = '00000000-0000-0000-0000-000000000004';
+set role authenticated;
+do $$
+declare r jsonb; x jsonb;
+begin
+  r := public.search_candidates('{"q":"busy"}');
+  select v into x from jsonb_array_elements(r->'rows') v where v->>'id' = '80000000-0000-0000-0000-000000000675';
+  assert x is not null and (x->>'applications_count')::int = 4 and jsonb_array_length(x->'applications') = 3,
+    'four visible applications counted beside a list of three: ' || r::text;
 end $$;
 reset role;
 set app.test_uid = '00000000-0000-0000-0000-000000000005';  -- Bea
@@ -5120,6 +5166,11 @@ begin
   assert (select sourced_by::text || '|' || coalesce(provider_ref, 'null') || '|' || source_key from public.candidates
           where id = (r->>'id')::uuid) = '20000000-0000-0000-0000-000000000003|null|head_hunt',
     'sourced by Omar, no provider reference';
+  -- A pool holder sees the match, so it is attachable and the rule is disclosed.
+  r := public.upsert_sourced_candidate('manual', null, '{"full_name":"Person Never"}');
+  assert r->>'action' = 'matches' and r->'matches'->0->>'match' = 'name'
+     and (r->'matches'->0->>'attachable')::boolean and (r->'matches'->0->>'do_not_contact')::boolean,
+    'an attachable match discloses never: ' || r::text;
   r := public.upsert_sourced_candidate('linkedin_recruiter', 'LR-1',
     '{"full_name":"Lin Ked","current_title":"Dev","created_at":"2024-03-01T00:00:00Z"}');
   assert r->>'action' = 'created', 'a provider record is created: ' || r::text;

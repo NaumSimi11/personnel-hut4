@@ -234,13 +234,16 @@ describe('buildPayload over the synthetic export', () => {
       candidate_zoho_id: C1, job_zoho_id: 'Zrecruit_10000000000000301', stage_key: 'hired', stale_closed: false, zoho_status: 'Hired', zoho_stage: 'Hired',
       withdrawn_reason: null, rejected_reason: null, received_at: '2024-01-12T13:20:00.000Z', modified_at: '2024-03-05T09:00:00.000Z',
       modified_by_zoho_id: 'Zrecruit_10000000000000101', hired_date: '2024-03-04', hired_by_zoho_id: 'Zrecruit_10000000000000101',
+      sub_status_key: null,
       custom: { zoho: { created_by: 'Kristina Testova' } },
     })
     expect(applications['Zrecruit_10000000000000502']).toMatchObject({
       stage_key: 'screening', stale_closed: true, close_date: '2024-05-09T09:30:00.000Z', close_date_assumed: true, withdrawn_reason: 'Job closed', hired_date: null, hired_by_zoho_id: null,
+      // The D5 sub-status guess (Contacted → contacted) is kept even though the application is stale-closed.
+      sub_status_key: 'contacted',
     })
-    expect(applications['Zrecruit_10000000000000503']).toMatchObject({ stage_key: 'withdrawn', stale_closed: false, withdrawn_reason: 'Do not contact', close_date: null, close_date_assumed: false })
-    expect(applications['Zrecruit_10000000000000504']).toMatchObject({ stage_key: 'rejected', rejected_reason: 'Rejected, hirable later', withdrawn_reason: null })
+    expect(applications['Zrecruit_10000000000000503']).toMatchObject({ stage_key: 'withdrawn', stale_closed: false, withdrawn_reason: 'Do not contact', close_date: null, close_date_assumed: false, sub_status_key: null })
+    expect(applications['Zrecruit_10000000000000504']).toMatchObject({ stage_key: 'rejected', rejected_reason: 'Rejected, hirable later', withdrawn_reason: null, sub_status_key: null })
   })
 
   it('notes: the pair and the interview route attach, the rest are counted', () => {

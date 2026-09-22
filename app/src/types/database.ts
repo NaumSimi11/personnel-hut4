@@ -125,9 +125,11 @@ export type Database = {
           body: string | null
           created_at: string
           from_stage_key: string | null
+          from_sub_status_key: string | null
           id: string
           kind: string
           to_stage_key: string | null
+          to_sub_status_key: string | null
         }
         Insert: {
           actor_id?: string | null
@@ -135,9 +137,11 @@ export type Database = {
           body?: string | null
           created_at?: string
           from_stage_key?: string | null
+          from_sub_status_key?: string | null
           id?: string
           kind: string
           to_stage_key?: string | null
+          to_sub_status_key?: string | null
         }
         Update: {
           actor_id?: string | null
@@ -145,9 +149,11 @@ export type Database = {
           body?: string | null
           created_at?: string
           from_stage_key?: string | null
+          from_sub_status_key?: string | null
           id?: string
           kind?: string
           to_stage_key?: string | null
+          to_sub_status_key?: string | null
         }
         Relationships: [
           {
@@ -265,6 +271,38 @@ export type Database = {
         }
         Relationships: []
       }
+      application_sub_statuses: {
+        Row: {
+          archived_at: string | null
+          key: string
+          label: string
+          sort_order: number
+          stage_key: string
+        }
+        Insert: {
+          archived_at?: string | null
+          key: string
+          label: string
+          sort_order?: number
+          stage_key: string
+        }
+        Update: {
+          archived_at?: string | null
+          key?: string
+          label?: string
+          sort_order?: number
+          stage_key?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "application_sub_statuses_stage_key_fkey"
+            columns: ["stage_key"]
+            isOneToOne: false
+            referencedRelation: "application_stages"
+            referencedColumns: ["key"]
+          },
+        ]
+      }
       applications: {
         Row: {
           candidate_id: string
@@ -285,6 +323,7 @@ export type Database = {
           source_key: string | null
           source_provider: string | null
           stage_key: string
+          sub_status_key: string | null
           updated_at: string
           withdrawn_reason: string | null
         }
@@ -307,6 +346,7 @@ export type Database = {
           source_key?: string | null
           source_provider?: string | null
           stage_key?: string
+          sub_status_key?: string | null
           updated_at?: string
           withdrawn_reason?: string | null
         }
@@ -329,6 +369,7 @@ export type Database = {
           source_key?: string | null
           source_provider?: string | null
           stage_key?: string
+          sub_status_key?: string | null
           updated_at?: string
           withdrawn_reason?: string | null
         }
@@ -387,6 +428,13 @@ export type Database = {
             columns: ["stage_key"]
             isOneToOne: false
             referencedRelation: "application_stages"
+            referencedColumns: ["key"]
+          },
+          {
+            foreignKeyName: "applications_sub_status_key_fkey"
+            columns: ["sub_status_key"]
+            isOneToOne: false
+            referencedRelation: "application_sub_statuses"
             referencedColumns: ["key"]
           },
         ]
@@ -5074,6 +5122,14 @@ export type Database = {
       }
       link_hired_application: {
         Args: { p_application_id: string; p_person_id?: string | null }
+        Returns: Json
+      }
+      log_outreach: {
+        Args: {
+          p_application_ids: string[]
+          p_note: string
+          p_sub_status_key: string
+        }
         Returns: Json
       }
       mark_handover_sent: { Args: { p_id: string }; Returns: Json }

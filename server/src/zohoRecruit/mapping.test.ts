@@ -79,7 +79,27 @@ describe('mapStatus', () => {
     expect(mapStatus('Unqualified')).toEqual({ stage: 'rejected', reason: 'Unqualified' })
     expect(mapStatus('Offer-Withdrawn')).toEqual({ stage: 'rejected', reason: 'Offer withdrawn' })
     expect(mapStatus('Rejected-Hirable')).toEqual({ stage: 'rejected', reason: 'Rejected, hirable later', flag: 'contact_later' })
-    expect(mapStatus('Contacted')).toEqual({ stage: 'screening' })
+    expect(mapStatus('Contacted')).toEqual({ stage: 'screening', sub: 'contacted' })
+  })
+
+  it('carries the D5 outreach sub-status backfill (plan 054); every other mapped status has none', () => {
+    const withSub: Record<string, string> = {
+      Associated: 'sourced',
+      New: 'sourced',
+      'Attempted to Contact': 'contact_attempted',
+      'Not Contacted': 'contact_attempted',
+      'Not contacted': 'contact_attempted',
+      Contacted: 'contacted',
+      Interested: 'interested',
+      'Waiting-for-Evaluation': 'awaiting_evaluation',
+      Qualified: 'qualified',
+    }
+    for (const [status, sub] of Object.entries(withSub)) {
+      expect(mapStatus(status).sub, status).toBe(sub)
+    }
+    for (const status of Object.keys(STATUSES).filter((s) => !(s in withSub))) {
+      expect(mapStatus(status).sub, status).toBeUndefined()
+    }
   })
 
   it('is byte-exact: an unknown status throws, never guesses', () => {

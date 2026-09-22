@@ -8,7 +8,8 @@ import { longDate } from './dates.js'
 
 export type StageKey = 'new' | 'screening' | 'interview' | 'offer' | 'hired' | 'rejected' | 'withdrawn'
 export type ContactFlag = 'do_not_contact' | 'contact_later'
-export type StatusMapping = { stage: StageKey; reason?: string; flag?: ContactFlag }
+/** `sub` is the D5 outreach sub-status backfill (plan 054); undefined outside new/screening's mapped statuses. */
+export type StatusMapping = { stage: StageKey; reason?: string; flag?: ContactFlag; sub?: string }
 export type JobStatus = 'open' | 'on_hold' | 'filled' | 'closed'
 
 export const TERMINAL_STAGES: readonly StageKey[] = ['hired', 'rejected', 'withdrawn']
@@ -16,16 +17,16 @@ export const TERMINAL_STAGES: readonly StageKey[] = ['hired', 'rejected', 'withd
 /** The 38 distinct `Candidate Status` values of Associated_001.csv, byte-exact. */
 export const STATUS_TO_STAGE: Readonly<Record<string, StatusMapping>> = {
   // screening
-  Contacted: { stage: 'screening' },
-  Interested: { stage: 'screening' },
-  Qualified: { stage: 'screening' },
-  'Waiting-for-Evaluation': { stage: 'screening' },
+  Contacted: { stage: 'screening', sub: 'contacted' },
+  Interested: { stage: 'screening', sub: 'interested' },
+  Qualified: { stage: 'screening', sub: 'qualified' },
+  'Waiting-for-Evaluation': { stage: 'screening', sub: 'awaiting_evaluation' },
   // new
-  Associated: { stage: 'new' },
-  New: { stage: 'new' },
-  'Attempted to Contact': { stage: 'new' },
-  'Not Contacted': { stage: 'new' },
-  'Not contacted': { stage: 'new' },
+  Associated: { stage: 'new', sub: 'sourced' },
+  New: { stage: 'new', sub: 'sourced' },
+  'Attempted to Contact': { stage: 'new', sub: 'contact_attempted' },
+  'Not Contacted': { stage: 'new', sub: 'contact_attempted' },
+  'Not contacted': { stage: 'new', sub: 'contact_attempted' },
   // withdrawn
   'Not Interested': { stage: 'withdrawn', reason: 'Not interested' },
   'Not responding': { stage: 'withdrawn', reason: 'No response' },

@@ -45,6 +45,8 @@ export type PayloadApplication = {
   close_date: string | null; close_date_assumed: boolean; zoho_status: string; zoho_stage: string
   withdrawn_reason: string | null; rejected_reason: string | null; received_at: string | null; modified_at: string | null
   modified_by_zoho_id: string | null; hired_date: string | null; hired_by_zoho_id: string | null
+  /** D5's sub-status guess (plan 054), carried for the next import — 0067's import_zoho_recruit does not read it yet. */
+  sub_status_key: string | null
   custom: { zoho: { created_by: string | null } }
 }
 export type PayloadNote = {
@@ -375,6 +377,8 @@ function buildApplication(a: CsvRow, job: PayloadJob, ctx: Ctx): PayloadApplicat
     modified_by_zoho_id: blank(a['Modified By']),
     hired_date: stamp(ctx, 'application', ref, 'Hired Date', a['Hired Date'], parseIsoDate),
     hired_by_zoho_id: blank(a['Hired By']),
+    // Not read by 0067's import_zoho_recruit (the 0069 backfill covered the imported rows); carried for the next import.
+    sub_status_key: mapped.sub ?? null,
     custom: { zoho: { created_by: ctx.users.get(a['Created By']) ?? null } },
   }
 }

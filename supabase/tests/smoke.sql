@@ -5674,4 +5674,83 @@ delete from public.grant_capabilities gc using omar_added a
   where gc.grant_id = a.grant_id and gc.capability_key = a.capability_key;
 drop table omar_added;
 
+-- ================================================================ 0068
+-- Search by words (plan 053): every word of the query's key is a word-prefix
+-- of some word of the candidate's key, order-free. The 0067 fixtures stand;
+-- Ada (platform admin, so a pool holder everywhere) adds four records through
+-- upsert_sourced_candidate — the door the app uses — and searches as herself.
+set app.test_uid = '00000000-0000-0000-0000-000000000004';  -- Ada
+set role authenticated;
+do $$
+declare r jsonb; v_elena uuid; v_marija uuid; v_ana uuid; v_test uuid;
+begin
+  r := public.upsert_sourced_candidate('manual', null, '{"full_name":"Élena Marija Trajkovska"}');
+  assert r->>'action' = 'created', 'Élena is created: ' || r::text;
+  v_elena := (r->>'id')::uuid;
+  assert (select name_key from public.candidates where id = v_elena) = 'elena marija trajkovska',
+    'the stored key is folded, lower-cased and sorted';
+  r := public.upsert_sourced_candidate('manual', null, '{"full_name":"Marija Trajkovski"}');
+  assert r->>'action' = 'created', 'a near namesake is a different key, so no match: ' || r::text;
+  v_marija := (r->>'id')::uuid;
+  r := public.upsert_sourced_candidate('manual', null, '{"full_name":"Ana Ilievska"}');
+  assert r->>'action' = 'created', 'Ana is created: ' || r::text;
+  v_ana := (r->>'id')::uuid;
+  r := public.upsert_sourced_candidate('manual', null, '{"full_name":"Pool Person Test"}');
+  assert r->>'action' = 'created', 'the three-word pool name is created: ' || r::text;
+  v_test := (r->>'id')::uuid;
+  assert (select name_key from public.candidates where id = v_test) = 'person pool test',
+    'P1 ("Pool Person") and this one are different keys';
+
+  -- 1. Two prefixes, out of order, folded on the stored side.
+  r := public.search_candidates('{"q":"Traj Mar"}');
+  assert exists (select 1 from jsonb_array_elements(r->'rows') x where (x->>'id')::uuid = v_elena),
+    'Traj Mar finds Élena Marija Trajkovska: ' || r::text;
+  -- 2. Folded on the query side: "elena" is the key of "Élena".
+  r := public.search_candidates('{"q":"elena traj"}');
+  assert (r->>'total')::int = 1
+     and (r->'rows'->0->>'id')::uuid = v_elena, 'elena traj finds only Élena: ' || r::text;
+  -- 3. Every word must match, so a word from another person excludes both.
+  r := public.search_candidates('{"q":"Trajkovska Ana"}');
+  assert (r->>'total')::int = 0, 'Trajkovska Ana finds neither Élena nor Ana Ilievska: ' || r::text;
+  assert not exists (select 1 from jsonb_array_elements(r->'rows') x
+                     where (x->>'id')::uuid in (v_elena, v_ana, v_marija)), 'and names no one: ' || r::text;
+  -- 4. The defect that started plan 053: a partial multi-word query whose
+  -- words are not a contiguous run of the sorted key.
+  r := public.search_candidates('{"q":"Pool Test"}');
+  assert (r->>'total')::int = 1 and (r->'rows'->0->>'id')::uuid = v_test,
+    'Pool Test finds Pool Person Test: ' || r::text;
+  r := public.search_candidates('{"q":"test pool"}');
+  assert exists (select 1 from jsonb_array_elements(r->'rows') x where (x->>'id')::uuid = v_test),
+    'the order of the query words does not matter: ' || r::text;
+  r := public.search_candidates('{"q":"Per Po"}');
+  assert exists (select 1 from jsonb_array_elements(r->'rows') x where (x->>'id')::uuid = v_test)
+     and exists (select 1 from jsonb_array_elements(r->'rows') x
+                 where x->>'id' = '80000000-0000-0000-0000-000000000671'),
+    'two short prefixes find Pool Person Test and P1: ' || r::text;
+  r := public.search_candidates('{"q":"Pool Testx"}');
+  assert (r->>'total')::int = 0, 'a prefix test is not a substring test: Testx matches nothing: ' || r::text;
+
+  -- 5. The other predicates are untouched: an email fragment and a skill.
+  r := public.search_candidates('{"q":"newpool@"}');
+  assert exists (select 1 from jsonb_array_elements(r->'rows') x where x->>'full_name' = 'New Pool'),
+    'an email fragment still finds New Pool: ' || r::text;
+  r := public.search_candidates('{"q":"Excel"}');
+  assert exists (select 1 from jsonb_array_elements(r->'rows') x where x->>'full_name' = 'Zoho One'),
+    'a skill still finds the imported Zoho row: ' || r::text;
+
+  -- 6. Paging arithmetic is untouched: total counts the matches, and the
+  -- first page carries them all.
+  r := public.search_candidates('{"q":"traj"}');
+  assert (r->>'total')::int = 2 and jsonb_array_length(r->'rows') = 2
+     and exists (select 1 from jsonb_array_elements(r->'rows') x where (x->>'id')::uuid = v_elena)
+     and exists (select 1 from jsonb_array_elements(r->'rows') x where (x->>'id')::uuid = v_marija),
+    'one prefix, both namesakes, total = rows: ' || r::text;
+  r := public.search_candidates('{"q":"traj","limit":1}');
+  assert (r->>'total')::int = 2 and jsonb_array_length(r->'rows') = 1, 'total ignores the page size: ' || r::text;
+  r := public.search_candidates('{"q":"traj","limit":1,"offset":1}');
+  assert (r->>'total')::int = 2 and jsonb_array_length(r->'rows') = 1, 'and the offset: ' || r::text;
+end $$;
+reset role;
+set app.test_uid = '';
+
 select 'SMOKE TESTS PASSED' as result;

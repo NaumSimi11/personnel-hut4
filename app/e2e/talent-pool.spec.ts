@@ -169,14 +169,14 @@ test('add to pool → CV on the record → add to job → found in the pool → 
   expect(apps?.[0]?.stage_key).toBe('new')
 
   // Back to the pool: the search finds the row with its latest application.
-  // The name search is the sorted-word key (name_key: "e e person pool"), so
-  // the query is the full name — a partial "E2E Pool" keys to "e e pool",
-  // which that sorted key does not contain. The search is asserted through
-  // the address bar, so the row is the search's, not the unfiltered load's.
+  // A partial name is enough (0068): every word of the query's key is a
+  // word-prefix of some word of the candidate's key ("e e pool" against
+  // "e e person pool"), order-free. The search is asserted through the
+  // address bar, so the row is the search's, not the unfiltered load's.
   await page.goto('/hiring?tab=pool')
-  await page.getByTestId('pool-search').fill(PERSON_NAME)
+  await page.getByTestId('pool-search').fill('E2E Pool')
   await expect(page).toHaveURL(/tab=pool/)
-  await expect(page).toHaveURL(/q=E2E(\+|%20)Pool(\+|%20)Person/)
+  await expect(page).toHaveURL(/q=E2E(\+|%20)Pool(&|$)/)
   await expect(page.getByTestId('pool-count')).toContainText('1 person · showing 1')
   const poolRow = page.getByTestId(`pool-row-${candidateId}`)
   await expect(poolRow).toBeVisible()

@@ -27,6 +27,12 @@ const FOLD = new Map(Array.from(FOLD_FROM, (ch, i) => [ch, FOLD_TO[i] ?? ch]))
 /**
  * Lower-cased, Latin diacritics folded, bracketed parts dropped, non-letters
  * to spaces, words sorted and joined. A suggestion key, never an identity.
+ *
+ * The sort is for dedupe, not for search: dedupe (upsert_sourced_candidate)
+ * compares whole keys, so "Iliev Dimitar" and "Dimitar Iliev" are one person.
+ * The pool search (search_candidates, migration 0068) does not compare whole
+ * keys — it matches every word of the query's key as a word-prefix of some
+ * word of the candidate's key, order-free, so "Mar Pet" finds "Marko Petrov".
  */
 export function nameKey(name: string | null | undefined): string | null {
   if (!name) return null

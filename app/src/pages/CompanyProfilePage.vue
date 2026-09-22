@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { visibleCompanyTabs } from '@/lib/companyTabs'
+import { friendlyDeleteError, jobDeletable, requestDeletable } from '@/lib/hiringDelete'
 import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { supabase } from '@/lib/supabase'
@@ -94,7 +95,14 @@ type EmploymentRow = {
 }
 
 type HiringRequestRow = { id: string; title: string; status: string }
-type JobRow = { id: string; title: string; status: string }
+type JobRow = {
+  id: string
+  title: string
+  status: string
+  hiring_request_id: string | null
+  /** PostgREST returns an embedded aggregate as a one-row array. */
+  applications: { count: number }[]
+}
 
 type AccessGrantRow = {
   id: string
@@ -215,6 +223,45 @@ const visibleTabs = computed(() =>
     companyKind: company.value?.kind ?? 'company',
   }),
 )
+// Deleting a hiring request or a job (task.md). The database is the real
+// guard — a job with applications and a request that became a job are both
+// held by foreign keys — so this only says so before the click, and reloads
+// after, since a delete changes what else may be deleted.
+const confirmingDelete = ref<string | null>(null)
+const deleting = ref(false)
+const hiringError = ref<string | null>(null)
+
+const mayDeleteJobs = computed(() => auth.can(companyId, 'jobs.edit'))
+const mayDeleteRequests = computed(() =>
+  ['jobs.request', 'jobs.edit', 'jobs.approve'].some((capability) => auth.can(companyId, capability)),
+)
+
+function jobApplications(job: JobRow): number {
+  return job.applications?.[0]?.count ?? 0
+}
+function jobVerdict(job: JobRow) {
+  return jobDeletable({ applications: jobApplications(job) }, mayDeleteJobs.value)
+}
+function requestVerdict(request: HiringRequestRow) {
+  return requestDeletable(
+    { hasJob: jobs.value.some((j) => j.hiring_request_id === request.id) },
+    mayDeleteRequests.value,
+  )
+}
+
+async function removeHiring(table: 'jobs' | 'hiring_requests', id: string): Promise<void> {
+  hiringError.value = null
+  deleting.value = true
+  const { error: err } = await supabase.from(table).delete().eq('id', id)
+  deleting.value = false
+  confirmingDelete.value = null
+  if (err) {
+    hiringError.value = friendlyDeleteError(err.message)
+    return
+  }
+  await load()
+}
+
 const inviteDialog = ref<InstanceType<typeof InviteAccessDialog> | null>(null)
 const upcomingPeople = computed(() => upcoming(employments.value, todayDb()))
 // A stable array: a fresh literal on every render would make the card reload.
@@ -320,7 +367,7 @@ async function load(): Promise<void> {
       .eq('company_id', companyId)
       .neq('status', 'former'),
     supabase.from('hiring_requests').select('id, title, status').eq('company_id', companyId),
-    supabase.from('jobs').select('id, title, status').eq('company_id', companyId),
+    supabase.from('jobs').select('id, title, status, hiring_request_id, applications(count)').eq('company_id', companyId),
     supabase
       .from('plans')
       .select('*', { count: 'exact', head: true })
@@ -721,6 +768,7 @@ onMounted(load)
         </div>
 
         <div v-else-if="activeTab === 'hiring'">
+          <p v-if="hiringError" class="error-note" role="alert">{{ hiringError }}</p>
           <div class="card">
             <div class="card-head"><h2>Hiring requests</h2></div>
             <div v-if="!hiringRequests.length" class="empty">
@@ -732,6 +780,26 @@ onMounted(load)
                 <span class="badge" :class="hiringRequestBadgeClass(r.status)">
                   {{ r.status.replace('_', ' ') }}
                 </span>
+                <template v-if="confirmingDelete === `hiring_requests:${r.id}`">
+                  <span class="confirm-text">Delete this request?</span>
+                  <button class="button small-btn" type="button" :disabled="deleting" @click="removeHiring('hiring_requests', r.id)">
+                    {{ deleting ? 'Deleting…' : 'Yes, delete' }}
+                  </button>
+                  <button class="button secondary small-btn" type="button" :disabled="deleting" @click="confirmingDelete = null">
+                    Cancel
+                  </button>
+                </template>
+                <button
+                  v-else
+                  class="button secondary small-btn"
+                  type="button"
+                  :disabled="!requestVerdict(r).canDelete"
+                  :title="requestVerdict(r).reason ?? 'Delete this hiring request'"
+                  :data-testid="`delete-request-${r.id}`"
+                  @click="confirmingDelete = `hiring_requests:${r.id}`"
+                >
+                  Delete
+                </button>
               </div>
             </div>
           </div>
@@ -746,6 +814,26 @@ onMounted(load)
                 <router-link class="button secondary small-btn" :to="{ name: 'job', params: { jobId: j.id } }">
                   Open job
                 </router-link>
+                <template v-if="confirmingDelete === `jobs:${j.id}`">
+                  <span class="confirm-text">Delete this job?</span>
+                  <button class="button small-btn" type="button" :disabled="deleting" @click="removeHiring('jobs', j.id)">
+                    {{ deleting ? 'Deleting…' : 'Yes, delete' }}
+                  </button>
+                  <button class="button secondary small-btn" type="button" :disabled="deleting" @click="confirmingDelete = null">
+                    Cancel
+                  </button>
+                </template>
+                <button
+                  v-else
+                  class="button secondary small-btn"
+                  type="button"
+                  :disabled="!jobVerdict(j).canDelete"
+                  :title="jobVerdict(j).reason ?? 'Delete this job'"
+                  :data-testid="`delete-job-${j.id}`"
+                  @click="confirmingDelete = `jobs:${j.id}`"
+                >
+                  Delete
+                </button>
               </div>
             </div>
           </div>
@@ -922,4 +1010,5 @@ onMounted(load)
   border-top: 1px solid var(--line);
   margin: 0;
 }
+.confirm-text { font-size: 12px; font-weight: 600; }
 </style>

@@ -3,7 +3,8 @@ import { computed, onMounted, ref, watch } from 'vue'
 import { supabase } from '@/lib/supabase'
 import CompanyFilter from '@/components/CompanyFilter.vue'
 import { PIPELINE_STAGES } from '@/lib/dashboard'
-import { applicantRows, type ApplicantLite, type ApplicantRow } from '@/lib/hiringTabs'
+import { NOT_RESPONDING_FILTER, applicantRows, type ApplicantLite, type ApplicantRow } from '@/lib/hiringTabs'
+import { SUB_STATUS_STAGES, subStatusesFor, type SubStatusRow } from '@/lib/outreach'
 
 /**
  * The prototype's "Applicants" tab (plan 044): every application across
@@ -12,6 +13,10 @@ import { applicantRows, type ApplicantLite, type ApplicantRow } from '@/lib/hiri
  * job (a candidate always applies to a role) — "Open job" takes you there.
  * The stage filter travels to the query and the list is capped (plan 052):
  * PostgREST would otherwise cut the imported history at 1,000 rows silently.
+ * Since plan 054 the stage cell carries the sub-status and "Not responding",
+ * judged over the loaded rows from the candidate's last activity (see
+ * outreachRowOf); "Not responding" in the stage filter is that judgement
+ * over the New and Screening rows.
  */
 const PAGE_CAP = 1000
 const CLOSED_STAGES = '(hired,rejected,withdrawn)'
@@ -20,6 +25,10 @@ const CAPPED_NOTICE = 'Showing the newest 1,000 — narrow the filters to see ol
 const loading = ref(true)
 const error = ref<string | null>(null)
 const applications = ref<ApplicantLite[]>([])
+const subStatusRows = ref<SubStatusRow[]>([])
+const subStatusLabels = computed<Record<string, string>>(() =>
+  Object.fromEntries(SUB_STATUS_STAGES.flatMap((stage) => subStatusesFor(subStatusRows.value, stage)).map((s) => [s.key, s.label])),
+)
 const companyId = ref('')
 const stage = ref('live')
 const search = ref('')
@@ -46,9 +55,10 @@ async function load(): Promise<void> {
   let query = supabase
     .from('applications')
     .select(
-      'id, company_id, stage_key, received_at, next_action, next_action_due, candidate:candidates(full_name, email), job:jobs(id, title, company:companies(name)), owner:people!applications_owner_id_fkey(full_name)',
+      'id, company_id, stage_key, sub_status_key, received_at, next_action, next_action_due, candidate:candidates(full_name, email, last_activity_at), job:jobs(id, title, status, company:companies(name)), owner:people!applications_owner_id_fkey(full_name)',
     )
   if (stageKey === 'live') query = query.not('stage_key', 'in', CLOSED_STAGES)
+  else if (stageKey === NOT_RESPONDING_FILTER) query = query.in('stage_key', [...SUB_STATUS_STAGES])
   else if (stageKey !== 'all') query = query.eq('stage_key', stageKey)
   const { data, error: err } = await query.order('received_at', { ascending: false }).limit(PAGE_CAP)
   loading.value = false
@@ -60,7 +70,23 @@ async function load(): Promise<void> {
   applications.value = (data ?? []) as unknown as ApplicantLite[]
 }
 
-onMounted(load)
+async function loadSubStatuses(): Promise<void> {
+  const { data, error: err } = await supabase
+    .from('application_sub_statuses')
+    .select('key, stage_key, label, sort_order, archived_at')
+    .is('archived_at', null)
+    .order('sort_order')
+  if (err) {
+    console.error('Sub-statuses load failed:', err.message)
+    return
+  }
+  subStatusRows.value = data ?? []
+}
+
+onMounted(() => {
+  void loadSubStatuses()
+  void load()
+})
 watch(stage, load)
 </script>
 
@@ -80,6 +106,7 @@ watch(stage, load)
             <option value="all">All stages</option>
             <option v-for="s in PIPELINE_STAGES" :key="s.key" :value="s.key">{{ s.label }}</option>
             <option value="withdrawn">Withdrawn</option>
+            <option :value="NOT_RESPONDING_FILTER">Not responding</option>
           </select>
         </label>
       </div>
@@ -106,7 +133,11 @@ watch(stage, load)
             <td><b>{{ r.name }}</b><small v-if="r.email" class="sub">{{ r.email }}</small></td>
             <td>{{ r.position }}</td>
             <td>{{ r.company }}</td>
-            <td><span class="badge" :class="badgeClass(r.stage)">{{ r.stageLabel }}</span></td>
+            <td>
+              <span class="badge" :class="badgeClass(r.stage)">{{ r.stageLabel }}</span>
+              <small v-if="r.subStatusKey && subStatusLabels[r.subStatusKey]" class="sub" data-testid="sub-badge">{{ subStatusLabels[r.subStatusKey] }}</small>
+              <span v-if="r.notResponding" class="sub-badge amber" data-testid="not-responding-badge">Not responding</span>
+            </td>
             <td>{{ r.received }}</td>
             <td>{{ r.owner ?? 'Unassigned' }}<small v-if="r.nextAction" class="sub">{{ r.nextAction }}</small></td>
             <td class="actions">
@@ -131,6 +162,8 @@ th { text-align: left; font-size: 11px; font-weight: 550; color: var(--muted); p
 td { padding: 12px 24px; border-bottom: 1px solid var(--line); vertical-align: middle; }
 td b { font-weight: 600; }
 .sub { display: block; font-size: 11px; color: var(--muted); margin-top: 2px; }
+.sub-badge { display: inline-flex; align-items: center; margin-top: 4px; padding: 2px 8px; border-radius: 999px; font-size: 11px; font-weight: 550; white-space: nowrap; }
+.sub-badge.amber { background: #fbf1da; color: var(--amber); }
 .actions { text-align: right; white-space: nowrap; }
 .action-group { display: inline-flex; gap: 6px; }
 .small-btn { font-size: 11px; padding: 7px 11px; text-decoration: none; }

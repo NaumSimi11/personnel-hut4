@@ -38,7 +38,8 @@ const report = z.object({
     }),
   ),
   sources: z.array(z.object({ source: z.string(), received: count, interviewed: count, hired: count })),
-  attention: z.object({ overdue_next_actions: count, unassigned: count, stale: count }),
+  // not_responding arrived with 0069 (plan 054); `count` reads an older report's absence as 0.
+  attention: z.object({ overdue_next_actions: count, unassigned: count, stale: count, not_responding: count }),
 })
 
 export type RecruitmentReport = z.infer<typeof report>

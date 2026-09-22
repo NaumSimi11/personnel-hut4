@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { applicantRows, openingRows, type ApplicantLite, type OpeningJobLite } from './hiringTabs'
+import { NOT_RESPONDING_FILTER, applicantRows, openingRows, type ApplicantLite, type OpeningJobLite } from './hiringTabs'
 
 const jobs: OpeningJobLite[] = [
   { id: 'j1', title: 'Designer', status: 'open', company_id: 'A', company: { name: 'Synami' }, request: { headcount: 2, manager: { full_name: 'Mia Manager' } } },
@@ -42,5 +42,26 @@ describe('hiring tabs', () => {
     expect(applicantRows(list, { companyId: 'B', stage: 'all', search: '' }).map((r) => r.id)).toEqual(['a3'])
     expect(applicantRows(list, { companyId: '', stage: 'all', search: 'engi' }).map((r) => r.id)).toEqual(['a3'])
     expect(applicantRows(list, { companyId: '', stage: 'all', search: 'ANA' }).map((r) => r.id)).toEqual(['a1'])
+  })
+
+  it('applicants: carries the sub-status, flags not responding and filters on it (plan 054)', () => {
+    const today = '2026-09-21'
+    const job = { id: 'j1', title: 'Designer', status: 'open', company: { name: 'Synami' } }
+    const base = { company_id: 'A', next_action: null, next_action_due: null, owner: null, job }
+    const list: ApplicantLite[] = [
+      { ...base, id: 'q1', stage_key: 'new', sub_status_key: 'sourced', received_at: '2026-06-01T00:00:00Z', candidate: { full_name: 'Ana Kova', email: null, last_activity_at: '2026-06-02T00:00:00Z' } },
+      { ...base, id: 'q2', stage_key: 'screening', sub_status_key: 'contacted', received_at: '2026-06-05T00:00:00Z', candidate: { full_name: 'Ben Ilic', email: null, last_activity_at: '2026-09-20T00:00:00Z' } },
+      { ...base, id: 'q3', stage_key: 'screening', sub_status_key: 'qualified', received_at: '2026-06-03T00:00:00Z', candidate: { full_name: 'Cy Dan', email: null, last_activity_at: '2026-06-03T00:00:00Z' } },
+      { ...base, id: 'q4', stage_key: 'interview', received_at: '2026-06-04T00:00:00Z', candidate: { full_name: 'Di Eno', email: null } },
+    ]
+    const all = applicantRows(list, { companyId: '', stage: 'all', search: '', today })
+    expect(all.map((r) => [r.id, r.subStatusKey, r.notResponding])).toEqual([
+      ['q2', 'contacted', false],
+      ['q4', null, false],
+      ['q3', 'qualified', false],
+      ['q1', 'sourced', true],
+    ])
+    expect(applicantRows(list, { companyId: '', stage: NOT_RESPONDING_FILTER, search: '', today }).map((r) => r.id)).toEqual(['q1'])
+    expect(applicantRows(list, { companyId: '', stage: NOT_RESPONDING_FILTER, search: 'ben', today })).toEqual([])
   })
 })

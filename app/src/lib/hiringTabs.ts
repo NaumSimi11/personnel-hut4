@@ -1,5 +1,7 @@
-import { stageLabel } from '@/lib/dashboard'
+import { outreachRowOf, stageLabel } from '@/lib/dashboard'
+import { todayDb } from '@/lib/compensation'
 import { shortDate } from '@/lib/leave'
+import { notResponding } from '@/lib/outreach'
 
 /**
  * The Hiring page's list tabs (plan 044): Job openings and Applicants, flat
@@ -75,11 +77,13 @@ export type ApplicantLite = {
   id: string
   company_id: string
   stage_key: string
+  /** Plan 054; the candidate's last activity and the job status judge "not responding" (see outreachRowOf). */
+  sub_status_key?: string | null
   received_at: string
   next_action: string | null
   next_action_due: string | null
-  candidate: { full_name: string; email: string | null } | null
-  job: { id: string; title: string; company: { name: string } | null } | null
+  candidate: { full_name: string; email: string | null; last_activity_at?: string | null } | null
+  job: { id: string; title: string; status?: string; company: { name: string } | null } | null
   owner: { full_name: string } | null
 }
 
@@ -92,19 +96,32 @@ export type ApplicantRow = {
   company: string
   stage: string
   stageLabel: string
+  subStatusKey: string | null
+  notResponding: boolean
   received: string
   owner: string | null
   nextAction: string | null
 }
 
+/** The stage filter's pseudo-value (plan 054): open outreach with no activity in 30 days, judged over the loaded rows. */
+export const NOT_RESPONDING_FILTER = 'not_responding'
+
+function stageMatches(a: ApplicantLite, stage: string, today: string): boolean {
+  if (stage === 'all') return true
+  if (stage === 'live') return !CLOSED_STAGES.has(a.stage_key)
+  if (stage === NOT_RESPONDING_FILTER) return notResponding(outreachRowOf(a), today)
+  return a.stage_key === stage
+}
+
 export function applicantRows(
   apps: ReadonlyArray<ApplicantLite>,
-  filter: { companyId: string; stage: string; search: string },
+  filter: { companyId: string; stage: string; search: string; today?: string },
 ): ApplicantRow[] {
   const needle = filter.search.trim().toLowerCase()
+  const today = filter.today ?? todayDb()
   return [...apps]
     .filter((a) => !filter.companyId || a.company_id === filter.companyId)
-    .filter((a) => (filter.stage === 'all' ? true : filter.stage === 'live' ? !CLOSED_STAGES.has(a.stage_key) : a.stage_key === filter.stage))
+    .filter((a) => stageMatches(a, filter.stage, today))
     .filter((a) => !needle || `${a.candidate?.full_name ?? ''} ${a.job?.title ?? ''} ${a.candidate?.email ?? ''}`.toLowerCase().includes(needle))
     .sort((a, b) => b.received_at.localeCompare(a.received_at))
     .map((a) => ({
@@ -116,6 +133,8 @@ export function applicantRows(
       company: a.job?.company?.name ?? '—',
       stage: a.stage_key,
       stageLabel: stageLabel(a.stage_key),
+      subStatusKey: a.sub_status_key ?? null,
+      notResponding: notResponding(outreachRowOf(a), today),
       received: shortDate(a.received_at.slice(0, 10)),
       owner: a.owner?.full_name ?? null,
       nextAction: a.next_action ? `${a.next_action}${a.next_action_due ? ` · due ${shortDate(a.next_action_due)}` : ''}` : null,

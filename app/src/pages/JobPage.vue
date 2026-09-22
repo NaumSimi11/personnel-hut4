@@ -17,6 +17,9 @@ import JobActivityPanel from '@/components/JobActivityPanel.vue'
 import JobInterviewsPanel from '@/components/JobInterviewsPanel.vue'
 import { criteriaFor, criteriaInput, type Criterion } from '@/lib/interviews'
 import { missingRecordMessage } from '@/lib/missingRecord'
+import OutreachDialog, { type OutreachApplication } from '@/components/OutreachDialog.vue'
+import { NOT_RESPONDING_DAYS, SUB_STATUS_STAGES, notResponding, subStatusesFor, type SubStatus, type SubStatusRow } from '@/lib/outreach'
+import { todayDb } from '@/lib/compensation'
 import {
   currentStep,
   friendlyRecruitmentError,
@@ -69,6 +72,8 @@ type Job = {
 type ApplicationRow = {
   id: string
   stage_key: string
+  sub_status_key: string | null
+  received_at: string
   employment_period_id: string | null
   next_action: string | null
   next_action_due: string | null
@@ -119,6 +124,18 @@ const dialogs = useDialogStore()
 const channelsPanel = ref<InstanceType<typeof JobChannelsPanel> | null>(null)
 const activityPanel = ref<InstanceType<typeof JobActivityPanel> | null>(null)
 
+// Outreach (plan 054): the lookup, the newest event per application, the
+// filters over the list, and the rows ticked for a bulk log.
+const outreachDialog = ref<InstanceType<typeof OutreachDialog> | null>(null)
+const subStatusRows = ref<SubStatusRow[]>([])
+const lastActivity = ref<Record<string, string>>({})
+const subStatusFilter = ref('')
+const notRespondingOnly = ref(false)
+const selectedIds = ref<string[]>([])
+const outreachTarget = ref<ApplicationRow[]>([])
+const today = todayDb()
+const STAGE_LABELS: Record<string, string> = { new: 'New', screening: 'Screening' }
+
 const activeTab = computed<TabId>(() => {
   const raw = route.query.tab
   const id = Array.isArray(raw) ? raw[0] : raw
@@ -132,6 +149,48 @@ function selectTab(id: TabId): void {
 const canEdit = computed(() => (job.value ? auth.can(job.value.company_id, 'jobs.edit') : false))
 // A hint only: the pool RPCs and RLS decide (plan 052).
 const canSource = computed(() => auth.isAdmin || auth.canAnywhere('candidates.source'))
+// A hint only: log_outreach decides (plan 054).
+const canReview = computed(() => (job.value ? auth.can(job.value.company_id, 'candidates.review') : false))
+const subStatuses = computed<SubStatus[]>(() => SUB_STATUS_STAGES.flatMap((stage) => subStatusesFor(subStatusRows.value, stage)))
+const subStatusLabels = computed<Record<string, string>>(() => Object.fromEntries(subStatuses.value.map((s) => [s.key, s.label])))
+const subStatusGroups = computed(() =>
+  SUB_STATUS_STAGES.map((stage) => ({ stage, label: STAGE_LABELS[stage] ?? stage, options: subStatuses.value.filter((s) => s.stage_key === stage) })),
+)
+const visibleApplications = computed(() =>
+  applications.value.filter(
+    (a) => (!subStatusFilter.value || a.sub_status_key === subStatusFilter.value) && (!notRespondingOnly.value || isNotResponding(a)),
+  ),
+)
+const selectedApplications = computed(() => applications.value.filter((a) => selectedIds.value.includes(a.id)))
+const outreachApplications = computed<OutreachApplication[]>(() =>
+  outreachTarget.value.map((a) => ({ id: a.id, full_name: a.candidate?.full_name ?? '—', stage_key: a.stage_key, sub_status_key: a.sub_status_key })),
+)
+
+function hasSubStatus(stage: string): boolean {
+  return (SUB_STATUS_STAGES as readonly string[]).includes(stage)
+}
+
+/** D3 as the lib mirrors it: the newest event in the window, else received_at; the job must be live. */
+function isNotResponding(a: ApplicationRow): boolean {
+  return notResponding(
+    { stage_key: a.stage_key, sub_status_key: a.sub_status_key, last_activity_at: lastActivity.value[a.id] ?? null, received_at: a.received_at, job_status: job.value?.status ?? '' },
+    today,
+  )
+}
+
+function toggleSelected(id: string, checked: boolean): void {
+  selectedIds.value = checked ? [...new Set([...selectedIds.value, id])] : selectedIds.value.filter((x) => x !== id)
+}
+
+function openOutreach(rows: ApplicationRow[]): void {
+  outreachTarget.value = rows
+  outreachDialog.value?.open()
+}
+
+async function onLogged(): Promise<void> {
+  selectedIds.value = []
+  await loadApplications()
+}
 // Candidates with an open application here — the pool picker's "In pipeline".
 const inPipeline = computed(() =>
   applications.value.flatMap((a) => (a.candidate && !isTerminal(a.stage_key) ? [a.candidate.id] : [])),
@@ -234,7 +293,7 @@ async function loadApplications(): Promise<void> {
   const { data, error: err } = await supabase
     .from('applications')
     .select(
-      `id, stage_key, employment_period_id, next_action, next_action_due, source_key,
+      `id, stage_key, sub_status_key, received_at, employment_period_id, next_action, next_action_due, source_key,
        source:candidate_sources(label),
        candidate:candidates(id, full_name, email, phone, do_not_contact, contact_again_after),
        owner:people!applications_owner_id_fkey(full_name),
@@ -248,6 +307,51 @@ async function loadApplications(): Promise<void> {
     return
   }
   applications.value = (data ?? []) as ApplicationRow[]
+  // A row that left New / Screening leaves the selection with it.
+  selectedIds.value = selectedIds.value.filter((id) => applications.value.some((a) => a.id === id && hasSubStatus(a.stage_key)))
+  await loadLastActivity()
+}
+
+/**
+ * The newest application_event per application, for the "not responding"
+ * badge (D3): the second round trip the plan allows. Keyed by the job
+ * through the embed (no id list in the URL) and bounded to the last 30
+ * days, so the rows stay few: an application with no event in the window
+ * falls back to received_at, which gives D3's answer — its older events, if
+ * any, never postdate its receipt.
+ */
+async function loadLastActivity(): Promise<void> {
+  const since = new Date(`${today}T00:00:00Z`)
+  since.setUTCDate(since.getUTCDate() - NOT_RESPONDING_DAYS)
+  const { data, error: err } = await supabase
+    .from('application_events')
+    .select('application_id, created_at, application:applications!inner(job_id)')
+    .eq('application.job_id', jobId)
+    .gte('created_at', since.toISOString())
+  if (err) {
+    console.error('Application activity load failed:', err.message)
+    return
+  }
+  const newest = new Map<string, string>()
+  for (const e of data ?? []) {
+    const prev = newest.get(e.application_id)
+    if (!prev || prev < e.created_at) newest.set(e.application_id, e.created_at)
+  }
+  lastActivity.value = Object.fromEntries(newest)
+}
+
+async function loadSubStatuses(): Promise<void> {
+  const { data, error: err } = await supabase
+    .from('application_sub_statuses')
+    .select('key, stage_key, label, sort_order, archived_at')
+    .is('archived_at', null)
+    .order('stage_key')
+    .order('sort_order')
+  if (err) {
+    console.error('Sub-statuses load failed:', err.message)
+    return
+  }
+  subStatusRows.value = data ?? []
 }
 
 async function loadChannels(): Promise<void> {
@@ -407,7 +511,7 @@ function friendlyCandidatesError(message: string): string {
 onMounted(async () => {
   loading.value = true
   await loadJob()
-  if (job.value) await Promise.all([loadApplications(), loadChannels()])
+  if (job.value) await Promise.all([loadApplications(), loadChannels(), loadSubStatuses()])
   loading.value = false
 })
 </script>
@@ -644,6 +748,9 @@ onMounted(async () => {
             <p>Candidates moving through this job's pipeline.</p>
           </div>
           <div class="head-actions">
+            <button v-if="canReview" class="button secondary" type="button" :disabled="!selectedApplications.length" data-testid="log-outreach" @click="openOutreach(selectedApplications)">
+              Log outreach
+            </button>
             <button v-if="canSource" class="button secondary" type="button" data-testid="source-from-pool" @click="pickFromPoolDialog?.open()">
               Source from pool
             </button>
@@ -659,7 +766,33 @@ onMounted(async () => {
         <p v-if="actionError" class="error-note" role="alert" style="margin: 16px 24px">{{ actionError }}</p>
         <div v-if="!applications.length" class="empty">No candidates yet. Add one to start the pipeline.</div>
         <div v-else>
-          <div v-for="a in applications" :key="a.id" class="application-row">
+          <div class="filter-row">
+            <label class="filter">
+              <span>Sub-status</span>
+              <select v-model="subStatusFilter" data-testid="filter-sub-status">
+                <option value="">Any sub-status</option>
+                <optgroup v-for="g in subStatusGroups" :key="g.stage" :label="g.label">
+                  <option v-for="s in g.options" :key="s.key" :value="s.key">{{ s.label }}</option>
+                </optgroup>
+              </select>
+            </label>
+            <label class="filter check">
+              <input v-model="notRespondingOnly" type="checkbox" data-testid="filter-not-responding" />
+              <span>Not responding only</span>
+            </label>
+            <span v-if="selectedIds.length" class="selection-note" data-testid="selection-count">{{ selectedIds.length }} selected</span>
+          </div>
+          <div v-if="!visibleApplications.length" class="empty">No applications match these filters.</div>
+          <div v-for="a in visibleApplications" :key="a.id" class="application-row">
+            <input
+              v-if="canReview && hasSubStatus(a.stage_key)"
+              class="select-app"
+              type="checkbox"
+              :checked="selectedIds.includes(a.id)"
+              :aria-label="`Select ${a.candidate?.full_name ?? 'application'}`"
+              :data-testid="`select-app-${a.id}`"
+              @change="toggleSelected(a.id, ($event.target as HTMLInputElement).checked)"
+            />
             <div class="row-text">
               <router-link
                 class="candidate-link"
@@ -676,6 +809,9 @@ onMounted(async () => {
             </div>
             <span v-if="a.candidate?.do_not_contact" class="badge amber">Do not contact</span>
             <span class="badge" :class="stageBadgeClass(a.stage_key)">{{ a.stage_key }}</span>
+            <!-- Not a .badge: the E2E rows locate the stage badge by that class alone. -->
+            <span v-if="a.sub_status_key && subStatusLabels[a.sub_status_key]" class="sub-badge" data-testid="sub-badge">{{ subStatusLabels[a.sub_status_key] }}</span>
+            <span v-if="isNotResponding(a)" class="sub-badge amber" data-testid="not-responding-badge">Not responding</span>
             <div class="row-actions">
               <router-link
                 v-if="a.stage_key === 'hired' && a.employment_period?.person_id"
@@ -685,6 +821,9 @@ onMounted(async () => {
                 Open employee profile
               </router-link>
               <template v-else-if="a.stage_key !== 'hired'">
+                <button v-if="canReview && hasSubStatus(a.stage_key)" class="button secondary small-btn" type="button" :data-testid="`log-outreach-${a.id}`" @click="openOutreach([a])">
+                  Log outreach
+                </button>
                 <button v-if="a.stage_key === 'new'" class="button secondary small-btn" type="button" :disabled="busyId === a.id" @click="moveToScreening(a)">
                   Move to screening
                 </button>
@@ -747,6 +886,7 @@ onMounted(async () => {
       @created="loadApplications"
     />
     <AddEmployeeDialog ref="confirmHireDialog" @created="onHired" />
+    <OutreachDialog ref="outreachDialog" :applications="outreachApplications" :sub-statuses="subStatuses" @logged="onLogged" />
   </div>
 </template>
 
@@ -853,4 +993,12 @@ textarea[readonly] { background: #fafbf9; }
 .row-actions { display: flex; gap: 7px; flex-wrap: wrap; }
 .small-btn { font-size: 11px; padding: 7px 11px; text-decoration: none; }
 .head-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.filter-row { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; padding: 12px 24px; border-top: 1px solid #edf0eb; background: #fafbf9; }
+.filter { display: flex; align-items: center; gap: 8px; font-size: 11px; color: var(--muted); }
+.filter select { border: 1px solid var(--line); background: #fff; padding: 7px 10px; font-size: 12px; color: var(--ink); }
+.filter.check { cursor: pointer; }
+.selection-note { margin-left: auto; font-size: 11px; color: var(--muted); }
+.select-app { width: 15px; height: 15px; margin: 0; flex-shrink: 0; accent-color: var(--green); }
+.sub-badge { display: inline-flex; align-items: center; padding: 3px 9px; border-radius: 999px; font-size: 11px; font-weight: 550; background: #f0f1ef; color: var(--muted); white-space: nowrap; }
+.sub-badge.amber { background: #fbf1da; color: var(--amber); }
 </style>

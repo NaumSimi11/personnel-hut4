@@ -5,6 +5,7 @@ import {
   awayToday,
   dashboardSections,
   inDaysLabel,
+  notRespondingCount,
   openPositions,
   payrollLabel,
   pipelineCounts,
@@ -164,5 +165,27 @@ describe('dashboard', () => {
       value: '12,345.50 EUR',
       sub: 'Synami · to 31 Aug 2026 · 4 people',
     })
+  })
+
+  it('counts not responding from the sub-status, the job status and the candidate activity, else received_at', () => {
+    const today = '2026-09-21'
+    const live = { title: 'Role', status: 'open', company: { name: 'Synami' } }
+    const rows: ApplicationLite[] = [
+      // sourced, quiet candidate, received long ago: counts
+      app({ id: '1', sub_status_key: 'sourced', received_at: '2026-06-01T10:00:00Z', candidate: { full_name: 'A', last_activity_at: '2026-07-01T10:00:00Z' }, job: live }),
+      // contacted at screening, no activity known, received long ago: counts on received_at
+      app({ id: '2', stage_key: 'screening', sub_status_key: 'contacted', received_at: '2026-06-01T10:00:00Z', job: live }),
+      // the candidate was active this month: not counted
+      app({ id: '3', sub_status_key: 'sourced', received_at: '2026-06-01T10:00:00Z', candidate: { full_name: 'C', last_activity_at: '2026-09-15T10:00:00Z' }, job: live }),
+      // interested: an answer, never "not responding"
+      app({ id: '4', stage_key: 'screening', sub_status_key: 'interested', received_at: '2026-06-01T10:00:00Z', job: live }),
+      // a closed job, and a row without its job: not counted
+      app({ id: '5', sub_status_key: 'sourced', received_at: '2026-06-01T10:00:00Z', job: { ...live, status: 'closed' } }),
+      app({ id: '6', sub_status_key: 'sourced', received_at: '2026-06-01T10:00:00Z', job: null }),
+      // no sub-status at all (pre-054 rows, other stages): not counted
+      app({ id: '7', received_at: '2026-06-01T10:00:00Z', job: live }),
+    ]
+    expect(notRespondingCount(rows, today)).toBe(2)
+    expect(notRespondingCount([], today)).toBe(0)
   })
 })

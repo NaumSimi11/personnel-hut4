@@ -1,4 +1,5 @@
 import { formatAmount } from '@/lib/compensation'
+import { notResponding, type OutreachRow } from '@/lib/outreach'
 
 /**
  * Dashboard facts (plan 044): pure shaping of what the page reads — the
@@ -13,9 +14,11 @@ export type ApplicationLite = {
   id: string
   job_id: string
   stage_key: string
+  /** Plan 054; with the candidate's last activity and the job status it feeds notRespondingCount. */
+  sub_status_key?: string | null
   received_at: string
-  candidate: { full_name: string } | null
-  job: { title: string; company: { name: string } | null } | null
+  candidate: { full_name: string; last_activity_at?: string | null } | null
+  job: { title: string; status?: string; company: { name: string } | null } | null
 }
 
 export type JobLite = {
@@ -262,4 +265,34 @@ export function payrollLabel(p: PayrollFact): { value: string; sub: string } {
     value: formatAmount(Number(p.total), p.currency),
     sub: `${p.company_name} · to ${longDate(p.period_end)} · ${p.people} ${p.people === 1 ? 'person' : 'people'}`,
   }
+}
+
+/**
+ * What D3 (plan 054) needs from a list row. The candidate's last_activity_at
+ * stands in for the application's newest event: 0067 bumps it on every
+ * application event (and on files and assignment edits too), so it is never
+ * earlier than that event — a list judged this way may under-flag, never
+ * over-flag. The report (app.not_responding, 0069) is authoritative.
+ */
+export type OutreachLite = {
+  stage_key: string
+  sub_status_key?: string | null
+  received_at: string
+  candidate: { last_activity_at?: string | null } | null
+  job: { status?: string } | null
+}
+
+export function outreachRowOf(a: OutreachLite): OutreachRow {
+  return {
+    stage_key: a.stage_key,
+    sub_status_key: a.sub_status_key ?? null,
+    last_activity_at: a.candidate?.last_activity_at ?? null,
+    received_at: a.received_at,
+    job_status: a.job?.status ?? '',
+  }
+}
+
+/** Home's pipeline line: how many of the loaded applications are not responding today. */
+export function notRespondingCount(apps: ReadonlyArray<OutreachLite>, today: string): number {
+  return apps.filter((a) => notResponding(outreachRowOf(a), today)).length
 }

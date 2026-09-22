@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import {
+  notRespondingCount,
   openPositions,
   pipelineCounts,
   recentApplicants,
@@ -8,13 +9,18 @@ import {
   type ApplicationLite,
   type JobLite,
 } from '@/lib/dashboard'
+import { todayDb } from '@/lib/compensation'
 import { shortDate } from '@/lib/leave'
+import { NOT_RESPONDING_DAYS } from '@/lib/outreach'
 
 /**
  * The prototype's "Applicant pipeline" and "Recruitment snapshot" (plan
  * 044): bars per stage across every application the viewer may see, open
  * positions with their live applicant count, the newest applicants. Each
- * row opens the job or the candidate.
+ * row opens the job or the candidate. One line under the pipeline (plan
+ * 054) counts who is not responding — judged from the candidate's last
+ * activity (see outreachRowOf), so Home may under-count; the report's
+ * attention tile is the authoritative number. Absent at zero.
  */
 const props = defineProps<{
   applications: ApplicationLite[]
@@ -29,6 +35,7 @@ const counts = computed(() => pipelineCounts(props.applications))
 const max = computed(() => Math.max(1, ...counts.value.map((c) => c.count)))
 const positions = computed(() => openPositions(props.jobs, props.applications))
 const recent = computed(() => recentApplicants(props.applications, 5))
+const notResponding = computed(() => notRespondingCount(props.applications, todayDb()))
 
 function barHeight(count: number): string {
   return `${Math.round((count / max.value) * 88) + 6}px`
@@ -61,6 +68,9 @@ function badgeClass(stage: string): string {
             <span class="bar-label">{{ c.label }}</span>
           </div>
         </div>
+        <p v-if="!loading && notResponding" class="not-responding" data-testid="not-responding-line">
+          {{ notResponding }} not responding for {{ NOT_RESPONDING_DAYS }} days
+        </p>
       </div>
 
       <div v-if="showOpenings" class="card">
@@ -120,6 +130,7 @@ function badgeClass(stage: string): string {
 .bar.red { background: #c77b7b; }
 /* Wraps: a nowrap label was 5px wider than its own column. */
 .bar-label { font-size: 11px; color: var(--muted); text-align: center; line-height: 1.25; overflow-wrap: anywhere; }
+.not-responding { margin: 0; padding: 10px 24px 14px; border-top: 1px solid var(--line); font-size: 12px; color: var(--amber); }
 .list { list-style: none; margin: 0; padding: 0; }
 .row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 24px; border-top: 1px solid var(--line); color: var(--ink); text-decoration: none; }
 .row:hover { background: #f7f9f5; }

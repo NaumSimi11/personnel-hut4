@@ -33,6 +33,12 @@ describe('parseReport', () => {
     expect(sparse.sources).toEqual([])
   })
 
+  it('reads the not-responding count, zero when a report predates it', () => {
+    expect(parseReport(raw).attention.not_responding).toBe(0)
+    const later = parseReport({ ...raw, attention: { ...raw.attention, not_responding: 4 } })
+    expect(later.attention.not_responding).toBe(4)
+  })
+
   it('rejects something that is not a report', () => {
     expect(() => parseReport({ nope: true })).toThrow()
   })

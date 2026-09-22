@@ -252,9 +252,11 @@ async function load(): Promise<void> {
   ] = await Promise.all([
     // The pipeline of live roles (plan 052): the imported history sits on closed
     // jobs, and PostgREST would silently cut the list at 1,000 rows anyway.
+    // The sub-status and the candidate's last activity feed the "not
+    // responding" line (plan 054, see outreachRowOf).
     supabase
       .from('applications')
-      .select('id, job_id, stage_key, received_at, candidate:candidates(full_name), job:jobs!inner(title, status, company:companies(name))')
+      .select('id, job_id, stage_key, sub_status_key, received_at, candidate:candidates(full_name, last_activity_at), job:jobs!inner(title, status, company:companies(name))')
       .in('job.status', ['ready', 'open', 'on_hold'])
       .order('received_at', { ascending: false })
       .limit(1000),

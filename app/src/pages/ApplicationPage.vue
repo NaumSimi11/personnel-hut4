@@ -21,6 +21,8 @@ import { candidateNextStep } from '@/lib/hiringJourney'
 import { criteriaFor } from '@/lib/interviews'
 import type { OfferTerms } from '@/lib/offers'
 import { missingRecordMessage } from '@/lib/missingRecord'
+import OutreachDialog, { type OutreachApplication } from '@/components/OutreachDialog.vue'
+import { SUB_STATUS_STAGES, notResponding, outreachLine, subStatusesFor, type SubStatus, type SubStatusRow } from '@/lib/outreach'
 
 /**
  * One application, everything in one place (plan 018a): who the candidate
@@ -49,6 +51,7 @@ type Application = {
   job_id: string
   company_id: string
   stage_key: string
+  sub_status_key: string | null
   updated_at: string
   owner_id: string | null
   next_action: string | null
@@ -65,6 +68,7 @@ type Application = {
   job: {
     id: string
     title: string
+    status: string
     screening_questions: unknown
     scorecard_criteria: unknown
     company: { name: string } | null
@@ -78,6 +82,8 @@ type EventRow = {
   kind: string
   from_stage_key: string | null
   to_stage_key: string | null
+  from_sub_status_key: string | null
+  to_sub_status_key: string | null
   body: string | null
   created_at: string
   actor: { full_name: string } | null
@@ -176,6 +182,9 @@ const noteError = ref<string | null>(null)
 const stageBusy = ref(false)
 const stageError = ref<string | null>(null)
 
+const outreachDialog = ref<InstanceType<typeof OutreachDialog> | null>(null)
+const subStatusRows = ref<SubStatusRow[]>([])
+
 const rejectDialog = ref<InstanceType<typeof RejectApplicationDialog> | null>(null)
 const confirmHireDialog = ref<InstanceType<typeof AddEmployeeDialog> | null>(null)
 const offerCard = ref<InstanceType<typeof ApplicationOfferCard> | null>(null)
@@ -194,6 +203,28 @@ const canReview = computed(() =>
 )
 const isTerminal = computed(() => ['hired', 'rejected', 'withdrawn'].includes(application.value?.stage_key ?? ''))
 const nextStages = computed(() => STAGE_NEXT[application.value?.stage_key ?? ''] ?? [])
+
+// Outreach (plan 054): the lookup labels the badge and the timeline; the
+// newest event on this page judges "not responding" exactly as D3 does.
+const subStatuses = computed<SubStatus[]>(() => SUB_STATUS_STAGES.flatMap((stage) => subStatusesFor(subStatusRows.value, stage)))
+const subStatusLabels = computed<Record<string, string>>(() => Object.fromEntries(subStatuses.value.map((s) => [s.key, s.label])))
+const subStatusLabel = computed(() => subStatusLabels.value[application.value?.sub_status_key ?? ''] ?? '')
+const canLogOutreach = computed(
+  () => canReview.value && (SUB_STATUS_STAGES as readonly string[]).includes(application.value?.stage_key ?? ''),
+)
+const notRespondingNow = computed(() => {
+  const a = application.value
+  if (!a) return false
+  const newest = events.value.reduce<string | null>((acc, e) => (acc && acc >= e.created_at ? acc : e.created_at), null)
+  return notResponding(
+    { stage_key: a.stage_key, sub_status_key: a.sub_status_key, last_activity_at: newest, received_at: a.received_at, job_status: a.job?.status ?? '' },
+    todayDb(),
+  )
+})
+const outreachApplications = computed<OutreachApplication[]>(() => {
+  const a = application.value
+  return a ? [{ id: a.id, full_name: a.candidate?.full_name ?? '—', stage_key: a.stage_key, sub_status_key: a.sub_status_key }] : []
+})
 
 // Pool holders may open the candidate's record; everyone else stays on the application.
 const canOpenCandidate = computed(() => auth.isAdmin || auth.canAnywhere('candidates.source'))
@@ -232,27 +263,29 @@ function eventText(e: EventRow): string {
     const move = `${e.from_stage_key ?? '—'} → ${e.to_stage_key ?? '—'}`
     return e.body ? `${move} · ${e.body}` : move
   }
+  if (e.kind === 'outreach') return outreachLine(e, subStatusLabels.value)
   return e.body ?? ''
 }
 
 function eventLabel(e: EventRow): string {
   if (e.kind === 'stage_change') return 'Stage'
   if (e.kind === 'interview_feedback') return 'Feedback'
+  if (e.kind === 'outreach') return 'Outreach'
   return 'Note'
 }
 
 async function load(): Promise<void> {
   loading.value = true
   error.value = null
-  const [appRes, eventsRes, peopleRes, channelsRes, sourcesRes] = await Promise.all([
+  const [appRes, eventsRes, peopleRes, channelsRes, sourcesRes, subStatusesRes] = await Promise.all([
     supabase
       .from('applications')
       .select(
-        `id, job_id, company_id, stage_key, updated_at, owner_id, next_action, next_action_due, source_channel_key, source_key,
+        `id, job_id, company_id, stage_key, sub_status_key, updated_at, owner_id, next_action, next_action_due, source_channel_key, source_key,
          received_at, rejected_reason, withdrawn_reason, screening_answers, employment_period_id, custom,
          candidate:candidates(id, full_name, email, phone, linkedin_url, do_not_contact, do_not_contact_reason,
            contact_later, contact_again_after, custom),
-         job:jobs(id, title, screening_questions, scorecard_criteria, company:companies(name)),
+         job:jobs(id, title, status, screening_questions, scorecard_criteria, company:companies(name)),
          owner:people!applications_owner_id_fkey(full_name),
          employment_period:employment_periods!applications_employment_period_id_fkey(person_id)`,
       )
@@ -260,12 +293,15 @@ async function load(): Promise<void> {
       .maybeSingle(),
     supabase
       .from('application_events')
-      .select('id, kind, from_stage_key, to_stage_key, body, created_at, actor:people!application_events_actor_id_fkey(full_name)')
+      .select(
+        'id, kind, from_stage_key, to_stage_key, from_sub_status_key, to_sub_status_key, body, created_at, actor:people!application_events_actor_id_fkey(full_name)',
+      )
       .eq('application_id', applicationId)
       .order('created_at', { ascending: false }),
     supabase.from('people').select('id, full_name').order('full_name'),
     supabase.from('channels').select('key, label'),
     supabase.from('candidate_sources').select('key, label'),
+    supabase.from('application_sub_statuses').select('key, stage_key, label, sort_order, archived_at').is('archived_at', null).order('sort_order'),
   ])
   if (appRes.error || !appRes.data) {
     error.value = missingRecordMessage({
@@ -291,6 +327,8 @@ async function load(): Promise<void> {
   people.value = peopleRes.data ?? []
   channelLabels.value = Object.fromEntries((channelsRes.data ?? []).map((c) => [c.key, c.label]))
   sourceLabels.value = Object.fromEntries((sourcesRes.data ?? []).map((s) => [s.key, s.label]))
+  if (subStatusesRes.error) console.error('Sub-statuses load failed:', subStatusesRes.error.message)
+  subStatusRows.value = subStatusesRes.data ?? []
 
   const questions = salvageQuestions(application.value.job?.screening_questions).questions
   answerRows.value = mergeAnswers(questions, application.value.screening_answers)
@@ -492,6 +530,8 @@ onMounted(load)
         </div>
         <div class="head-badges">
           <span class="badge stage-badge" :class="stageBadgeClass(application.stage_key)">{{ application.stage_key }}</span>
+          <span v-if="subStatusLabel" class="badge sub-badge" data-testid="sub-badge">{{ subStatusLabel }}</span>
+          <span v-if="notRespondingNow" class="badge amber" data-testid="not-responding-badge">Not responding</span>
           <span
             v-if="contactRule"
             class="badge contact-badge"
@@ -631,7 +671,7 @@ onMounted(load)
             <div class="card-head">
               <div>
                 <h2>Timeline</h2>
-                <p>Stage changes and notes, newest first.</p>
+                <p>Stage changes, outreach and notes, newest first.</p>
               </div>
             </div>
             <form v-if="canReview" class="note-form" @submit.prevent="addNote">
@@ -702,6 +742,16 @@ onMounted(load)
                   </router-link>
                   <template v-else-if="!isTerminal">
                     <button
+                      v-if="canLogOutreach"
+                      class="button secondary small-btn"
+                      type="button"
+                      :disabled="stageBusy"
+                      data-testid="log-outreach"
+                      @click="outreachDialog?.open()"
+                    >
+                      Log outreach
+                    </button>
+                    <button
                       v-for="a in nextStages.filter(s => s.to === 'offer')"
                       :key="a.to"
                       class="button secondary small-btn"
@@ -749,6 +799,7 @@ onMounted(load)
 
     <CandidateHandoffDialog ref="handoffDialog" :people="people" :save="saveHandoff" />
     <RejectApplicationDialog ref="rejectDialog" @confirmed="onDecided" />
+    <OutreachDialog ref="outreachDialog" :applications="outreachApplications" :sub-statuses="subStatuses" @logged="load" />
     <AddEmployeeDialog ref="confirmHireDialog" @created="load" />
   </div>
 </template>
@@ -782,6 +833,7 @@ section[id], #candidate-decision { scroll-margin-top: 20px; }
 .candidate-link { color: inherit; text-decoration: none; }
 .candidate-link:hover { color: var(--green); text-decoration: underline; }
 .head-badges { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.sub-badge { background: #f0f1ef; color: var(--muted); }
 #candidate-review { display: flex; flex-direction: column; gap: 18px; }
 .layout { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 18px; align-items: start; }
 @media (max-width: 960px) { .layout { grid-template-columns: 1fr; } }

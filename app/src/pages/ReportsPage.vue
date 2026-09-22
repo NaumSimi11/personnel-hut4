@@ -58,6 +58,7 @@ const attentionTiles = computed(() => {
     { label: 'Overdue next actions', value: a.overdue_next_actions, hint: 'Next action date has passed.' },
     { label: 'Unassigned', value: a.unassigned, hint: 'Open applications with no owner.' },
     { label: 'Stale', value: a.stale, hint: 'No stage change in 14 days.' },
+    { label: 'Not responding', value: a.not_responding, hint: 'Sourced or contacted, no activity in 30 days.' },
   ]
 })
 

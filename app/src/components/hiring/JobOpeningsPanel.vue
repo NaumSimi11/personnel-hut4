@@ -34,6 +34,28 @@ const companies = computed(() => {
 })
 const rows = computed<JobOpeningRow[]>(() => openingRows(jobs.value, applications.value, { companyId: companyId.value, status: status.value }))
 
+// PostgREST answers at most 1,000 rows per request; since the Zoho import
+// (0067) the holding carries several thousand applications, so one plain
+// select silently dropped the newest and every "in play" read low. Only the
+// rows that count are asked for (rejected / withdrawn count nowhere), in
+// pages, in id order so a page boundary never skips or repeats a row.
+const PAGE = 1000
+
+async function loadCountedApplications(): Promise<{ data: OpeningApplicationLite[]; error: { message: string } | null }> {
+  const rows: OpeningApplicationLite[] = []
+  for (let from = 0; ; from += PAGE) {
+    const { data, error: err } = await supabase
+      .from('applications')
+      .select('id, job_id, stage_key')
+      .not('stage_key', 'in', '(rejected,withdrawn)')
+      .order('id')
+      .range(from, from + PAGE - 1)
+    if (err) return { data: [], error: err }
+    rows.push(...((data ?? []) as OpeningApplicationLite[]))
+    if ((data ?? []).length < PAGE) return { data: rows, error: null }
+  }
+}
+
 async function load(): Promise<void> {
   loading.value = true
   error.value = null
@@ -42,7 +64,7 @@ async function load(): Promise<void> {
       .from('jobs')
       .select('id, title, status, company_id, created_at, company:companies(name), request:hiring_requests!jobs_hiring_request_id_fkey(headcount, manager:people!hiring_requests_hiring_manager_id_fkey(full_name))')
       .order('created_at', { ascending: false }),
-    supabase.from('applications').select('id, job_id, stage_key'),
+    loadCountedApplications(),
   ])
   loading.value = false
   if (jobsRes.error || appsRes.error) {
@@ -51,7 +73,7 @@ async function load(): Promise<void> {
     return
   }
   jobs.value = (jobsRes.data ?? []) as unknown as JobRow[]
-  applications.value = (appsRes.data ?? []) as OpeningApplicationLite[]
+  applications.value = appsRes.data
 }
 
 onMounted(load)

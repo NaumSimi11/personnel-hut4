@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { visibleCompanyTabs } from '@/lib/companyTabs'
 import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { supabase } from '@/lib/supabase'
@@ -204,18 +205,14 @@ function onTransferred(result: { applied: boolean; effectiveDate: string; compan
 }
 const notice = ref<string | null>(null)
 
-// Payroll is only offered to payroll.summary holders (the function refuses
-// everyone else anyway); Settings writes are admin-only by RLS.
+// Which tabs this company shows — the rules, and why two are deferred, live in
+// companyTabs.ts. Until the company loads we assume a subsidiary, so Structure
+// appears once the holding is known rather than flashing on every company.
 const visibleTabs = computed(() =>
-  TABS.filter((t) => {
-    if (t.id === 'payroll') return auth.can(companyId, 'payroll.summary')
-    // Settings: admins, HR who may shape the checklists, and whoever prepares payroll (the panels guard their own writes).
-    if (t.id === 'settings') return auth.isAdmin || ['tasks.assign', 'it.assign', 'payroll.individual'].some((cap) => auth.can(companyId, cap))
-    if (t.id === 'equipment') return auth.can(companyId, 'it.view')
-    if (t.id === 'activity') {
-      return ['access.manage', 'jobs.view', 'candidates.view'].some((cap) => auth.can(companyId, cap))
-    }
-    return true
+  visibleCompanyTabs(TABS, {
+    isAdmin: auth.isAdmin,
+    can: (capability) => auth.can(companyId, capability),
+    companyKind: company.value?.kind ?? 'company',
   }),
 )
 const inviteDialog = ref<InstanceType<typeof InviteAccessDialog> | null>(null)

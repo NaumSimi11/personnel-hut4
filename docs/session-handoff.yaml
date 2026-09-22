@@ -113,6 +113,7 @@ execution_052:
       PATH="/c/Program Files/PostgreSQL/18/bin:$PATH" PGCLIENTENCODING=UTF8 psql "$(grep '^SUPABASE_DB_URL=' .env.local | cut -d= -f2- | tr -d '\r\"')" -1 -v ON_ERROR_STOP=1 -q -f supabase/migrations/0067_talent_pool.sql
       then: psql … -tAc "select count(*) from public.candidate_sources"  → 8
     alternative: run the session outside auto mode (permission prompts) or put C:\Program Files\PostgreSQL\18\bin on PATH so Bash(psql:*) can match.
+    runbook_sent_to_the_maintainer: .superpowers/sdd/052-talent-pool/apply-0067-runbook.md (sent to their device 2026-09-22 ~03:00; they were away from the PC). Gmail is not authorised in the harness — mail is not an option until the claude.ai connector is authorised.
   live_db_truth: migrations 0001-0066 applied (verified 2026-09-21); 0067 NOT applied as of 2026-09-22 02:30; live has 3 candidates / 3 applications, 0 violate candidates_text_len
   remaining_steps_in_order:
     - 1. maintainer applies 0067 (runbook above) and says "applied"; the session then verifies via a service-client count (T4's gate) since psql reads are denied

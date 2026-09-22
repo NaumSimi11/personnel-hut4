@@ -1,9 +1,10 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/stores/auth'
 import { departureState } from '@/lib/departure'
 import { DIRECTORY_FILTERS, currentPeriod, matchesFilter, type DirectoryFilter } from '@/lib/employmentChanges'
+import { personRemovable, removalConfirmation } from '@/lib/personRemoval'
 import InviteAccessDialog from '@/components/InviteAccessDialog.vue'
 import AddEmployeeDialog from '@/components/AddEmployeeDialog.vue'
 import ImportPeopleDialog from '@/components/ImportPeopleDialog.vue'
@@ -25,6 +26,7 @@ type DirectoryRow = {
     company: { name: string } | null
     department: { name: string } | null
   }[]
+  archived_at: string | null
 }
 
 const auth = useAuthStore()
@@ -37,6 +39,12 @@ const companyFilter = ref('')
 const companies = ref<{ id: string; name: string }[]>([])
 const loading = ref(true)
 const error = ref<string | null>(null)
+// Removed people are archived, not deleted, so the directory can show them
+// again and put them back (personRemoval.ts says why).
+const showRemoved = ref(false)
+const confirmingRemoval = ref<string | null>(null)
+const removing = ref(false)
+
 const inviteDialog = ref<InstanceType<typeof InviteAccessDialog> | null>(null)
 const addEmployeeDialog = ref<InstanceType<typeof AddEmployeeDialog> | null>(null)
 const importDialog = ref<InstanceType<typeof ImportPeopleDialog> | null>(null)
@@ -80,13 +88,15 @@ async function load(): Promise<void> {
     const adminsRes = await supabase.from('platform_admins').select('person_id')
     adminIds.value = new Set((adminsRes.data ?? []).map((a) => a.person_id))
   }
-  const { data, error: err } = await supabase
+  const base = supabase
     .from('people')
     .select(
-      'id, full_name, work_email, avatar_url, employment_periods!person_id(job_title, status, start_date, end_date, last_working_date, company_id, company:companies(name), department:departments(name))',
+      'id, full_name, work_email, avatar_url, archived_at, employment_periods!person_id(job_title, status, start_date, end_date, last_working_date, company_id, company:companies(name), department:departments(name))',
     )
-    .is('archived_at', null)
-    .order('full_name')
+  const { data, error: err } = await (showRemoved.value
+    ? base.not('archived_at', 'is', null)
+    : base.is('archived_at', null)
+  ).order('full_name')
   if (err) {
     error.value = 'Could not load the directory. Check your access and connection.'
     console.error('Directory load failed:', err.message)
@@ -95,6 +105,33 @@ async function load(): Promise<void> {
   }
   loading.value = false
 }
+
+function removalVerdict(p: DirectoryRow) {
+  return personRemovable({ employed: currentEmployment(p) !== null, isSelf: p.id === auth.personId }, auth.isAdmin)
+}
+
+async function setArchived(p: DirectoryRow, archived: boolean): Promise<void> {
+  error.value = null
+  removing.value = true
+  const { error: err } = await supabase
+    .from('people')
+    .update({ archived_at: archived ? new Date().toISOString() : null })
+    .eq('id', p.id)
+  removing.value = false
+  confirmingRemoval.value = null
+  if (err) {
+    error.value = err.message.includes('row-level security')
+      ? 'Only platform admins remove people from the directory.'
+      : err.message
+    return
+  }
+  await load()
+}
+
+watch(showRemoved, () => {
+  confirmingRemoval.value = null
+  void load()
+})
 
 onMounted(load)
 </script>
@@ -146,7 +183,13 @@ onMounted(load)
             {{ f.label }}
           </button>
         </div>
-        <CompanyFilter v-model="companyFilter" :companies="companies" all-label="All companies" />
+        <div class="filter-right">
+          <label v-if="auth.isAdmin" class="removed-toggle">
+            <input v-model="showRemoved" type="checkbox" data-testid="show-removed" />
+            Removed people
+          </label>
+          <CompanyFilter v-model="companyFilter" :companies="companies" all-label="All companies" />
+        </div>
       </div>
       <p v-if="error" class="error-note" style="margin: 16px 24px">{{ error }}</p>
       <div v-else-if="loading" class="empty">Loading directory…</div>
@@ -215,6 +258,36 @@ onMounted(load)
                   >
                     Reset access
                   </button>
+                  <template v-if="confirmingRemoval === p.id">
+                    <span class="confirm-text">{{ removalConfirmation(p.full_name) }}</span>
+                    <button class="button small-link" type="button" :disabled="removing" @click="setArchived(p, true)">
+                      {{ removing ? 'Removing…' : 'Yes, remove' }}
+                    </button>
+                    <button class="button secondary small-link" type="button" :disabled="removing" @click="confirmingRemoval = null">
+                      Cancel
+                    </button>
+                  </template>
+                  <button
+                    v-else-if="p.archived_at"
+                    class="button secondary small-link"
+                    type="button"
+                    :disabled="removing || !auth.isAdmin"
+                    :data-testid="`restore-person-${p.id}`"
+                    @click="setArchived(p, false)"
+                  >
+                    {{ removing ? 'Restoring…' : 'Restore' }}
+                  </button>
+                  <button
+                    v-else-if="auth.isAdmin"
+                    class="button secondary small-link"
+                    type="button"
+                    :disabled="!removalVerdict(p).canRemove"
+                    :title="removalVerdict(p).reason ?? 'Remove from the directory'"
+                    :data-testid="`remove-person-${p.id}`"
+                    @click="confirmingRemoval = p.id"
+                  >
+                    Remove
+                  </button>
                 </div>
               </td>
             </tr>
@@ -255,4 +328,7 @@ onMounted(load)
   flex-wrap: wrap;
 }
 h1 { margin-bottom: 24px; }
+.filter-right { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+.removed-toggle { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted); }
+.confirm-text { font-size: 11px; font-weight: 600; }
 </style>

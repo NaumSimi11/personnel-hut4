@@ -6107,4 +6107,317 @@ end $$;
 reset role;
 set app.test_uid = '';
 
+-- ================================================================ 0070
+-- Candidate notes and the Zoho history (plan 055): a person-level note behind
+-- the pool capability, the company-tagged note a reviewer reads, and one
+-- import that places the Zoho notes, interviews and reviews it can and counts
+-- the rest by reason. Fixtures: Note Person (a pool record with no
+-- application at all, so a null-company note is invisible to anyone but a
+-- pool holder), Gone Person (archived), Zoho History + History Role B + their
+-- application (the pair the import needs), Ada (platform admin, so a pool
+-- holder everywhere) and Omar, given candidates.view in Company B only.
+insert into public.candidates (id, full_name) values
+  ('80000000-0000-0000-0000-000000000701', 'Note Person');
+insert into public.candidates (id, full_name, archived_at) values
+  ('80000000-0000-0000-0000-000000000702', 'Gone Person', now());
+insert into public.candidates (id, full_name, provider, provider_ref) values
+  ('80000000-0000-0000-0000-000000000703', 'Zoho History', 'zoho_recruit', 'ZH-C1');
+insert into public.jobs (id, company_id, title, status, custom) values
+  ('70000000-0000-0000-0000-000000000701', '10000000-0000-0000-0000-00000000000b', 'History Role B', 'open',
+   '{"zoho": {"id": "ZH-J1"}}'::jsonb);
+insert into public.applications (id, job_id, company_id, candidate_id) values
+  ('90000000-0000-0000-0000-000000000701', '70000000-0000-0000-0000-000000000701',
+   '10000000-0000-0000-0000-00000000000b', '80000000-0000-0000-0000-000000000703');
+create temp table omar_notes_added as
+  select g.id as grant_id, v.cap as capability_key
+  from public.access_grants g, (values ('candidates.view')) v(cap)
+  where g.person_id = '20000000-0000-0000-0000-000000000003'
+    and g.company_id = '10000000-0000-0000-0000-00000000000b'
+    and not exists (select 1 from public.grant_capabilities gc where gc.grant_id = g.id and gc.capability_key = v.cap);
+insert into public.grant_capabilities (grant_id, capability_key) select grant_id, capability_key from omar_notes_added;
+
+-- 1. add_candidate_note: the row it writes, and every refusal.
+set app.test_uid = '00000000-0000-0000-0000-000000000004';  -- Ada
+set role authenticated;
+do $$
+declare r jsonb; v_id uuid; v_before timestamptz;
+begin
+  select last_activity_at into v_before from public.candidates where id = '80000000-0000-0000-0000-000000000701';
+  r := public.add_candidate_note('80000000-0000-0000-0000-000000000701', '  Called, left a voicemail.  ');
+  v_id := (r->>'id')::uuid;
+  assert v_id is not null, 'the note is returned by id: ' || r::text;
+  assert (select kind || '|' || body || '|' || actor_id::text from public.candidate_notes where id = v_id)
+         = 'note|Called, left a voicemail.|20000000-0000-0000-0000-000000000004',
+    'a trimmed note of kind note, authored by Ada';
+  assert (select company_id from public.candidate_notes where id = v_id) is null,
+    'a note written from the record belongs to the person, not to a company';
+  assert (select provider from public.candidate_notes where id = v_id) is null,
+    'a note written here has no provider';
+  assert (select last_activity_at from public.candidates where id = '80000000-0000-0000-0000-000000000701') > v_before,
+    'the note bumps last_activity_at';
+
+  begin
+    perform public.add_candidate_note('80000000-0000-0000-0000-000000000702', 'Still worth a call.');
+    raise exception 'FAIL: a note on an archived candidate';
+  exception when invalid_parameter_value then
+    if sqlerrm not like '%Gone Person is archived — restore them first.%' then raise; end if;
+  end;
+  begin
+    perform public.add_candidate_note('80000000-0000-0000-0000-00000000dead', 'Nobody.');
+    raise exception 'FAIL: a note on a candidate that does not exist';
+  exception when invalid_parameter_value then
+    if sqlerrm not like '%That candidate is not in the talent pool.%' then raise; end if;
+  end;
+  begin
+    perform public.add_candidate_note('80000000-0000-0000-0000-000000000701', '   ');
+    raise exception 'FAIL: an empty note';
+  exception when invalid_parameter_value then
+    if sqlerrm not like '%Write the note first.%' then raise; end if;
+  end;
+  begin
+    perform public.add_candidate_note('80000000-0000-0000-0000-000000000701', repeat('x', 4001));
+    raise exception 'FAIL: a note over the limit';
+  exception when invalid_parameter_value then
+    if sqlerrm not like '%Keep the note to 4,000 characters or fewer.%' then raise; end if;
+  end;
+  r := public.add_candidate_note('80000000-0000-0000-0000-000000000701', repeat('x', 4000));
+  assert r->>'id' is not null, 'exactly 4,000 characters is allowed';
+  delete from public.candidate_notes where id = (r->>'id')::uuid;
+end $$;
+reset role;
+
+set app.test_uid = '';
+set role authenticated;
+do $$
+begin
+  begin
+    perform public.add_candidate_note('80000000-0000-0000-0000-000000000701', 'From nowhere.');
+    raise exception 'FAIL: a note without a session';
+  exception when insufficient_privilege then
+    if sqlerrm not like '%Sign in to continue.%' then raise; end if;
+  end;
+end $$;
+reset role;
+
+set app.test_uid = '00000000-0000-0000-0000-000000000003';  -- Omar: candidates.view in B, no pool
+set role authenticated;
+do $$
+begin
+  begin
+    perform public.add_candidate_note('80000000-0000-0000-0000-000000000701', 'Not mine to write.');
+    raise exception 'FAIL: a note without the pool capability';
+  exception when insufficient_privilege then
+    if sqlerrm not like '%You need "Work the talent pool" to add a note to a candidate.%' then raise; end if;
+  end;
+end $$;
+reset role;
+
+-- 2. RLS: the pool reads everything, a company reviewer reads only what is
+-- tagged with their company, and only the author or an admin removes a note.
+set app.test_uid = '';
+insert into public.candidate_notes (id, candidate_id, company_id, kind, body, actor_name) values
+  ('d0000000-0000-0000-0000-000000000701', '80000000-0000-0000-0000-000000000701',
+   '10000000-0000-0000-0000-00000000000b', 'call', 'Company B rang her about the role.', 'Bea HR');
+set app.test_uid = '00000000-0000-0000-0000-000000000003';  -- Omar
+set role authenticated;
+do $$
+declare n int;
+begin
+  assert exists (select 1 from public.candidate_notes where id = 'd0000000-0000-0000-0000-000000000701'),
+    'candidates.view in B reads a note tagged with B';
+  assert not exists (select 1 from public.candidate_notes where body = 'Called, left a voicemail.'),
+    'a person-level note is invisible without the pool capability';
+  delete from public.candidate_notes where body = 'Called, left a voicemail.';
+  get diagnostics n = row_count;
+  assert n = 0, 'nobody removes a note they did not write';
+end $$;
+reset role;
+set app.test_uid = '00000000-0000-0000-0000-000000000004';  -- Ada
+set role authenticated;
+do $$
+declare n int;
+begin
+  assert (select count(*) from public.candidate_notes
+           where candidate_id = '80000000-0000-0000-0000-000000000701') = 2,
+    'a pool holder reads both the person-level note and the company-tagged one';
+  delete from public.candidate_notes where body = 'Called, left a voicemail.';
+  get diagnostics n = row_count;
+  assert n = 1, 'the author removes her own note';
+end $$;
+reset role;
+
+-- 3. import_zoho_history: a dry run that writes nothing, a commit, and a
+-- re-run that finds everything already there. The payload is the §1 contract.
+set app.test_uid = '00000000-0000-0000-0000-000000000003';  -- Omar
+set role authenticated;
+do $$
+begin
+  begin
+    perform public.import_zoho_history('{}'::jsonb, false);
+    raise exception 'FAIL: a non-admin imported history';
+  exception when insufficient_privilege then
+    if sqlerrm not like '%Importing from Zoho Recruit needs platform admin access.%' then raise; end if;
+  end;
+end $$;
+reset role;
+
+set app.test_uid = '00000000-0000-0000-0000-000000000004';  -- Ada
+set role authenticated;
+do $$
+declare
+  r jsonb;
+  v_payload jsonb := jsonb_build_object(
+    'users', jsonb_build_array(
+      jsonb_build_object('zoho_id', 'U-1', 'email', 'ada@holding.test', 'name', 'Ada Admin'),
+      jsonb_build_object('zoho_id', 'U-2', 'email', 'gone@zoho.invalid', 'name', 'Unresolved Reviewer')),
+    'candidate_notes', jsonb_build_array(
+      jsonb_build_object('zoho_id', 'ZH-N1', 'candidate_zoho_id', 'ZH-C1', 'kind', 'call', 'zoho_type', 'Call',
+        'body', 'Spoke on the phone about the role.', 'actor_zoho_id', 'U-1', 'actor_name', 'Ada Admin',
+        'created_at', '2024-03-04T09:30:00+01:00'),
+      jsonb_build_object('zoho_id', 'ZH-N2', 'candidate_zoho_id', 'ZH-NOBODY', 'kind', 'note', 'zoho_type', 'Notes',
+        'body', 'About somebody who was never imported.', 'actor_zoho_id', 'U-2', 'actor_name', 'Unresolved Reviewer',
+        'created_at', '2024-03-05T09:30:00+01:00')),
+    'interviews', jsonb_build_array(
+      jsonb_build_object('zoho_id', 'ZH-I1', 'candidate_zoho_id', 'ZH-C1', 'job_zoho_id', 'ZH-J1',
+        'name', 'Level 1 Interview', 'kind', 'other', 'scheduled_at', '2024-03-06T10:00:00+01:00',
+        'duration_minutes', 45, 'location', 'Zoho Meeting', 'status', 'completed',
+        'outcome', 'Move to next round', 'notes', 'Feedback: strong on the basics.',
+        'owner_zoho_id', 'U-1', 'interviewer_zoho_ids', jsonb_build_array('U-1', 'U-2'),
+        'cancellation_reason', null, 'created_at', '2024-03-01T08:00:00+01:00'),
+      jsonb_build_object('zoho_id', 'ZH-I2', 'candidate_zoho_id', 'ZH-C1', 'job_zoho_id', 'ZH-NOJOB',
+        'name', 'Phone Screen', 'kind', 'phone', 'scheduled_at', '2024-02-06T10:00:00+01:00',
+        'duration_minutes', 30, 'location', null, 'status', 'cancelled',
+        'outcome', 'Cancelled', 'notes', null, 'owner_zoho_id', 'U-1',
+        'interviewer_zoho_ids', jsonb_build_array('U-1'),
+        'cancellation_reason', 'Candidate withdrew.', 'created_at', '2024-02-01T08:00:00+01:00')),
+    'reviews', jsonb_build_array(
+      jsonb_build_object('zoho_id', 'ZH-R1', 'interview_zoho_id', 'ZH-I1', 'rating', 4,
+        'recommendation', 'strong_yes', 'comments', 'Knows the work.',
+        'summary', 'Knows the work. Q: Biggest project? — A: The migration.',
+        'source', 'Interviewer Review', 'author_zoho_id', 'U-2', 'created_at', '2024-03-07T09:00:00+01:00'),
+      jsonb_build_object('zoho_id', 'ZH-R2', 'interview_zoho_id', 'ZH-I1', 'rating', 3,
+        'recommendation', 'yes', 'comments', '', 'summary', '',
+        'source', 'Recruiter Review', 'author_zoho_id', 'U-1', 'created_at', '2024-03-07T10:00:00+01:00'),
+      jsonb_build_object('zoho_id', 'ZH-R3', 'interview_zoho_id', 'ZH-I1', 'rating', 2,
+        'recommendation', 'no', 'comments', 'Second card from the same reviewer.', 'summary', '',
+        'source', 'Recruiter Review', 'author_zoho_id', 'U-1', 'created_at', '2024-03-07T11:00:00+01:00')));
+  v_reasons text;
+begin
+  -- The dry run: the counts are exact and not one row is written. Three
+  -- reviews, not the plan's two: a duplicate author needs a *resolved* one,
+  -- and the null-author card the app must render needs an unresolved one.
+  r := public.import_zoho_history(v_payload, false);
+  assert not (r->>'committed')::boolean, 'a dry run commits nothing: ' || r::text;
+  assert r->'problems' = '[]'::jsonb, 'a well-formed payload has no problems: ' || r::text;
+  assert r->'counts' = jsonb_build_object(
+    'notes_created', 1, 'notes_skipped', 1,
+    'interviews_created', 1, 'interviews_skipped', 1, 'panel_rows', 1,
+    'scorecards_created', 2, 'scorecards_skipped', 1,
+    'users_resolved', 1, 'users_unresolved', 1), 'the dry-run counts: ' || (r->'counts')::text;
+  select string_agg(x->>'kind' || '/' || (x->>'ref') || '=' || (x->>'reason'), '; ' order by x->>'ref')
+    into v_reasons from jsonb_array_elements(r->'skipped') x;
+  assert v_reasons = 'interview/ZH-I2=application_missing; note/ZH-N2=candidate_missing; review/ZH-R3=duplicate_author',
+    'every unplaceable row is counted by reason, and none of them refuses the call: ' || coalesce(v_reasons, '(none)');
+  assert (select count(*) from public.candidate_notes where provider = 'zoho_recruit') = 0
+     and (select count(*) from public.interviews where provider = 'zoho_recruit') = 0
+     and (select count(*) from public.scorecards where provider = 'zoho_recruit') = 0,
+    'the dry run wrote nothing';
+
+  -- The commit writes exactly what the dry run promised.
+  r := public.import_zoho_history(v_payload, true);
+  assert (r->>'committed')::boolean, 'the commit reports itself: ' || r::text;
+  assert r->'counts' = jsonb_build_object(
+    'notes_created', 1, 'notes_skipped', 1,
+    'interviews_created', 1, 'interviews_skipped', 1, 'panel_rows', 1,
+    'scorecards_created', 2, 'scorecards_skipped', 1,
+    'users_resolved', 1, 'users_unresolved', 1), 'the commit counts: ' || (r->'counts')::text;
+
+  -- The re-run places nothing new: the rows it wrote are already imported and
+  -- the duplicate author is still a duplicate, now against a stored card.
+  r := public.import_zoho_history(v_payload, false);
+  assert r->'counts' = jsonb_build_object(
+    'notes_created', 0, 'notes_skipped', 2,
+    'interviews_created', 0, 'interviews_skipped', 2, 'panel_rows', 0,
+    'scorecards_created', 0, 'scorecards_skipped', 3,
+    'users_resolved', 1, 'users_unresolved', 1), 'the re-run counts: ' || (r->'counts')::text;
+  select string_agg(x->>'ref' || '=' || (x->>'reason'), '; ' order by x->>'ref')
+    into v_reasons from jsonb_array_elements(r->'skipped') x;
+  assert v_reasons = 'ZH-I1=already_imported; ZH-I2=application_missing; ZH-N1=already_imported; '
+                     'ZH-N2=candidate_missing; ZH-R1=already_imported; ZH-R2=already_imported; '
+                     'ZH-R3=duplicate_author',
+    'the re-run reasons: ' || coalesce(v_reasons, '(none)');
+end $$;
+reset role;
+
+-- What the import actually left behind.
+set app.test_uid = '';
+do $$
+declare v_interview uuid; v_card uuid;
+begin
+  assert (select candidate_id::text || '|' || kind || '|' || body || '|' || actor_id::text
+                 || '|' || coalesce(actor_name, '(none)') || '|' || (custom->'zoho'->>'type')
+          from public.candidate_notes where provider = 'zoho_recruit' and provider_ref = 'ZH-N1')
+         = '80000000-0000-0000-0000-000000000703|call|Spoke on the phone about the role.'
+           || '|20000000-0000-0000-0000-000000000004|(none)|Call',
+    'the imported note: the D2 kind, the resolved actor, the verbatim Zoho type';
+  assert (select company_id from public.candidate_notes where provider_ref = 'ZH-N1') is null,
+    'an imported note is tied to no company (D1)';
+  assert (select occurred_at from public.candidate_notes where provider_ref = 'ZH-N1')
+         = '2024-03-04T09:30:00+01:00'::timestamptz,
+    'the note happened when Zoho says it happened';
+  assert (select last_activity_at from public.candidates where id = '80000000-0000-0000-0000-000000000703')
+         >= '2024-03-04T09:30:00+01:00'::timestamptz,
+    'an imported note leaves the candidate''s activity where the history put it';
+
+  select id into v_interview from public.interviews where provider = 'zoho_recruit' and provider_ref = 'ZH-I1';
+  assert (select application_id::text || '|' || company_id::text || '|' || kind || '|' || status
+                 || '|' || duration_minutes::text || '|' || location || '|' || created_by::text
+          from public.interviews where id = v_interview)
+         = '90000000-0000-0000-0000-000000000701|10000000-0000-0000-0000-00000000000b|other|completed'
+           || '|45|Zoho Meeting|20000000-0000-0000-0000-000000000004',
+    'the interview lands on the matched application, its company derived by the 0014 trigger';
+  assert (select (custom->'zoho'->>'name') || '|' || (custom->'zoho'->>'outcome')
+          from public.interviews where id = v_interview) = 'Level 1 Interview|Move to next round',
+    'the Zoho name and outcome are kept for the line the app shows';
+  assert (select custom->'zoho'->'interviewers' from public.interviews where id = v_interview)
+         = '["Unresolved Reviewer"]'::jsonb,
+    'the interviewer we could not link stays as a name';
+  assert (select string_agg(person_id::text, ',') from public.interview_panel where interview_id = v_interview)
+         = '20000000-0000-0000-0000-000000000004',
+    'the interviewer we could link is on the panel';
+
+  assert (select count(*) from public.scorecards where provider = 'zoho_recruit') = 2, 'two cards were written';
+  select id into v_card from public.scorecards where provider_ref = 'ZH-R1';
+  assert (select author_id from public.scorecards where id = v_card) is null
+     and (select author_name from public.scorecards where id = v_card) = 'Unresolved Reviewer',
+    'an unlinked reviewer keeps their name on the card';
+  assert (select application_id::text || '|' || company_id::text || '|' || recommendation || '|' || summary
+          from public.scorecards where id = v_card)
+         = '90000000-0000-0000-0000-000000000701|10000000-0000-0000-0000-00000000000b|strong_yes'
+           || '|Knows the work. Q: Biggest project? — A: The migration.',
+    'the card''s scope is derived by the 0014 trigger and the summary carries the assessment';
+  assert (select (ratings->0->>'criterion_id') || '|' || (ratings->0->>'label') || '|' || (ratings->0->>'rating')
+                 || '|' || (ratings->0->>'evidence')
+          from public.scorecards where id = v_card)
+         = 'zoho_overall|Overall (Zoho Recruit · Interviewer Review)|4|Knows the work.',
+    'D4: one overall rating, the review source in its label';
+  assert (select author_id::text || '|' || coalesce(author_name, '(none)') || '|' || (ratings->0->>'label')
+          from public.scorecards where provider_ref = 'ZH-R2')
+         = '20000000-0000-0000-0000-000000000004|(none)|Overall (Zoho Recruit · Recruiter Review)',
+    'a linked reviewer is the author, with no name to fall back to';
+
+  -- 4. A card with neither an author nor a name is nobody's: the CHECK says so.
+  begin
+    insert into public.scorecards (interview_id, ratings, recommendation, author_id, author_name)
+      values (v_interview, '[]'::jsonb, 'yes', null, null);
+    raise exception 'FAIL: an anonymous scorecard was accepted';
+  exception when check_violation then null;
+  end;
+end $$;
+
+-- Tail: Omar is back to what he held before this block.
+delete from public.grant_capabilities gc using omar_notes_added a
+  where gc.grant_id = a.grant_id and gc.capability_key = a.capability_key;
+drop table omar_notes_added;
+
 select 'SMOKE TESTS PASSED' as result;

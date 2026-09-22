@@ -5773,7 +5773,11 @@ insert into public.candidates (id, full_name) values
   ('80000000-0000-0000-0000-000000000697', 'Reach Seven'),
   ('80000000-0000-0000-0000-000000000698', 'Reach Eight'),
   ('80000000-0000-0000-0000-000000000699', 'Reach Nine'),
-  ('80000000-0000-0000-0000-00000000069a', 'Reach Ten');
+  ('80000000-0000-0000-0000-00000000069a', 'Reach Ten'),
+  ('80000000-0000-0000-0000-00000000069b', 'Reach Eleven'),
+  ('80000000-0000-0000-0000-00000000069c', 'Reach Twelve'),
+  ('80000000-0000-0000-0000-00000000069d', 'Reach Thirteen'),
+  ('80000000-0000-0000-0000-00000000069e', 'Reach Fourteen');
 -- Head-hunted rows at new (the trigger makes them `sourced`), one careers
 -- style row with no source at all, and one that will go to interview.
 insert into public.applications (id, job_id, company_id, candidate_id, stage_key, source_key) values
@@ -5790,8 +5794,19 @@ insert into public.applications (id, job_id, company_id, candidate_id, stage_key
 insert into public.applications (id, job_id, company_id, candidate_id) values
   ('90000000-0000-0000-0000-000000000696', '70000000-0000-0000-0000-000000000691', '10000000-0000-0000-0000-00000000000b',
    '80000000-0000-0000-0000-000000000696');
+-- A sub-status of the wrong stage on insert is corrected, never refused, so
+-- an import survives a status nobody recognises; one of the right stage is
+-- kept as given.
+insert into public.applications (id, job_id, company_id, candidate_id, stage_key, source_key, sub_status_key) values
+  ('90000000-0000-0000-0000-00000000069c', '70000000-0000-0000-0000-000000000691', '10000000-0000-0000-0000-00000000000b',
+   '80000000-0000-0000-0000-00000000069c', 'new', 'head_hunt', 'qualified'),
+  ('90000000-0000-0000-0000-00000000069d', '70000000-0000-0000-0000-000000000691', '10000000-0000-0000-0000-00000000000b',
+   '80000000-0000-0000-0000-00000000069d', 'new', 'head_hunt', 'contact_attempted'),
+  ('90000000-0000-0000-0000-00000000069e', '70000000-0000-0000-0000-000000000691', '10000000-0000-0000-0000-00000000000b',
+   '80000000-0000-0000-0000-00000000069e', 'new', 'careers_page', 'qualified');
 -- The "not responding" fixtures: received two months ago, so only the events
--- below decide. Seven is the one that qualifies.
+-- below decide. Seven and Eleven are the boundary pair — 31 days and exactly
+-- 30 — and Seven is the only row of the twelve that qualifies.
 insert into public.applications (id, job_id, company_id, candidate_id, stage_key, received_at) values
   ('90000000-0000-0000-0000-000000000697', '70000000-0000-0000-0000-000000000691', '10000000-0000-0000-0000-00000000000b',
    '80000000-0000-0000-0000-000000000697', 'screening', now() - interval '60 days'),
@@ -5800,13 +5815,16 @@ insert into public.applications (id, job_id, company_id, candidate_id, stage_key
   ('90000000-0000-0000-0000-000000000699', '70000000-0000-0000-0000-000000000691', '10000000-0000-0000-0000-00000000000b',
    '80000000-0000-0000-0000-000000000699', 'screening', now() - interval '60 days'),
   ('90000000-0000-0000-0000-00000000069a', '70000000-0000-0000-0000-000000000692', '10000000-0000-0000-0000-00000000000b',
-   '80000000-0000-0000-0000-00000000069a', 'screening', now() - interval '60 days');
+   '80000000-0000-0000-0000-00000000069a', 'screening', now() - interval '60 days'),
+  ('90000000-0000-0000-0000-00000000069b', '70000000-0000-0000-0000-000000000691', '10000000-0000-0000-0000-00000000000b',
+   '80000000-0000-0000-0000-00000000069b', 'screening', now() - interval '60 days');
 update public.applications set sub_status_key = 'interested' where id = '90000000-0000-0000-0000-000000000699';
 insert into public.application_events (application_id, kind, body, created_at) values
-  ('90000000-0000-0000-0000-000000000697', 'note', 'Left a message.', now() - interval '31 days'),
+  ('90000000-0000-0000-0000-000000000697', 'note', 'Left a message.', (current_date - 31)::timestamptz + interval '12 hours'),
   ('90000000-0000-0000-0000-000000000698', 'note', 'Spoke today.', now()),
-  ('90000000-0000-0000-0000-000000000699', 'note', 'Left a message.', now() - interval '31 days'),
-  ('90000000-0000-0000-0000-00000000069a', 'note', 'Left a message.', now() - interval '31 days');
+  ('90000000-0000-0000-0000-000000000699', 'note', 'Left a message.', (current_date - 31)::timestamptz + interval '12 hours'),
+  ('90000000-0000-0000-0000-00000000069a', 'note', 'Left a message.', (current_date - 31)::timestamptz + interval '12 hours'),
+  ('90000000-0000-0000-0000-00000000069b', 'note', 'Left a message.', (current_date - 30)::timestamptz + interval '12 hours');
 update public.applications set stage_key = 'interview' where id = '90000000-0000-0000-0000-000000000695';
 
 -- 1. The vocabulary: seven keys, their stages, nothing anywhere else.
@@ -5859,6 +5877,11 @@ begin
     'and a head-hunted insert is Sourced';
   assert (select sub_status_key from public.applications where id = '90000000-0000-0000-0000-000000000695') is null,
     'a row moved to Interview carries no sub-status';
+  assert (select sub_status_key from public.applications where id = '90000000-0000-0000-0000-00000000069c') = 'sourced'
+     and (select sub_status_key from public.applications where id = '90000000-0000-0000-0000-00000000069e') = 'applied',
+    'a Screening key on an inserted New row is corrected to the stage default, by source';
+  assert (select sub_status_key from public.applications where id = '90000000-0000-0000-0000-00000000069d') = 'contact_attempted',
+    'a key of the right stage is kept as given';
 end $$;
 
 -- 3. A plain stage move, as the app does it: the sub-status follows.
@@ -5887,6 +5910,10 @@ begin
   update public.applications set sub_status_key = 'contact_attempted' where id = '90000000-0000-0000-0000-000000000692';
   assert (select sub_status_key from public.applications where id = '90000000-0000-0000-0000-000000000692') = 'contact_attempted',
     'a sub-status of the same stage is accepted';
+  update public.applications set sub_status_key = null where id = '90000000-0000-0000-0000-000000000692';
+  assert (select sub_status_key from public.applications where id = '90000000-0000-0000-0000-000000000692') = 'sourced',
+    'clearing it inside New re-defaults from the source: a row here always carries one';
+  update public.applications set sub_status_key = 'contact_attempted' where id = '90000000-0000-0000-0000-000000000692';
 end $$;
 
 -- 5. log_outreach: two applications, one call, one event each.
@@ -5944,6 +5971,43 @@ begin
                    and kind = 'outreach' and to_sub_status_key = 'sourced' and body is null),
     'an empty note leaves the event body null: ' || r::text;
   perform public.log_outreach(array['90000000-0000-0000-0000-000000000693']::uuid[], 'contact_attempted', 'Back again.');
+  -- The same id twice is one application.
+  select count(*) into n_before from public.application_events
+    where application_id = '90000000-0000-0000-0000-000000000692';
+  r := public.log_outreach(array['90000000-0000-0000-0000-000000000692',
+                                 '90000000-0000-0000-0000-000000000692']::uuid[], 'sourced', 'Once only.');
+  assert r = '{"logged": 1}'::jsonb, 'a repeated id is logged once: ' || r::text;
+  assert (select count(*) from public.application_events
+          where application_id = '90000000-0000-0000-0000-000000000692') = n_before + 1,
+    'and writes exactly one event';
+  -- The four sentences the plan left to the house.
+  begin
+    perform public.log_outreach(array[]::uuid[], 'contact_attempted', '');
+    raise exception 'FAIL: logged outreach against nothing';
+  exception when invalid_parameter_value then
+    if sqlerrm not like '%Pick at least one application.%' then raise; end if;
+  end;
+  begin
+    perform public.log_outreach(array['90000000-0000-0000-0000-000000000692']::uuid[], '   ', '');
+    raise exception 'FAIL: logged outreach without a sub-status';
+  exception when invalid_parameter_value then
+    if sqlerrm not like '%Pick a sub-status.%' then raise; end if;
+  end;
+  begin
+    perform public.log_outreach(array['90000000-0000-0000-0000-000000000692']::uuid[], 'contact_attempted',
+                                repeat('x', 2001));
+    raise exception 'FAIL: a note over the limit';
+  exception when invalid_parameter_value then
+    if sqlerrm not like '%Keep the note to 2,000 characters or fewer.%' then raise; end if;
+  end;
+  r := public.log_outreach(array['90000000-0000-0000-0000-000000000692']::uuid[], 'contact_attempted', repeat('x', 2000));
+  assert r = '{"logged": 1}'::jsonb, 'exactly 2,000 characters is allowed: ' || r::text;
+  begin
+    perform public.log_outreach(array['90000000-0000-0000-0000-0000000006ff']::uuid[], 'contact_attempted', '');
+    raise exception 'FAIL: logged outreach against an id that is not there';
+  exception when invalid_parameter_value then
+    if sqlerrm not like '%That application no longer exists.%' then raise; end if;
+  end;
 end $$;
 reset role;
 set app.test_uid = '00000000-0000-0000-0000-000000000003';  -- Omar: the pool, never the review
@@ -5967,33 +6031,25 @@ begin
     perform public.log_outreach(array['90000000-0000-0000-0000-000000000692']::uuid[], 'contact_attempted', '');
     raise exception 'FAIL: logged outreach signed out';
   exception when insufficient_privilege then
-    if sqlerrm not like '%Sign in first.%' then raise; end if;
+    if sqlerrm not like '%Sign in to continue.%' then raise; end if;
   end;
 end $$;
 reset role;
 
 -- 7. The backfill's mapping. Its rows cannot be seeded here — the smoke runs
--- after every migration — so the expression itself is asserted over the D5
--- statuses, stage and source alongside (plan 054 §2 item 7).
+-- after every migration — so app.zoho_sub_status, the function the backfill
+-- calls, is asserted directly, with the stage guard and the default around it
+-- exactly as the backfill writes them (plan 054 §2 item 7).
 do $$
 declare v text;
 begin
+  assert app.zoho_sub_status(null) is null and app.zoho_sub_status('Whatever Zoho Said') is null,
+    'an unmapped status is nothing at all';
   select string_agg(x.zoho || '@' || x.stage || '/' || coalesce(x.source, '-') || '>'
                     || coalesce(coalesce(
                          (select s.key from public.application_sub_statuses s
                            where s.stage_key = x.stage and s.archived_at is null
-                             and s.key = case x.zoho
-                               when 'Associated'             then 'sourced'
-                               when 'New'                    then 'sourced'
-                               when 'Attempted to Contact'   then 'contact_attempted'
-                               when 'Not Contacted'          then 'contact_attempted'
-                               when 'Not contacted'          then 'contact_attempted'
-                               when 'Contacted'              then 'contacted'
-                               when 'Interested'             then 'interested'
-                               when 'Waiting-for-Evaluation' then 'awaiting_evaluation'
-                               when 'Qualified'              then 'qualified'
-                               else null
-                             end),
+                             and s.key = app.zoho_sub_status(x.zoho)),
                          app.default_sub_status(x.stage, x.source)), '-'), '; ' order by x.ord)
     into v
     from (values
@@ -6025,7 +6081,9 @@ end $$;
 do $$
 begin
   assert (select app.not_responding(a) from public.applications a where a.id = '90000000-0000-0000-0000-000000000697'),
-    'screening/contacted on an open job, last event 31 days ago: not responding';
+    'screening/contacted on an open job, last event dated 31 days ago: not responding';
+  assert not (select app.not_responding(a) from public.applications a where a.id = '90000000-0000-0000-0000-00000000069b'),
+    'the boundary: a last activity dated exactly 30 days ago is still answering';
   assert not (select app.not_responding(a) from public.applications a where a.id = '90000000-0000-0000-0000-000000000698'),
     'an event today answers it';
   assert not (select app.not_responding(a) from public.applications a where a.id = '90000000-0000-0000-0000-000000000699'),

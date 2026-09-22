@@ -142,6 +142,14 @@ nav a.bell { gap: 9px; margin-top: 6px; }
 }
 .linkish:hover { color: #fff; }
 .workspace { margin-left: 236px; flex: 1; min-width: 0; padding: 35px 42px 50px; }
+/* On paper the navigation is nobody's use of the page, and the fixed sidebar
+   would otherwise repeat down every sheet. Pages that print something specific
+   (the equipment register) hide their own screen furniture the same way. */
+@media print {
+  .sidebar { display: none; }
+  .shell { display: block; min-height: 0; }
+  .workspace { margin-left: 0; padding: 0; }
+}
 @media (max-width: 720px) {
   .sidebar { position: static; width: auto; box-shadow: none; }
   .shell { display: block; }

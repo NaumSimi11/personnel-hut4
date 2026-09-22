@@ -16,6 +16,8 @@ import {
 import { bookHolder, holderChoice, KEPT_SOMEWHERE, matchesSearch, NOBODY, OTHER_HOLDER, UNMATCHED_PERSON } from '@/lib/assetRegister'
 import AssetRow, { type RowEdit } from '@/components/equipment/AssetRow.vue'
 import { nextAssetTag, nextInventoryNumber } from '@/lib/assetNumbering'
+import { inventoryHeading, inventoryRows, localToday } from '@/lib/inventoryPrint'
+import { longDate } from '@/lib/candidatePool'
 
 /**
  * Equipment across the holding (plan 049): every asset the viewer may see —
@@ -119,6 +121,30 @@ function filterByHolder(rows: Asset[]): Asset[] {
 }
 
 /** How many rows each book-holder option would show, so the option can say so. */
+// The printed register (task.md). It prints `shown`, so the paper carries the
+// same filter, search and order as the screen it was printed from.
+const printRows = computed(() =>
+  inventoryRows(
+    shown.value.map((a) => ({
+      asset_tag: a.asset_tag,
+      type_key: a.type_key,
+      model: a.model,
+      serial_number: a.serial_number,
+      inventory_number: a.inventory_number,
+      company_id: a.company_id,
+      status: a.status,
+      holder_note: a.holder_note,
+      holderName: holderNames.value[openAssignment(a)?.person_id ?? ''] ?? null,
+    })),
+    { types: typeNames.value, companies: companyNames.value },
+  ),
+)
+const printedHeading = computed(() => inventoryHeading(printRows.value.length, longDate(localToday())))
+
+function printInventory(): void {
+  window.print()
+}
+
 const bookCounts = computed(() => {
   let kept = 0
   let unmatched = 0
@@ -448,6 +474,9 @@ onMounted(load)
           <option v-for="h in holdersWithAssets" :key="h.id" :value="h.id">{{ h.name }}</option>
         </select>
         <CompanyFilter v-model="filter" :companies="filterOptions" all-label="Everywhere" />
+        <button class="button secondary" type="button" data-testid="print-inventory" @click="printInventory()">
+          Print list
+        </button>
       </div>
       <div v-if="loading" class="empty">Loading…</div>
       <template v-else>
@@ -550,7 +579,27 @@ onMounted(load)
         />
       </template>
     </div>
-  </div>
+  
+    <!-- Printed only: the screen list is rows of controls, which paper cannot use. -->
+    <section class="print-sheet" aria-hidden="true">
+      <h1>Equipment register</h1>
+      <p class="printed-meta">{{ printedHeading }}</p>
+      <table>
+        <thead>
+          <tr>
+            <th>Tag</th><th>Inventory no.</th><th>Type</th><th>Model</th>
+            <th>Serial</th><th>Belongs to</th><th>Status</th><th>Held by</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr v-for="(r, i) in printRows" :key="i">
+            <td>{{ r.tag }}</td><td>{{ r.inventory }}</td><td>{{ r.type }}</td><td>{{ r.model }}</td>
+            <td>{{ r.serial }}</td><td>{{ r.owner }}</td><td>{{ r.status }}</td><td>{{ r.holder }}</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+</div>
 </template>
 
 <style scoped>
@@ -577,4 +626,20 @@ onMounted(load)
 .muted { color: var(--muted); font-weight: 400; }
 .actions { display: flex; gap: 7px; flex-wrap: wrap; }
 .small-btn { font-size: 11px; padding: 7px 11px; }
+/* The register on paper: the screen is rows of buttons and selects, so print
+   swaps it for a plain table. Nothing else on the page reaches the printer. */
+.print-sheet { display: none; }
+@media print {
+  /* Everything the screen needs and paper does not. */
+  .page-head,
+  .card,
+  .error-note { display: none !important; }
+  .print-sheet { display: block; }
+  .print-sheet h1 { font-size: 16px; margin: 0 0 4px; }
+  .printed-meta { font-size: 11px; color: #555; margin: 0 0 12px; }
+  .print-sheet table { width: 100%; border-collapse: collapse; font-size: 10px; }
+  .print-sheet th, .print-sheet td { border: 1px solid #999; padding: 4px 6px; text-align: left; }
+  .print-sheet thead { display: table-header-group; }
+  .print-sheet tr { break-inside: avoid; }
+}
 </style>

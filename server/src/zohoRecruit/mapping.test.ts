@@ -13,7 +13,9 @@ import {
   staleRule,
 } from './mapping.js'
 
-// The 38 distinct `Candidate Status` values of Associated_001.csv, byte-exact.
+// Every `Candidate Status` the import must handle, byte-exact: the 38 distinct
+// values of Associated_001.csv, plus the four that Zoho's live picklist carries
+// but that export never contained (read from Recruit on 2026-09-22).
 const STATUSES: Record<string, string> = {
   Contacted: 'screening',
   Interested: 'screening',
@@ -53,15 +55,56 @@ const STATUSES: Record<string, string> = {
   'Offer-Made': 'offer',
   'To-be-Offered': 'offer',
   Hired: 'hired',
+  'Offer-Accepted': 'hired',
+  'Approved by hiring manager': 'interview',
+  'Converted - Employee': 'hired',
+  'Converted - Temp': 'hired',
 }
 
+/**
+ * Zoho Recruit's configured `Candidate Status` picklist, read from the live org
+ * on 2026-09-22 — 35 values, which is *not* the same set as the export above:
+ * the export also holds values since retired from the picklist, and the picklist
+ * holds values no candidate had reached when the export was taken.
+ *
+ * `mapStatus` throws on an unknown status and the import refuses the whole run,
+ * so a picklist value with no mapping is a failed import, not a bad row. Re-read
+ * the picklist before a re-import and add anything new here; this list is a
+ * checkpoint against drift, not an automatic detector of it.
+ */
+const LIVE_PICKLIST = [
+  // Screening
+  'Associated', 'New', 'Not contacted', 'Contacted', 'NEVER to be contacted again',
+  'Attempted to Contact', 'Interested', 'Not responding', 'Not Interested',
+  'Contact in Future', 'Unqualified',
+  // Interview
+  'Interview-to-be-Scheduled', 'Interview 1 - HR', 'Rejected by HR',
+  'Interview 2 - Stakeholders', 'Rejected by hiring manager', 'Task',
+  'Interview 3 - Other stakeholder', 'Interview 4 - Other stakeholders', 'Rejected',
+  'Withdraw Application', 'On-Hold', 'No-Show',
+  'Feedback to be provided from an Interview',
+  // Offered
+  'Offer-Made', 'Offer-Accepted', 'Offer-Declined', 'To-be-Offered', 'Offer-Withdrawn',
+  // Hired
+  'Hired',
+  // Others
+  'Submitted-to-hiring manager', 'Approved by hiring manager', 'Interview-Scheduled',
+  'Converted - Employee', 'Converted - Temp',
+]
+
 describe('mapStatus', () => {
-  it('maps every one of the 38 association statuses', () => {
-    expect(Object.keys(STATUSES)).toHaveLength(38)
+  it('maps every one of the 42 association statuses', () => {
+    expect(Object.keys(STATUSES)).toHaveLength(42)
     expect(Object.keys(STATUS_TO_STAGE).sort()).toEqual(Object.keys(STATUSES).sort())
     for (const [status, stage] of Object.entries(STATUSES)) {
       expect(mapStatus(status).stage, status).toBe(stage)
     }
+  })
+
+  it('maps every value of the live Zoho picklist', () => {
+    expect(LIVE_PICKLIST).toHaveLength(35)
+    const unmapped = LIVE_PICKLIST.filter((v) => !Object.prototype.hasOwnProperty.call(STATUS_TO_STAGE, v))
+    expect(unmapped, 'picklist values with no mapping — the import would refuse the run').toEqual([])
   })
 
   it('carries the reason text and the contact flags', () => {
@@ -107,7 +150,9 @@ describe('mapStatus', () => {
     expect(() => mapStatus('not contacted')).toThrow(/unknown zoho status/i)
     expect(() => mapStatus('Rejected–Hirable')).toThrow(/unknown zoho status/i)
     expect(() => mapStatus('')).toThrow(/unknown zoho status/i)
-    expect(() => mapStatus('Approved by hiring manager')).toThrow(/unknown zoho status/i)
+    // was 'Approved by hiring manager' until the picklist read of 2026-09-22 put
+    // it in the table; a near-miss of a real value keeps the assertion honest.
+    expect(() => mapStatus('Approved by HR')).toThrow(/unknown zoho status/i)
   })
 })
 

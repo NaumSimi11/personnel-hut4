@@ -14,7 +14,13 @@ export type JobStatus = 'open' | 'on_hold' | 'filled' | 'closed'
 
 export const TERMINAL_STAGES: readonly StageKey[] = ['hired', 'rejected', 'withdrawn']
 
-/** The 38 distinct `Candidate Status` values of Associated_001.csv, byte-exact. */
+/**
+ * Every `Candidate Status` the import must handle, byte-exact: the 38 distinct
+ * values of Associated_001.csv, plus the four Zoho's live picklist carries that
+ * that export never contained. `mapStatus` throws on anything else and the
+ * import refuses the whole run, so this table is total or the run fails — see
+ * `LIVE_PICKLIST` in the test for the drift checkpoint.
+ */
 export const STATUS_TO_STAGE: Readonly<Record<string, StatusMapping>> = {
   // screening
   Contacted: { stage: 'screening', sub: 'contacted' },
@@ -54,13 +60,18 @@ export const STATUS_TO_STAGE: Readonly<Record<string, StatusMapping>> = {
   'Interview-to-be-Scheduled': { stage: 'interview' },
   'Interview-in-Progress': { stage: 'interview' },
   'Submitted-to-hiring manager': { stage: 'interview' },
+  'Approved by hiring manager': { stage: 'interview' },
   Task: { stage: 'interview' },
   'No-Show': { stage: 'interview' },
   // offer
   'Offer-Made': { stage: 'offer' },
   'To-be-Offered': { stage: 'offer' },
-  // hired
+  // hired — the offer was accepted, so the person is hired here (maintainer,
+  // 2026-09-22); Zoho's "Converted" pair is its own terminal for the same thing.
   Hired: { stage: 'hired' },
+  'Offer-Accepted': { stage: 'hired' },
+  'Converted - Employee': { stage: 'hired' },
+  'Converted - Temp': { stage: 'hired' },
 }
 
 export class UnknownValueError extends Error {}

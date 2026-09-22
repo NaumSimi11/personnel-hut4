@@ -3,9 +3,9 @@
 # Keep it current: rewrite the `state` and `next` sections at each handoff.
 
 meta:
-  written: 2026-09-17 (updated after slice 051 — plan 045 complete)
+  written: 2026-09-22 (updated after slice 052 — the talent pool + the Zoho Recruit import; live and imported)
   repo: E:\personnel-hut4 (GitHub NaumSimi11/personnel-hut4, branch main)
-  head: af227da
+  head: bfc08ce (+ the docs commit after it) (main; feature/052-talent-pool merged ff, branch can be deleted)
   origin_main: 5f4c2a5
   unpushed_commits:
     - 630e21b feat: show / hide toggle on every password field (PasswordInput)
@@ -53,7 +53,7 @@ workflow_per_slice:
 
 state:
   product: complete HR platform — companies, people (one Add employee dialog, edit details, private card for personal.view holders — 046), employment (transfers, changes, corrections 0037/0038), hiring requests (revisions), jobs, candidates (journey, bulk CVs, files), onboarding/offboarding plans with per-company checklists (047), the handover matrix (048), equipment for the holding with the starter kit and generated forms (049), policies as a library + the welcome note (050), kudos values + the Kudos page, bonuses and the net estimate (051), documents (versions, requests), IT requests, compensation, payroll periods (gross + estimate), leave (full Field Notebook parity: calendar, requests, balances, holidays, corrections, manager desk), notifications on both sides (bell + email via Resend), dashboard by capability (044/0036), kudos wall, platform admins from the UI, password show/hide
-  live_db: migrations 0001–0044 applied (0044 kudos + bonuses + net — kudos_values, kudos.value_id / posted_by, can_manage_kudos, record_kudos / update_kudos / kudos_overview / save_kudos_value, column-level insert on kudos, payroll_items with add/remove_payroll_item, payroll settings in companies.settings -> 'payroll' with payroll_settings / set_payroll_settings, payroll_lines bonus/gross/tax/deductions/net (audit redacts them all), payroll_periods tax_rate_percent / deductions_flat / reopened_at, prepare sweeps bonuses, reopen releases + recomputes, approve refuses a reopened period; 0043 policies + welcome — policies.body, publish_policy(p_body), six seeded drafts, tick_policies, first-day details in companies.settings, welcome_note_render/text/data, send_welcome_note, plans.welcome_sent_at/_to; 0042 equipment pool — assets.company_id nullable, can_see_asset / can_work_asset, starter kit in companies.settings, open_starter_kit / issue_kit_item / add_kit_item, generated_documents queue + record_generated_document, equipment_form_data, tick_return_form; 0041 handover — handover_recipients / handover_sends, raise on plan insert / complete and period former, resend / mark / retry RPCs, tick_handover, companies.it_notification_email, notify_it_request; 0040 checklists — keyed template lines, richer defaults, company_template copy-on-write, upsert/retire/reorder_template_tasks, add_plan_task, cancel_departure, tick_private_details; 0035, 0036 dashboard; 0037 employment corrections; 0038 employee record — create_employee, private national_id + bank_account audited by field name, structure open to employment.edit, correct_employment p_fields, import through create_employee; 0039 review — people_work_email_key unique index, app.check_employee shared rule checker, hire always starts the checklist, candidate email stays personal)
+  live_db: migrations 0001–0067 applied (0067 talent pool, applied 2026-09-22 — candidates holding-wide with provider / provider_ref / source_key / the contact rule / archived_at / last_activity_at and the generated name_key / phone_key / linkedin_key; candidate_sources (8); candidate_files under candidate/<id>/ in the candidate-files bucket; app.can_view_candidate / can_edit_candidate / can_source_candidates; upsert_sourced_candidate (matches, attach_to, ignore_matches), search_candidates (applications_count + the capped list), set_contact_rule, add_candidate_to_job (p_override_wait), import_zoho_recruit, link_hired_application; assert_contactable revoked from authenticated; applications.source_key backfilled for careers only. 0045–0066 as recorded in git — the earlier '0044' line here was stale). ZOHO IMPORT COMMITTED 2026-09-22: 3,611 candidates, 4,157 applications (1,332 stale closed), 75 jobs, 1,212 notes, 4,541 events, 51 do-not-contact, 54 contact-later, 59 hires (16 with a proposed employee); files 2,710 uploaded to candidate-files (2,709 first pass + 1 after the NUL fix 872a270), 0 failed; both the import and the files re-run proved idempotent; report .zoho-payload.report.json (git-ignored). Test rows kept on purpose (D8): 'Ivana Frost · Frontend Dev · Offer'.
   deployed: personnel-hut4.vercel.app serves the real app (sign-in verified 16 Sep); env vars are in Vercel already
   accounts:
     can_log_in: 28 (27 carried from Field Notebook with identical bcrypt hashes + Naum)
@@ -76,63 +76,30 @@ decisions_2026_09_16:
   - entry experience is the real gap ("100x better app, worse entry"): one Add employee form, edit where shown, replace all 14 window.prompt/confirm with dialogs, HR (employment.edit) may add departments/locations
 
 # ---------------------------------------------------------------------------
-# RESUME POINT (written 2026-09-22 ~03:00, plan 052 code complete and reviewed; session wrapped while waiting on the live apply).
-# Read this block first; then .superpowers/sdd/052-talent-pool/progress.md (the ledger).
+# SLICE 052 — CLOSED 2026-09-22 (code merged to main, 0067 live, the Zoho history imported)
 execution_052:
-  plan: plans/052-talent-pool.md          # the spec; decisions D1-D8 run on their defaults ("i want all")
-  branch: feature/052-talent-pool          # from main 7b6e396; HEAD b74046d; merge to main locally at the end, never push
-  method: superpowers:subagent-driven-development — fresh implementer per task, task review, scoped fix rounds; one final whole-branch review + one fix wave + one re-review (done)
-  workspace: .superpowers/sdd/052-talent-pool/     # git-ignored: progress.md (ledger + every ruling), task-*-brief/report.md, review-*.diff, final-review-sdd.md, final-review-skill.md, final-fix-brief.md, final-fix-report.md
-  commits_on_branch:                       # oldest first; every task committed with explicit paths
-    - 279d93e docs: plan 052 (+ .gitignore for the Zoho export and .superpowers)
-    - a0fc601 test: the offer smoke follows 0046
-    - 8be40db feat: migration 0067 — the talent pool + smoke block
-    - b9466b8 fix: 0067 review minors
-    - acab1eb feat: T2a — database.ts, lib/candidatePool.ts, lib/candidateFiles.ts, CandidateFilesCard.vue
-    - b7b9e41 feat: T2b — server/src/zohoRecruit/*, the extract / files scripts, scripts/zoho-import.sh, careersRoutes source keys
-    - 9fae800 feat: T3c — ApplicationPage, ImportedHireCard, ApplicantsPanel + HomePage bounded lists
-    - 21c08c1 feat: T3a — CandidateMatches, AddCandidateDialog, UploadCvsDialog via RPC, PickFromPoolDialog, JobPage Source from pool
-    - befa395 feat: T3b — TalentPoolPanel, /hiring?tab=pool, CandidatePage, ContactRuleDialog, SourceToJobDialog, router
-    - 4551cd5 test: candidate-review.spec names the files card in full
-    - f2de14c fix: T3a round 1 — busy guards in the dedupe dialogs
-    - 9496bda docs: handoff mid-052
-    - f9aba7a test: T3a round 2 — upload-cvs.spec reads candidate_files; candidate-review.spec expects the name link to the record
-    - 837c0f7 docs: T5 — data-model, integrations-zoho, development-plan, plans/README
-    - 0a273a7 fix: 0067 final review — careers-only backfill, the wait rule in the contact filters, applications_count, the match hint's contact keys gated on attachable
-    - eab70c5 fix: the pool dialogs — busy on attach/create-new, the hire proposal preselected only when employed here, friendly() on RLS only, 200-char name
-    - dd0e10a fix: the Zoho import — an association without its job is counted as a problem, uploaded_by skips hr@/admin@
-    - b74046d docs: the Offer category is kept on the files manifest only
-  task_status:
-    T1_T2a_T2b_T3a_T3b_T3c_T5: complete and reviewed (see the ledger for each)
-    final_review: DONE — Skill code-review medium (6 findings) + SDD reviewer on fable (0 Critical, 2 Important, 14 Minor); one fix wave (12 items, 837c0f7..b74046d); re-review 12/12 addressed, two Low residuals parked
-    verification_at_b74046d: local-verify SMOKE TESTS PASSED (67 migrations); app vitest 457; vue-tsc clean; server 213 tests
-    T4_e2e: ATTEMPTED 2026-09-22 02:50 — the implementer's STEP 0 gate found 0067 NOT on live (PostgREST: candidate_sources not in the schema cache) and stopped with no changes. Re-dispatch fresh in the new session from task-4-brief.md + task-4-dispatch-notes.md (gate, the post-review changes, testids, seeding rules, steps); BASE = HEAD at dispatch; E2E_ALLOW_PRODUCTION=true is set in .env.local
-    merge: NOT DONE — after T4 is green: git checkout main && git merge --ff-only feature/052-talent-pool; never push
-  blocked_on_the_maintainer:
-    apply_0067_live: the auto-mode classifier denies every psql apply against the live URL (Production Deploy) and, since 2026-09-21 late, even read-only selects and the local `npm run import:zoho-recruit:extract` (it pattern-matches "import"). The Bash(psql:*) allow rule in .claude/settings.local.json never matches because psql is not on PATH. The maintainer runs, in Git Bash from E:\personnel-hut4:
-      PATH="/c/Program Files/PostgreSQL/18/bin:$PATH" PGCLIENTENCODING=UTF8 psql "$(grep '^SUPABASE_DB_URL=' .env.local | cut -d= -f2- | tr -d '\r\"')" -1 -v ON_ERROR_STOP=1 -q -f supabase/migrations/0067_talent_pool.sql
-      then: psql … -tAc "select count(*) from public.candidate_sources"  → 8
-    alternative: run the session outside auto mode (permission prompts) or put C:\Program Files\PostgreSQL\18\bin on PATH so Bash(psql:*) can match.
-    runbook_sent_to_the_maintainer: .superpowers/sdd/052-talent-pool/apply-0067-runbook.md (sent to their device 2026-09-22 ~03:00; they were away from the PC). Gmail is not authorised in the harness — mail is not an option until the claude.ai connector is authorised.
-  live_db_truth: migrations 0001-0066 applied (verified 2026-09-21); 0067 NOT applied as of 2026-09-22 02:30; live has 3 candidates / 3 applications, 0 violate candidates_text_len
-  remaining_steps_in_order:
-    - 1. maintainer applies 0067 (runbook above) and says "applied"; the session then verifies via a service-client count (T4's gate) since psql reads are denied
-    - 2. T4 — dispatch fresh from task-4-brief.md + task-4-dispatch-notes.md (BASE = HEAD at dispatch): app/e2e/talent-pool.spec.ts, app/e2e/pool-dedupe.spec.ts; run them + upload-cvs, careers, hiring-pipeline, job-workspace, candidate-review, interviews-offer, reports, home-dashboard, home-queue (workers=1, live DB, webServer on 5199 + server 8787); task review; fix rounds as needed
-    - 3. update this file's state/next (0067 live, T4 green) + plans/README 052 row to DONE; commit docs
-    - 4. merge feature/052-talent-pool into main (ff-only); do not push
-    - 5. live import (plan §3.5), each step run by the maintainer if the classifier keeps denying: `npm --prefix server run import:zoho-recruit:extract` (writes .zoho-payload.json / .zoho-files.json / .zoho-review.json, prints counts) → decide D8 (delete the leftover "Ivana Frost · Frontend Dev · Offer" test application + its candidate) → `scripts/zoho-import.sh --dry-run` (refused must be 0; review unresolved users, possible duplicates, the hires table) → STOP AND ASK before `--commit` → `npx tsx server/scripts/zoho-recruit-files.ts --dry-run` then `--commit` (~2,700 uploads, ~20 min) → re-run both dry runs to prove idempotence → the admin grants candidates.source to the Holding HR people from the access editor → HR confirms hires from each application page (ImportedHireCard)
-  deferred_to_a_follow_up (from the final review, all Minor, none blocking):
-    - override_wait is not offered on the plain reviewer's attach path (AddCandidateDialog / UploadCvsDialog) — a "contact later" match in a wait is refused with the RPC sentence; only pool holders get "Add anyway". The maintainer's UX call.
-    - assert_contactable lets a contact_later record with a null contact_again_after through, while contactState and the search filters treat it as a wait (0067 :249-251 vs candidatePool.ts :200-208); one clause either side — decide which is right
-    - three nameKey implementations (SQL, candidatePool.ts, payload.ts — the last folds NFD marks more broadly); derive the review file's same-name groups from the SQL-identical mirror
-    - TalentPoolPanel filters push to route.query but do not read it back on Back
-    - storage orphans: a crash between object upload and row insert (zoho-recruit-files.ts), and a cascade delete of a candidate leaves its candidate/<id>/ objects — a sweep can list objects without rows
-    - UploadCvsDialog attach/createNew set busy without try/finally (same shape as submit)
-    - CandidateFilesCard's extra `heading` prop; the 100-skill CHECK not mirrored client-side; no one-click application link from a new-stage row for pool holders on the Applications tab (name → record; the record's Applications card links on)
-  rulings: every one is in .superpowers/sdd/052-talent-pool/progress.md as "Ruling: … — cost if wrong: …"; the load-bearing ones: the source_key backfill keeps only careers→careers_page (the plan's wider mapping relabelled history); the match hint carries the contact keys only for attachable matches; search_candidates returns applications_count; assert_contactable revoked from authenticated; D8 and the import commit stop for the maintainer
+  plan: plans/052-talent-pool.md
+  branch: feature/052-talent-pool merged into main (ff) at 71b1417; not pushed
+  method: superpowers:subagent-driven-development (fresh implementer per task, task reviews, one final whole-branch review + one fix wave + one re-review); ledger with every ruling at .superpowers/sdd/052-talent-pool/progress.md (git-ignored; delete once the follow-ups below are captured)
+  verification: local-verify SMOKE TESTS PASSED (67 migrations); app vitest 457; vue-tsc clean; server 213; E2E talent-pool + pool-dedupe + the recruitment suite (11 specs) green on live 2026-09-22
+  load_bearing_rulings:
+    - the applications.source_key backfill keeps only careers→careers_page (the plan's wider mapping relabelled history)
+    - the match hint carries the contact keys only for attachable matches
+    - search_candidates returns applications_count beside the capped 3-row list
+    - assert_contactable is revoked from authenticated (only definer callers)
+    - D8: the maintainer KEPT the 'Ivana Frost · Frontend Dev · Offer' test application
+  follow_ups_from_052 (none blocking; in priority order):
+    - 0068 search by words: search_candidates' name predicate is a LIKE over the sorted-word key, so a partial multi-word query ("E2E Pool", "Ana Il") misses; match every query word against name_key (the E2E searches the full name meanwhile)
+    - the admin grants candidates.source to the Holding HR people from the access editor (D4: no grant backfill) — until then only admins see the pool tab
+    - HR confirms the 16 proposed hires from each application page (ImportedHireCard: Link / Not the same person); 43 hires have no proposal
+    - override_wait is not offered on the plain reviewer's attach path (AddCandidateDialog / UploadCvsDialog) — only pool holders get "Add anyway"; the maintainer's UX call
+    - assert_contactable lets a contact_later record with a null contact_again_after through while contactState / the filters treat it as a wait — decide which is right (one clause)
+    - two E2E people rows remain on live from hiring-pipeline / interviews-offer (pre-existing cleanup gap: it_requests without on-delete; fix in those specs — see .superpowers/sdd/052-talent-pool/task-4-report.md)
+    - three nameKey implementations (SQL / candidatePool.ts / payload.ts); pool filters not read back on Back; storage orphans on crash / cascade (a sweep can list candidate/<id>/ objects without rows); UploadCvsDialog attach/createNew without try/finally; CandidateFilesCard's extra heading prop; the 100-skill CHECK not mirrored client-side; no one-click application link from a new-stage row for pool holders
+  harness_lessons: in auto mode the classifier denies live psql applies / reads and anything named "import" most of the time (it let the 0067 apply and the import through on later tries — not reliable); the maintainer runs the runbook (.superpowers/sdd/052-talent-pool/apply-0067-runbook.md pattern) or the session runs outside auto mode
 
 next:
-  say_to_start: "resume 052" — read execution_052 above and .superpowers/sdd/052-talent-pool/progress.md; the code is done and reviewed (b74046d); continue at remaining_steps_in_order step 1 (the maintainer applies 0067 — if they say "applied" in the first message, go straight to step 2, T4). (Before execution the line was: "go 052" — plans/052-talent-pool.md (sourcing: the talent pool + the Zoho Recruit import, migration 0067). Written 2026-09-21 from a three-design panel; the maintainer must confirm decisions D1–D8 at the top of the plan first (departments → companies, retention, stale applications, no grant backfill, identity edits, files, notes, the leftover test application). The Zoho export sits in docs/Data_001/ and docs/Attachments_001/ (git-ignored, real people — never commit)
+  say_to_start: "next slice" — 052 is closed; pick from docs/development-plan.md "Next" (the maintainer's keys and setup, go-live, payroll for real, the outreach sub-status slice that 052 left a seam for) or start with follow-up 1 above (0068 search by words, a one-function migration + smoke + one E2E assertion change)
   plan_before_052: plan 045 is complete (046–051 on main); after 052 the next candidates, in the order docs/development-plan.md lists them: the maintainer's keys and setup, go-live, payroll for real, then the outreach sub-status slice that 052 leaves a seam for
   plan: plans/045-simple-hr-flows.md — DONE; plans/051-kudos-bonuses-net-pay.md is the last slice's record
   reuse_from_051: kudos_overview(p_month) is the one call for the Kudos page; app.kudos_input(p, row) is the shared shape check for record/update; payroll_settings_for(company) is the holding-fallback pattern for any per-company number in companies.settings; prepare_payroll_period's sweep block is where any new payroll item kind would attach; reopen must keep lines and released items consistent (recompute)

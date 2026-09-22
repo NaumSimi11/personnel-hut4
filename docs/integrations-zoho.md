@@ -176,6 +176,9 @@ itself recorded.
 - Attachments that are calendar files, job summaries, spreadsheets,
   `.msg`/`.rar`, parented to a job or an interview rather than a candidate,
   or over 10 MB — each skipped with its reason and counted, never guessed.
+- The Offer category of an attachment (`custom.zoho.category = 'Offer'`)
+  lives on the files manifest only; `candidate_files` has no `custom` column,
+  so the category is not stored.
 - Candidates never associated with any job keep their Zoho status in
   `custom.zoho.status` only; no application is created for them.
 

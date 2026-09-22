@@ -53,8 +53,9 @@ create trigger t8_touch_candidate after insert on public.candidate_notes
   for each row execute function app.touch_candidate_activity();
 
 -- There is no edit path (a note is history), so the audit exists for the
--- removal: who took a note off a record, and what it said.
-create trigger audit after insert or delete on public.candidate_notes
+-- removal alone: who took a note off a record, and what it said. An insert is
+-- already its own record, and the import writes thousands of them.
+create trigger audit after delete on public.candidate_notes
   for each row execute function app.audit();
 
 -- RLS. Reading is the pool capability, or candidates.view in the company the
@@ -149,6 +150,10 @@ create unique index scorecards_provider_dedupe
 -- exception from the middle of a loop, so the cast is tried in one place.
 -- Null means "absent or unparseable"; the caller knows which by looking at
 -- the text it passed.
+-- The payload's timestamps must carry an offset: the extract converts the
+-- export's Europe/Skopje wall-clock times and writes them with one, because
+-- an offset-less value is read here in the *database's* TimeZone, which is
+-- not the one the export was written in.
 create or replace function app.zoho_history_ts(p text) returns timestamptz
 language plpgsql stable security definer set search_path = public as $$
 begin
@@ -224,11 +229,14 @@ begin
   if not app.is_admin() then
     raise exception 'Importing from Zoho Recruit needs platform admin access.' using errcode = '42501';
   end if;
+  -- All three sections are required, empty or not: a payload missing one is a
+  -- half-built extract, not an import with nothing to say (0067 refuses the
+  -- same way for its "candidates" array).
   if p_payload is null or jsonb_typeof(p_payload) <> 'object' then
     raise exception 'The payload needs "candidate_notes", "interviews" and "reviews" arrays.' using errcode = '22023';
   end if;
   foreach v_txt in array array['candidate_notes', 'interviews', 'reviews'] loop
-    if p_payload ? v_txt and jsonb_typeof(p_payload->v_txt) <> 'array' then
+    if jsonb_typeof(p_payload->v_txt) is distinct from 'array' then
       raise exception 'The payload needs "candidate_notes", "interviews" and "reviews" arrays.' using errcode = '22023';
     end if;
   end loop;
@@ -359,13 +367,14 @@ begin
     end if;
     -- The job's Zoho id lives in custom->'zoho'->>'id' (0067); the pair is
     -- the application. An imported application is preferred when a candidate
-    -- somehow has two on one job.
+    -- somehow has two on one job — coalesce, not a bare comparison, because
+    -- source_provider is null on a hand-added row and NULL would sort first.
     select id into v_job from public.jobs where custom->'zoho'->>'id' = coalesce(v_row->>'job_zoho_id', '');
     v_app := null;
     if v_job is not null then
       select id into v_app from public.applications
         where candidate_id = v_cand and job_id = v_job
-        order by (source_provider = 'zoho_recruit') desc, created_at
+        order by (coalesce(source_provider, '') = 'zoho_recruit') desc, created_at
         limit 1;
     end if;
     if v_app is null then
@@ -570,10 +579,13 @@ begin
               (v_info->>'at')::timestamptz, (v_info->>'at')::timestamptz);
       v_ints_written := v_ints_written + 1;
       for v_txt in select jsonb_array_elements_text(v_info->'panel') loop
+        -- What the insert actually wrote, not what it was asked to write: a
+        -- row the conflict swallowed must fail the verification below.
         insert into public.interview_panel (interview_id, person_id)
           values ((v_info->>'id')::uuid, v_txt::uuid)
           on conflict do nothing;
-        v_panel_written := v_panel_written + 1;
+        get diagnostics v_n = row_count;
+        v_panel_written := v_panel_written + v_n;
       end loop;
     exception when others then
       raise exception 'Row % (interview): %', v_row->>'zoho_id', sqlerrm;

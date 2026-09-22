@@ -6113,9 +6113,11 @@ set app.test_uid = '';
 -- import that places the Zoho notes, interviews and reviews it can and counts
 -- the rest by reason. Fixtures: Note Person (a pool record with no
 -- application at all, so a null-company note is invisible to anyone but a
--- pool holder), Gone Person (archived), Zoho History + History Role B + their
--- application (the pair the import needs), Ada (platform admin, so a pool
--- holder everywhere) and Omar, given candidates.view in Company B only.
+-- pool holder), Gone Person (archived), Zoho History + History Role B + TWO
+-- applications on that one job — the imported one the interview must find and
+-- a later hand-added one, withdrawn so the one-open rule holds — Ada
+-- (platform admin, so a pool holder everywhere) and Omar, given
+-- candidates.view in Company B only.
 insert into public.candidates (id, full_name) values
   ('80000000-0000-0000-0000-000000000701', 'Note Person');
 insert into public.candidates (id, full_name, archived_at) values
@@ -6125,9 +6127,14 @@ insert into public.candidates (id, full_name, provider, provider_ref) values
 insert into public.jobs (id, company_id, title, status, custom) values
   ('70000000-0000-0000-0000-000000000701', '10000000-0000-0000-0000-00000000000b', 'History Role B', 'open',
    '{"zoho": {"id": "ZH-J1"}}'::jsonb);
-insert into public.applications (id, job_id, company_id, candidate_id) values
+insert into public.applications (id, job_id, company_id, candidate_id, source_provider, provider_ref, stage_key)
+values
   ('90000000-0000-0000-0000-000000000701', '70000000-0000-0000-0000-000000000701',
-   '10000000-0000-0000-0000-00000000000b', '80000000-0000-0000-0000-000000000703');
+   '10000000-0000-0000-0000-00000000000b', '80000000-0000-0000-0000-000000000703',
+   'zoho_recruit', 'ZA-ZH1', 'withdrawn'),
+  ('90000000-0000-0000-0000-000000000702', '70000000-0000-0000-0000-000000000701',
+   '10000000-0000-0000-0000-00000000000b', '80000000-0000-0000-0000-000000000703',
+   null, null, 'new');
 create temp table omar_notes_added as
   select g.id as grant_id, v.cap as capability_key
   from public.access_grants g, (values ('candidates.view')) v(cap)
@@ -6217,7 +6224,9 @@ reset role;
 set app.test_uid = '';
 insert into public.candidate_notes (id, candidate_id, company_id, kind, body, actor_name) values
   ('d0000000-0000-0000-0000-000000000701', '80000000-0000-0000-0000-000000000701',
-   '10000000-0000-0000-0000-00000000000b', 'call', 'Company B rang her about the role.', 'Bea HR');
+   '10000000-0000-0000-0000-00000000000b', 'call', 'Company B rang her about the role.', 'Bea HR'),
+  ('d0000000-0000-0000-0000-000000000702', '80000000-0000-0000-0000-000000000701',
+   '10000000-0000-0000-0000-00000000000a', 'note', 'Company A wrote to her.', 'Alex Director');
 set app.test_uid = '00000000-0000-0000-0000-000000000003';  -- Omar
 set role authenticated;
 do $$
@@ -6225,6 +6234,8 @@ declare n int;
 begin
   assert exists (select 1 from public.candidate_notes where id = 'd0000000-0000-0000-0000-000000000701'),
     'candidates.view in B reads a note tagged with B';
+  assert not exists (select 1 from public.candidate_notes where id = 'd0000000-0000-0000-0000-000000000702'),
+    'and not the note tagged with Company A, where he holds nothing';
   assert not exists (select 1 from public.candidate_notes where body = 'Called, left a voicemail.'),
     'a person-level note is invisible without the pool capability';
   delete from public.candidate_notes where body = 'Called, left a voicemail.';
@@ -6238,8 +6249,8 @@ do $$
 declare n int;
 begin
   assert (select count(*) from public.candidate_notes
-           where candidate_id = '80000000-0000-0000-0000-000000000701') = 2,
-    'a pool holder reads both the person-level note and the company-tagged one';
+           where candidate_id = '80000000-0000-0000-0000-000000000701') = 3,
+    'a pool holder reads the person-level note and both company-tagged ones';
   delete from public.candidate_notes where body = 'Called, left a voicemail.';
   get diagnostics n = row_count;
   assert n = 1, 'the author removes her own note';
@@ -6302,7 +6313,16 @@ declare
         'recommendation', 'no', 'comments', 'Second card from the same reviewer.', 'summary', '',
         'source', 'Recruiter Review', 'author_zoho_id', 'U-1', 'created_at', '2024-03-07T11:00:00+01:00')));
   v_reasons text;
+  v_activity timestamptz;
 begin
+  begin
+    perform public.import_zoho_history(jsonb_build_object('candidate_notes', '[]'::jsonb), false);
+    raise exception 'FAIL: a payload missing two of its three sections';
+  exception when invalid_parameter_value then
+    if sqlerrm not like '%The payload needs "candidate_notes", "interviews" and "reviews" arrays.%' then raise; end if;
+  end;
+  select last_activity_at into v_activity from public.candidates where id = '80000000-0000-0000-0000-000000000703';
+
   -- The dry run: the counts are exact and not one row is written. Three
   -- reviews, not the plan's two: a duplicate author needs a *resolved* one,
   -- and the null-author card the app must render needs an unresolved one.
@@ -6331,6 +6351,9 @@ begin
     'interviews_created', 1, 'interviews_skipped', 1, 'panel_rows', 1,
     'scorecards_created', 2, 'scorecards_skipped', 1,
     'users_resolved', 1, 'users_unresolved', 1), 'the commit counts: ' || (r->'counts')::text;
+  assert (select last_activity_at from public.candidates where id = '80000000-0000-0000-0000-000000000703')
+         = v_activity,
+    'a 2024 note never drags the candidate''s activity forward — the touch only moves it on';
 
   -- The re-run places nothing new: the rows it wrote are already imported and
   -- the duplicate author is still a duplicate, now against a stored card.
@@ -6365,17 +6388,14 @@ begin
   assert (select occurred_at from public.candidate_notes where provider_ref = 'ZH-N1')
          = '2024-03-04T09:30:00+01:00'::timestamptz,
     'the note happened when Zoho says it happened';
-  assert (select last_activity_at from public.candidates where id = '80000000-0000-0000-0000-000000000703')
-         >= '2024-03-04T09:30:00+01:00'::timestamptz,
-    'an imported note leaves the candidate''s activity where the history put it';
-
   select id into v_interview from public.interviews where provider = 'zoho_recruit' and provider_ref = 'ZH-I1';
   assert (select application_id::text || '|' || company_id::text || '|' || kind || '|' || status
                  || '|' || duration_minutes::text || '|' || location || '|' || created_by::text
           from public.interviews where id = v_interview)
          = '90000000-0000-0000-0000-000000000701|10000000-0000-0000-0000-00000000000b|other|completed'
            || '|45|Zoho Meeting|20000000-0000-0000-0000-000000000004',
-    'the interview lands on the matched application, its company derived by the 0014 trigger';
+    'the interview lands on the IMPORTED application of the two on that job — the hand-added '
+    '…702 carries no source_provider and must not win the tiebreak — its company derived by the 0014 trigger';
   assert (select (custom->'zoho'->>'name') || '|' || (custom->'zoho'->>'outcome')
           from public.interviews where id = v_interview) = 'Level 1 Interview|Move to next round',
     'the Zoho name and outcome are kept for the line the app shows';

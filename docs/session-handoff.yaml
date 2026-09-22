@@ -76,7 +76,7 @@ decisions_2026_09_16:
   - entry experience is the real gap ("100x better app, worse entry"): one Add employee form, edit where shown, replace all 14 window.prompt/confirm with dialogs, HR (employment.edit) may add departments/locations
 
 # ---------------------------------------------------------------------------
-# RESUME POINT (written 2026-09-22 ~02:30, plan 052 code complete and reviewed).
+# RESUME POINT (written 2026-09-22 ~03:00, plan 052 code complete and reviewed; session wrapped while waiting on the live apply).
 # Read this block first; then .superpowers/sdd/052-talent-pool/progress.md (the ledger).
 execution_052:
   plan: plans/052-talent-pool.md          # the spec; decisions D1-D8 run on their defaults ("i want all")
@@ -106,7 +106,7 @@ execution_052:
     T1_T2a_T2b_T3a_T3b_T3c_T5: complete and reviewed (see the ledger for each)
     final_review: DONE — Skill code-review medium (6 findings) + SDD reviewer on fable (0 Critical, 2 Important, 14 Minor); one fix wave (12 items, 837c0f7..b74046d); re-review 12/12 addressed, two Low residuals parked
     verification_at_b74046d: local-verify SMOKE TESTS PASSED (67 migrations); app vitest 457; vue-tsc clean; server 213 tests
-    T4_e2e: NOT STARTED — needs 0067 on live (blocked, below); brief at .superpowers/sdd/052-talent-pool/task-4-brief.md; BASE for its review package is b74046d; E2E_ALLOW_PRODUCTION=true is already set in .env.local (the maintainer set it 2026-09-22)
+    T4_e2e: ATTEMPTED 2026-09-22 02:50 — the implementer's STEP 0 gate found 0067 NOT on live (PostgREST: candidate_sources not in the schema cache) and stopped with no changes. Re-dispatch fresh in the new session from task-4-brief.md + task-4-dispatch-notes.md (gate, the post-review changes, testids, seeding rules, steps); BASE = HEAD at dispatch; E2E_ALLOW_PRODUCTION=true is set in .env.local
     merge: NOT DONE — after T4 is green: git checkout main && git merge --ff-only feature/052-talent-pool; never push
   blocked_on_the_maintainer:
     apply_0067_live: the auto-mode classifier denies every psql apply against the live URL (Production Deploy) and, since 2026-09-21 late, even read-only selects and the local `npm run import:zoho-recruit:extract` (it pattern-matches "import"). The Bash(psql:*) allow rule in .claude/settings.local.json never matches because psql is not on PATH. The maintainer runs, in Git Bash from E:\personnel-hut4:
@@ -115,8 +115,8 @@ execution_052:
     alternative: run the session outside auto mode (permission prompts) or put C:\Program Files\PostgreSQL\18\bin on PATH so Bash(psql:*) can match.
   live_db_truth: migrations 0001-0066 applied (verified 2026-09-21); 0067 NOT applied as of 2026-09-22 02:30; live has 3 candidates / 3 applications, 0 violate candidates_text_len
   remaining_steps_in_order:
-    - 1. maintainer applies 0067 (above) and confirms 8 sources
-    - 2. T4 — dispatch from task-4-brief.md (BASE b74046d): app/e2e/talent-pool.spec.ts, app/e2e/pool-dedupe.spec.ts; run them + upload-cvs, careers, hiring-pipeline, job-workspace, candidate-review, interviews-offer, reports, home-dashboard, home-queue (workers=1, live DB, webServer on 5199 + server 8787); task review; fix rounds as needed
+    - 1. maintainer applies 0067 (runbook above) and says "applied"; the session then verifies via a service-client count (T4's gate) since psql reads are denied
+    - 2. T4 — dispatch fresh from task-4-brief.md + task-4-dispatch-notes.md (BASE = HEAD at dispatch): app/e2e/talent-pool.spec.ts, app/e2e/pool-dedupe.spec.ts; run them + upload-cvs, careers, hiring-pipeline, job-workspace, candidate-review, interviews-offer, reports, home-dashboard, home-queue (workers=1, live DB, webServer on 5199 + server 8787); task review; fix rounds as needed
     - 3. update this file's state/next (0067 live, T4 green) + plans/README 052 row to DONE; commit docs
     - 4. merge feature/052-talent-pool into main (ff-only); do not push
     - 5. live import (plan §3.5), each step run by the maintainer if the classifier keeps denying: `npm --prefix server run import:zoho-recruit:extract` (writes .zoho-payload.json / .zoho-files.json / .zoho-review.json, prints counts) → decide D8 (delete the leftover "Ivana Frost · Frontend Dev · Offer" test application + its candidate) → `scripts/zoho-import.sh --dry-run` (refused must be 0; review unresolved users, possible duplicates, the hires table) → STOP AND ASK before `--commit` → `npx tsx server/scripts/zoho-recruit-files.ts --dry-run` then `--commit` (~2,700 uploads, ~20 min) → re-run both dry runs to prove idempotence → the admin grants candidates.source to the Holding HR people from the access editor → HR confirms hires from each application page (ImportedHireCard)
@@ -131,7 +131,7 @@ execution_052:
   rulings: every one is in .superpowers/sdd/052-talent-pool/progress.md as "Ruling: … — cost if wrong: …"; the load-bearing ones: the source_key backfill keeps only careers→careers_page (the plan's wider mapping relabelled history); the match hint carries the contact keys only for attachable matches; search_candidates returns applications_count; assert_contactable revoked from authenticated; D8 and the import commit stop for the maintainer
 
 next:
-  say_to_start: "resume 052" — read execution_052 above and .superpowers/sdd/052-talent-pool/progress.md; the code is done and reviewed (b74046d); continue at remaining_steps_in_order step 1 (the maintainer applies 0067) then step 2 (T4). (Before execution the line was: "go 052" — plans/052-talent-pool.md (sourcing: the talent pool + the Zoho Recruit import, migration 0067). Written 2026-09-21 from a three-design panel; the maintainer must confirm decisions D1–D8 at the top of the plan first (departments → companies, retention, stale applications, no grant backfill, identity edits, files, notes, the leftover test application). The Zoho export sits in docs/Data_001/ and docs/Attachments_001/ (git-ignored, real people — never commit)
+  say_to_start: "resume 052" — read execution_052 above and .superpowers/sdd/052-talent-pool/progress.md; the code is done and reviewed (b74046d); continue at remaining_steps_in_order step 1 (the maintainer applies 0067 — if they say "applied" in the first message, go straight to step 2, T4). (Before execution the line was: "go 052" — plans/052-talent-pool.md (sourcing: the talent pool + the Zoho Recruit import, migration 0067). Written 2026-09-21 from a three-design panel; the maintainer must confirm decisions D1–D8 at the top of the plan first (departments → companies, retention, stale applications, no grant backfill, identity edits, files, notes, the leftover test application). The Zoho export sits in docs/Data_001/ and docs/Attachments_001/ (git-ignored, real people — never commit)
   plan_before_052: plan 045 is complete (046–051 on main); after 052 the next candidates, in the order docs/development-plan.md lists them: the maintainer's keys and setup, go-live, payroll for real, then the outreach sub-status slice that 052 leaves a seam for
   plan: plans/045-simple-hr-flows.md — DONE; plans/051-kudos-bonuses-net-pay.md is the last slice's record
   reuse_from_051: kudos_overview(p_month) is the one call for the Kudos page; app.kudos_input(p, row) is the shared shape check for record/update; payroll_settings_for(company) is the holding-fallback pattern for any per-company number in companies.settings; prepare_payroll_period's sweep block is where any new payroll item kind would attach; reopen must keep lines and released items consistent (recompute)

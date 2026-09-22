@@ -73,8 +73,9 @@ prototype in `../prototype` is the UI spec. Updated as milestones land.
 
 1. **Keys from the maintainer** — `RESEND_API_KEY` + `EMAIL_FROM` (invites,
    leave and hiring notifications start sending), `ANTHROPIC_API_KEY`
-   (plan 020 AI assist), Zoho credentials + per-company mapping
-   ([integrations-zoho.md](integrations-zoho.md)).
+   (plan 020 AI assist). Zoho Projects credentials are not needed for now
+   (maintainer, 2026-09-22): the mirror stays dormant; Zoho Recruit is
+   fully imported and needs nothing.
 2. **Setup by the maintainer** — Ivana as Holding HR in every company;
    director and HR contact per company; invite the ten people without a
    carried-over password once email sends; real start dates (the import

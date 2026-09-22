@@ -3,6 +3,7 @@ import { computed, onMounted, ref } from 'vue'
 import { supabase } from '@/lib/supabase'
 import CompanyFilter from '@/components/CompanyFilter.vue'
 import { openingRows, type JobOpeningRow, type OpeningApplicationLite, JOB_STATUS_LABEL } from '@/lib/hiringTabs'
+import { pageAll } from '@/lib/pageAll'
 
 /**
  * The prototype's "Job openings" tab (plan 044): every job the viewer may
@@ -39,21 +40,15 @@ const rows = computed<JobOpeningRow[]>(() => openingRows(jobs.value, application
 // select silently dropped the newest and every "in play" read low. Only the
 // rows that count are asked for (rejected / withdrawn count nowhere), in
 // pages, in id order so a page boundary never skips or repeats a row.
-const PAGE = 1000
-
-async function loadCountedApplications(): Promise<{ data: OpeningApplicationLite[]; error: { message: string } | null }> {
-  const rows: OpeningApplicationLite[] = []
-  for (let from = 0; ; from += PAGE) {
-    const { data, error: err } = await supabase
+function loadCountedApplications(): Promise<{ data: OpeningApplicationLite[]; error: { message: string } | null }> {
+  return pageAll<OpeningApplicationLite>((from, to) =>
+    supabase
       .from('applications')
       .select('id, job_id, stage_key')
       .not('stage_key', 'in', '(rejected,withdrawn)')
       .order('id')
-      .range(from, from + PAGE - 1)
-    if (err) return { data: [], error: err }
-    rows.push(...((data ?? []) as OpeningApplicationLite[]))
-    if ((data ?? []).length < PAGE) return { data: rows, error: null }
-  }
+      .range(from, to),
+  )
 }
 
 async function load(): Promise<void> {

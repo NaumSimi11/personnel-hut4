@@ -277,7 +277,7 @@ function eventLabel(e: EventRow): string {
 async function load(): Promise<void> {
   loading.value = true
   error.value = null
-  const [appRes, eventsRes, peopleRes, channelsRes, sourcesRes, subStatusesRes] = await Promise.all([
+  const [appRes, eventsRes, peopleRes, channelsRes, sourcesRes] = await Promise.all([
     supabase
       .from('applications')
       .select(
@@ -301,7 +301,6 @@ async function load(): Promise<void> {
     supabase.from('people').select('id, full_name').order('full_name'),
     supabase.from('channels').select('key, label'),
     supabase.from('candidate_sources').select('key, label'),
-    supabase.from('application_sub_statuses').select('key, stage_key, label, sort_order, archived_at').is('archived_at', null).order('sort_order'),
   ])
   if (appRes.error || !appRes.data) {
     error.value = missingRecordMessage({
@@ -327,8 +326,6 @@ async function load(): Promise<void> {
   people.value = peopleRes.data ?? []
   channelLabels.value = Object.fromEntries((channelsRes.data ?? []).map((c) => [c.key, c.label]))
   sourceLabels.value = Object.fromEntries((sourcesRes.data ?? []).map((s) => [s.key, s.label]))
-  if (subStatusesRes.error) console.error('Sub-statuses load failed:', subStatusesRes.error.message)
-  subStatusRows.value = subStatusesRes.data ?? []
 
   const questions = salvageQuestions(application.value.job?.screening_questions).questions
   answerRows.value = mergeAnswers(questions, application.value.screening_answers)
@@ -488,7 +485,24 @@ function friendlyReview(message: string): string {
   return friendlyRecruitmentError(message)
 }
 
-onMounted(load)
+async function loadSubStatuses(): Promise<void> {
+  const { data, error: err } = await supabase
+    .from('application_sub_statuses')
+    .select('key, stage_key, label, sort_order, archived_at')
+    .is('archived_at', null)
+    .order('sort_order')
+  if (err) {
+    console.error('Sub-statuses load failed:', err.message)
+    return
+  }
+  subStatusRows.value = data ?? []
+}
+
+onMounted(() => {
+  void load()
+  // The sub-status lookup never changes while the page is open: once, not on every reload.
+  void loadSubStatuses()
+})
 </script>
 
 <template>

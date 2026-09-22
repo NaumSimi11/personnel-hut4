@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/stores/auth'
@@ -20,6 +20,7 @@ import { missingRecordMessage } from '@/lib/missingRecord'
 import OutreachDialog, { type OutreachApplication } from '@/components/OutreachDialog.vue'
 import { NOT_RESPONDING_DAYS, SUB_STATUS_STAGES, notResponding, subStatusesFor, type SubStatus, type SubStatusRow } from '@/lib/outreach'
 import { todayDb } from '@/lib/compensation'
+import { PAGE_SIZE } from '@/lib/pageAll'
 import {
   currentStep,
   friendlyRecruitmentError,
@@ -129,11 +130,13 @@ const activityPanel = ref<InstanceType<typeof JobActivityPanel> | null>(null)
 const outreachDialog = ref<InstanceType<typeof OutreachDialog> | null>(null)
 const subStatusRows = ref<SubStatusRow[]>([])
 const lastActivity = ref<Record<string, string>>({})
+// The activity query came back at its cap, so rows missing from it may simply
+// have been cut off — their activity is unknown (see loadLastActivity).
+const activityTruncated = ref(false)
 const subStatusFilter = ref('')
 const notRespondingOnly = ref(false)
 const selectedIds = ref<string[]>([])
 const outreachTarget = ref<ApplicationRow[]>([])
-const today = todayDb()
 const STAGE_LABELS: Record<string, string> = { new: 'New', screening: 'Screening' }
 
 const activeTab = computed<TabId>(() => {
@@ -172,15 +175,26 @@ function hasSubStatus(stage: string): boolean {
 
 /** D3 as the lib mirrors it: the newest event in the window, else received_at; the job must be live. */
 function isNotResponding(a: ApplicationRow): boolean {
+  const last = lastActivity.value[a.id] ?? null
+  // A truncated activity result cannot tell "no event in the window" from "cut
+  // off", so the received_at fallback would flag rows wrongly: unknown, not flagged.
+  if (!last && activityTruncated.value) return false
   return notResponding(
-    { stage_key: a.stage_key, sub_status_key: a.sub_status_key, last_activity_at: lastActivity.value[a.id] ?? null, received_at: a.received_at, job_status: job.value?.status ?? '' },
-    today,
+    { stage_key: a.stage_key, sub_status_key: a.sub_status_key, last_activity_at: last, received_at: a.received_at, job_status: job.value?.status ?? '' },
+    todayDb(),
   )
 }
 
 function toggleSelected(id: string, checked: boolean): void {
   selectedIds.value = checked ? [...new Set([...selectedIds.value, id])] : selectedIds.value.filter((x) => x !== id)
 }
+
+// Change a filter and the rows it hides leave the selection with them, so the
+// dialog can never log an application the recruiter cannot see.
+watch([subStatusFilter, notRespondingOnly], () => {
+  const visible = new Set(visibleApplications.value.map((a) => a.id))
+  selectedIds.value = selectedIds.value.filter((id) => visible.has(id))
+})
 
 function openOutreach(rows: ApplicationRow[]): void {
   outreachTarget.value = rows
@@ -319,19 +333,25 @@ async function loadApplications(): Promise<void> {
  * days, so the rows stay few: an application with no event in the window
  * falls back to received_at, which gives D3's answer — its older events, if
  * any, never postdate its receipt.
+ *
+ * Newest first and capped at PostgREST's 1,000 rows: a full page means the
+ * result may be a prefix, and the fallback above stops applying (isNotResponding).
  */
 async function loadLastActivity(): Promise<void> {
-  const since = new Date(`${today}T00:00:00Z`)
+  const since = new Date(`${todayDb()}T00:00:00Z`)
   since.setUTCDate(since.getUTCDate() - NOT_RESPONDING_DAYS)
   const { data, error: err } = await supabase
     .from('application_events')
     .select('application_id, created_at, application:applications!inner(job_id)')
     .eq('application.job_id', jobId)
     .gte('created_at', since.toISOString())
+    .order('created_at', { ascending: false })
+    .limit(PAGE_SIZE)
   if (err) {
     console.error('Application activity load failed:', err.message)
     return
   }
+  activityTruncated.value = (data ?? []).length === PAGE_SIZE
   const newest = new Map<string, string>()
   for (const e of data ?? []) {
     const prev = newest.get(e.application_id)

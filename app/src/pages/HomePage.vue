@@ -23,6 +23,7 @@ import {
   type PolicyQueueRow,
 } from '@/lib/homeQueue'
 import { todayDb } from '@/lib/compensation'
+import { pageAll } from '@/lib/pageAll'
 import {
   EMPTY_SNAPSHOT,
   awayToday,
@@ -226,6 +227,23 @@ function loadLaterQueues() {
   ])
 }
 
+/**
+ * Every application on a live role, past PostgREST's 1,000-row cap.
+ * Paged in id order so a page boundary never skips or repeats a row;
+ * `recentApplicants` sorts by `received_at` itself, so the id order costs the
+ * "just applied" list nothing.
+ */
+function loadPipelineApplications(): Promise<{ data: ApplicationLite[]; error: { message: string } | null }> {
+  return pageAll<ApplicationLite>((from, to) =>
+    supabase
+      .from('applications')
+      .select('id, job_id, stage_key, sub_status_key, received_at, candidate:candidates(full_name, last_activity_at), job:jobs!inner(title, status, company:companies(name))')
+      .in('job.status', ['ready', 'open', 'on_hold'])
+      .order('id')
+      .range(from, to) as unknown as PromiseLike<{ data: ApplicationLite[] | null; error: { message: string } | null }>,
+  )
+}
+
 async function loadSnapshot(): Promise<{ error: { message: string } | null }> {
   const { data, error: err } = await supabase.rpc('dashboard_snapshot', { p_days: 30 })
   if (err) return { error: err }
@@ -250,16 +268,12 @@ async function load(): Promise<void> {
     snapshotRes,
     candidateAssignments,
   ] = await Promise.all([
-    // The pipeline of live roles (plan 052): the imported history sits on closed
-    // jobs, and PostgREST would silently cut the list at 1,000 rows anyway.
-    // The sub-status and the candidate's last activity feed the "not
-    // responding" line (plan 054, see outreachRowOf).
-    supabase
-      .from('applications')
-      .select('id, job_id, stage_key, sub_status_key, received_at, candidate:candidates(full_name, last_activity_at), job:jobs!inner(title, status, company:companies(name))')
-      .in('job.status', ['ready', 'open', 'on_hold'])
-      .order('received_at', { ascending: false })
-      .limit(1000),
+    // The pipeline of live roles (plan 052): the imported history sits on
+    // closed jobs. Live jobs still carry more than PostgREST's 1,000 rows, so
+    // this is paged (plan 054 review) — the pipeline card, the "just applied"
+    // list and the "not responding" line all count every row. The sub-status
+    // and the candidate's last activity feed that line (see outreachRowOf).
+    loadPipelineApplications(),
     supabase.from('jobs').select('id, title, status, company:companies(name), request:hiring_requests!jobs_hiring_request_id_fkey(headcount)').in('status', ['ready', 'open']),
     supabase
       .from('hiring_requests')
@@ -331,7 +345,7 @@ async function load(): Promise<void> {
     hiringRequests: hiringRequestsCount.count ?? 0,
     openOnboardingTasks: openTasksCount.count ?? 0,
   }
-  applications.value = (applicationsRes.data ?? []) as unknown as ApplicationLite[]
+  applications.value = applicationsRes.data
   jobs.value = (jobsRes.data ?? []) as unknown as JobLite[]
   away.value = awayToday((leaveRes.data ?? []) as unknown as Parameters<typeof awayToday>[0], todayDb())
 

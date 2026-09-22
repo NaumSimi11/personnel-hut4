@@ -5753,4 +5753,300 @@ end $$;
 reset role;
 set app.test_uid = '';
 
+-- ================================================================ 0069
+-- Outreach (plan 054): sub-statuses inside New and Screening, the defaults
+-- the trigger sets on every write path, log_outreach (one row or many,
+-- all-or-nothing) and "not responding" derived from the last activity.
+-- Fixtures: two Company B jobs — one open, one closed — and ten candidates;
+-- Ada (platform admin, so candidates.review everywhere) does the work,
+-- Omar (candidates.source only, per the 0067 fixture rule) is the refusal.
+insert into public.jobs (id, company_id, title, status) values
+  ('70000000-0000-0000-0000-000000000691', '10000000-0000-0000-0000-00000000000b', 'Outreach Role B', 'open'),
+  ('70000000-0000-0000-0000-000000000692', '10000000-0000-0000-0000-00000000000b', 'Outreach Closed B', 'closed');
+insert into public.candidates (id, full_name) values
+  ('80000000-0000-0000-0000-000000000691', 'Reach One'),
+  ('80000000-0000-0000-0000-000000000692', 'Reach Two'),
+  ('80000000-0000-0000-0000-000000000693', 'Reach Three'),
+  ('80000000-0000-0000-0000-000000000694', 'Reach Four'),
+  ('80000000-0000-0000-0000-000000000695', 'Reach Five'),
+  ('80000000-0000-0000-0000-000000000696', 'Reach Six'),
+  ('80000000-0000-0000-0000-000000000697', 'Reach Seven'),
+  ('80000000-0000-0000-0000-000000000698', 'Reach Eight'),
+  ('80000000-0000-0000-0000-000000000699', 'Reach Nine'),
+  ('80000000-0000-0000-0000-00000000069a', 'Reach Ten');
+-- Head-hunted rows at new (the trigger makes them `sourced`), one careers
+-- style row with no source at all, and one that will go to interview.
+insert into public.applications (id, job_id, company_id, candidate_id, stage_key, source_key) values
+  ('90000000-0000-0000-0000-000000000691', '70000000-0000-0000-0000-000000000691', '10000000-0000-0000-0000-00000000000b',
+   '80000000-0000-0000-0000-000000000691', 'new', 'head_hunt'),
+  ('90000000-0000-0000-0000-000000000692', '70000000-0000-0000-0000-000000000691', '10000000-0000-0000-0000-00000000000b',
+   '80000000-0000-0000-0000-000000000692', 'new', 'head_hunt'),
+  ('90000000-0000-0000-0000-000000000693', '70000000-0000-0000-0000-000000000691', '10000000-0000-0000-0000-00000000000b',
+   '80000000-0000-0000-0000-000000000693', 'new', 'head_hunt'),
+  ('90000000-0000-0000-0000-000000000694', '70000000-0000-0000-0000-000000000691', '10000000-0000-0000-0000-00000000000b',
+   '80000000-0000-0000-0000-000000000694', 'new', 'head_hunt'),
+  ('90000000-0000-0000-0000-000000000695', '70000000-0000-0000-0000-000000000691', '10000000-0000-0000-0000-00000000000b',
+   '80000000-0000-0000-0000-000000000695', 'new', 'head_hunt');
+insert into public.applications (id, job_id, company_id, candidate_id) values
+  ('90000000-0000-0000-0000-000000000696', '70000000-0000-0000-0000-000000000691', '10000000-0000-0000-0000-00000000000b',
+   '80000000-0000-0000-0000-000000000696');
+-- The "not responding" fixtures: received two months ago, so only the events
+-- below decide. Seven is the one that qualifies.
+insert into public.applications (id, job_id, company_id, candidate_id, stage_key, received_at) values
+  ('90000000-0000-0000-0000-000000000697', '70000000-0000-0000-0000-000000000691', '10000000-0000-0000-0000-00000000000b',
+   '80000000-0000-0000-0000-000000000697', 'screening', now() - interval '60 days'),
+  ('90000000-0000-0000-0000-000000000698', '70000000-0000-0000-0000-000000000691', '10000000-0000-0000-0000-00000000000b',
+   '80000000-0000-0000-0000-000000000698', 'screening', now() - interval '60 days'),
+  ('90000000-0000-0000-0000-000000000699', '70000000-0000-0000-0000-000000000691', '10000000-0000-0000-0000-00000000000b',
+   '80000000-0000-0000-0000-000000000699', 'screening', now() - interval '60 days'),
+  ('90000000-0000-0000-0000-00000000069a', '70000000-0000-0000-0000-000000000692', '10000000-0000-0000-0000-00000000000b',
+   '80000000-0000-0000-0000-00000000069a', 'screening', now() - interval '60 days');
+update public.applications set sub_status_key = 'interested' where id = '90000000-0000-0000-0000-000000000699';
+insert into public.application_events (application_id, kind, body, created_at) values
+  ('90000000-0000-0000-0000-000000000697', 'note', 'Left a message.', now() - interval '31 days'),
+  ('90000000-0000-0000-0000-000000000698', 'note', 'Spoke today.', now()),
+  ('90000000-0000-0000-0000-000000000699', 'note', 'Left a message.', now() - interval '31 days'),
+  ('90000000-0000-0000-0000-00000000069a', 'note', 'Left a message.', now() - interval '31 days');
+update public.applications set stage_key = 'interview' where id = '90000000-0000-0000-0000-000000000695';
+
+-- 1. The vocabulary: seven keys, their stages, nothing anywhere else.
+do $$
+begin
+  assert (select count(*) from public.application_sub_statuses) = 7, 'seven sub-statuses';
+  assert (select string_agg(key, ',' order by sort_order) from public.application_sub_statuses
+          where stage_key = 'new') = 'applied,sourced,contact_attempted', 'three inside New, in order';
+  assert (select string_agg(key, ',' order by sort_order) from public.application_sub_statuses
+          where stage_key = 'screening') = 'contacted,interested,awaiting_evaluation,qualified',
+    'four inside Screening, in order';
+  assert not exists (select 1 from public.application_sub_statuses where stage_key not in ('new', 'screening')),
+    'no sub-statuses for interview or any other stage';
+  assert (select string_agg(label, ';' order by stage_key, sort_order) from public.application_sub_statuses)
+    = 'Applied;Sourced — not yet contacted;Contact attempted — no answer yet;'
+      'In conversation;Interested;Awaiting evaluation;Qualified — ready for interview',
+    'the labels as the maintainer wrote them';
+  assert app.default_sub_status('new', 'head_hunt') = 'sourced'
+     and app.default_sub_status('new', 'linkedin_profile') = 'sourced'
+     and app.default_sub_status('new', 'imported') = 'sourced'
+     and app.default_sub_status('new', 'careers_page') = 'applied'
+     and app.default_sub_status('new', null) = 'applied', 'at New the source decides';
+  assert app.default_sub_status('screening', 'head_hunt') = 'contacted'
+     and app.default_sub_status('interview', 'head_hunt') is null
+     and app.default_sub_status('withdrawn', null) is null, 'elsewhere: the first by sort order, or nothing';
+end $$;
+
+-- 2. Insert defaults, through the doors the app uses.
+set app.test_uid = '00000000-0000-0000-0000-000000000004';  -- Ada
+set role authenticated;
+do $$
+declare r jsonb;
+begin
+  r := public.upsert_sourced_candidate('manual', null, jsonb_build_object(
+    'full_name', 'Outreach Hunted', 'email', 'hunted@outreach.test', 'source_key', 'head_hunt',
+    'job_id', '70000000-0000-0000-0000-000000000691'));
+  assert r->>'action' = 'created', 'the head-hunted record is created: ' || r::text;
+  assert (select stage_key || '|' || source_key || '|' || sub_status_key from public.applications
+          where id = (r->>'application_id')::uuid) = 'new|head_hunt|sourced',
+    'a head hunt lands at New, not yet contacted';
+  r := public.upsert_sourced_candidate('manual', null, jsonb_build_object(
+    'full_name', 'Outreach Applicant', 'email', 'applicant@outreach.test', 'source_key', 'careers_page',
+    'job_id', '70000000-0000-0000-0000-000000000691'));
+  assert (select stage_key || '|' || source_key || '|' || sub_status_key from public.applications
+          where id = (r->>'application_id')::uuid) = 'new|careers_page|applied',
+    'someone who came to us is Applied';
+  assert (select sub_status_key from public.applications where id = '90000000-0000-0000-0000-000000000696') = 'applied',
+    'a careers-site insert with no source at all is Applied too';
+  assert (select sub_status_key from public.applications where id = '90000000-0000-0000-0000-000000000691') = 'sourced',
+    'and a head-hunted insert is Sourced';
+  assert (select sub_status_key from public.applications where id = '90000000-0000-0000-0000-000000000695') is null,
+    'a row moved to Interview carries no sub-status';
+end $$;
+
+-- 3. A plain stage move, as the app does it: the sub-status follows.
+do $$
+begin
+  update public.applications set stage_key = 'screening' where id = '90000000-0000-0000-0000-000000000691';
+  assert (select sub_status_key from public.applications where id = '90000000-0000-0000-0000-000000000691') = 'contacted',
+    'new → screening turns Sourced into In conversation';
+  update public.applications set stage_key = 'interview' where id = '90000000-0000-0000-0000-000000000691';
+  assert (select sub_status_key from public.applications where id = '90000000-0000-0000-0000-000000000691') is null,
+    'screening → interview clears it';
+  update public.applications set stage_key = 'screening' where id = '90000000-0000-0000-0000-000000000691';
+  assert (select sub_status_key from public.applications where id = '90000000-0000-0000-0000-000000000691') = 'contacted',
+    'interview → screening gives the stage its first sub-status again';
+end $$;
+
+-- 4. A sub-status belongs to its stage, and the database says so.
+do $$
+begin
+  begin
+    update public.applications set sub_status_key = 'qualified' where id = '90000000-0000-0000-0000-000000000692';
+    raise exception 'FAIL: a Screening sub-status stuck to a New application';
+  exception when invalid_parameter_value then
+    if sqlerrm not like '%"qualified" is not a sub-status of the new stage.%' then raise; end if;
+  end;
+  update public.applications set sub_status_key = 'contact_attempted' where id = '90000000-0000-0000-0000-000000000692';
+  assert (select sub_status_key from public.applications where id = '90000000-0000-0000-0000-000000000692') = 'contact_attempted',
+    'a sub-status of the same stage is accepted';
+end $$;
+
+-- 5. log_outreach: two applications, one call, one event each.
+do $$
+declare r jsonb; v_before timestamptz;
+begin
+  select least(c3.last_activity_at, c4.last_activity_at) into v_before
+    from public.candidates c3, public.candidates c4
+    where c3.id = '80000000-0000-0000-0000-000000000693' and c4.id = '80000000-0000-0000-0000-000000000694';
+  r := public.log_outreach(array['90000000-0000-0000-0000-000000000693', '90000000-0000-0000-0000-000000000694']::uuid[],
+                           'contact_attempted', '  Left a voicemail.  ');
+  assert r = '{"logged": 2}'::jsonb, 'two logged: ' || r::text;
+  assert (select count(*) from public.applications
+          where id in ('90000000-0000-0000-0000-000000000693', '90000000-0000-0000-0000-000000000694')
+            and sub_status_key = 'contact_attempted') = 2, 'both rows moved to Contact attempted';
+  assert (select count(*) from public.application_events
+          where application_id in ('90000000-0000-0000-0000-000000000693', '90000000-0000-0000-0000-000000000694')
+            and kind = 'outreach' and from_sub_status_key = 'sourced' and to_sub_status_key = 'contact_attempted'
+            and body = 'Left a voicemail.' and actor_id = '20000000-0000-0000-0000-000000000004') = 2,
+    'two outreach events, from sourced to contact_attempted, the note trimmed, attributed to Ada';
+  assert (select min(last_activity_at) from public.candidates
+          where id in ('80000000-0000-0000-0000-000000000693', '80000000-0000-0000-0000-000000000694')) > v_before,
+    'the outreach moved both candidates'' last activity';
+end $$;
+
+-- 6. Refusals. The first one aborts the whole call.
+do $$
+declare n_before int; r jsonb;
+begin
+  select count(*) into n_before from public.application_events
+    where application_id in ('90000000-0000-0000-0000-000000000693', '90000000-0000-0000-0000-000000000694');
+  begin
+    perform public.log_outreach(array['90000000-0000-0000-0000-000000000693', '90000000-0000-0000-0000-000000000694',
+                                      '90000000-0000-0000-0000-000000000695']::uuid[], 'sourced', 'Third is at interview.');
+    raise exception 'FAIL: logged outreach against an application at Interview';
+  exception when invalid_parameter_value then
+    if sqlerrm not like '%Reach Five is at Interview — outreach is logged at New or Screening.%' then raise; end if;
+  end;
+  assert (select count(*) from public.application_events
+          where application_id in ('90000000-0000-0000-0000-000000000693', '90000000-0000-0000-0000-000000000694')) = n_before
+     and (select count(*) from public.applications
+          where id in ('90000000-0000-0000-0000-000000000693', '90000000-0000-0000-0000-000000000694')
+            and sub_status_key = 'contact_attempted') = 2,
+    'nothing of the refused call persisted: no event, no change on the first two';
+  begin
+    perform public.log_outreach(array['90000000-0000-0000-0000-000000000693']::uuid[], 'qualified', '');
+    raise exception 'FAIL: a Screening sub-status on a New application';
+  exception when invalid_parameter_value then
+    if sqlerrm not like '%"qualified" is not a sub-status of the new stage.%' then raise; end if;
+  end;
+  -- An empty note is allowed and stored as nothing at all.
+  r := public.log_outreach(array['90000000-0000-0000-0000-000000000693']::uuid[], 'sourced', '');
+  assert r = '{"logged": 1}'::jsonb
+     and exists (select 1 from public.application_events where application_id = '90000000-0000-0000-0000-000000000693'
+                   and kind = 'outreach' and to_sub_status_key = 'sourced' and body is null),
+    'an empty note leaves the event body null: ' || r::text;
+  perform public.log_outreach(array['90000000-0000-0000-0000-000000000693']::uuid[], 'contact_attempted', 'Back again.');
+end $$;
+reset role;
+set app.test_uid = '00000000-0000-0000-0000-000000000003';  -- Omar: the pool, never the review
+set role authenticated;
+do $$
+begin
+  begin
+    perform public.log_outreach(array['90000000-0000-0000-0000-000000000692']::uuid[], 'contact_attempted', '');
+    raise exception 'FAIL: logged outreach without candidates.review';
+  exception when insufficient_privilege then
+    -- Company B answers to "Company Bee" since the 0028 import renamed it.
+    if sqlerrm not like '%You need "Record interview feedback" in Company Bee to log outreach.%' then raise; end if;
+  end;
+end $$;
+reset role;
+set app.test_uid = '';
+set role authenticated;
+do $$
+begin
+  begin
+    perform public.log_outreach(array['90000000-0000-0000-0000-000000000692']::uuid[], 'contact_attempted', '');
+    raise exception 'FAIL: logged outreach signed out';
+  exception when insufficient_privilege then
+    if sqlerrm not like '%Sign in first.%' then raise; end if;
+  end;
+end $$;
+reset role;
+
+-- 7. The backfill's mapping. Its rows cannot be seeded here — the smoke runs
+-- after every migration — so the expression itself is asserted over the D5
+-- statuses, stage and source alongside (plan 054 §2 item 7).
+do $$
+declare v text;
+begin
+  select string_agg(x.zoho || '@' || x.stage || '/' || coalesce(x.source, '-') || '>'
+                    || coalesce(coalesce(
+                         (select s.key from public.application_sub_statuses s
+                           where s.stage_key = x.stage and s.archived_at is null
+                             and s.key = case x.zoho
+                               when 'Associated'             then 'sourced'
+                               when 'New'                    then 'sourced'
+                               when 'Attempted to Contact'   then 'contact_attempted'
+                               when 'Not Contacted'          then 'contact_attempted'
+                               when 'Not contacted'          then 'contact_attempted'
+                               when 'Contacted'              then 'contacted'
+                               when 'Interested'             then 'interested'
+                               when 'Waiting-for-Evaluation' then 'awaiting_evaluation'
+                               when 'Qualified'              then 'qualified'
+                               else null
+                             end),
+                         app.default_sub_status(x.stage, x.source)), '-'), '; ' order by x.ord)
+    into v
+    from (values
+      (1,  'Associated',             'new',       'imported'),
+      (2,  'New',                    'new',       'imported'),
+      (3,  'Attempted to Contact',   'new',       'imported'),
+      (4,  'Not Contacted',          'new',       'imported'),
+      (5,  'Not contacted',          'new',       'imported'),
+      (6,  'Contacted',              'screening', 'imported'),
+      (7,  'Interested',             'screening', 'imported'),
+      (8,  'Waiting-for-Evaluation', 'screening', 'imported'),
+      (9,  'Qualified',              'screening', 'imported'),
+      (10, '',                       'new',       'imported'),
+      (11, '',                       'new',       'careers_page'),
+      (12, 'Interested',             'new',       'careers_page'),
+      (13, '',                       'screening', 'careers_page')
+    ) x(ord, zoho, stage, source);
+  assert v =
+    'Associated@new/imported>sourced; New@new/imported>sourced; '
+    'Attempted to Contact@new/imported>contact_attempted; Not Contacted@new/imported>contact_attempted; '
+    'Not contacted@new/imported>contact_attempted; Contacted@screening/imported>contacted; '
+    'Interested@screening/imported>interested; Waiting-for-Evaluation@screening/imported>awaiting_evaluation; '
+    'Qualified@screening/imported>qualified; @new/imported>sourced; @new/careers_page>applied; '
+    'Interested@new/careers_page>applied; @screening/careers_page>contacted',
+    'the D5 mapping, with the stage guard sending a Screening status on a New row to the default: ' || v;
+end $$;
+
+-- 8. Not responding: the rule, and the count the report carries.
+do $$
+begin
+  assert (select app.not_responding(a) from public.applications a where a.id = '90000000-0000-0000-0000-000000000697'),
+    'screening/contacted on an open job, last event 31 days ago: not responding';
+  assert not (select app.not_responding(a) from public.applications a where a.id = '90000000-0000-0000-0000-000000000698'),
+    'an event today answers it';
+  assert not (select app.not_responding(a) from public.applications a where a.id = '90000000-0000-0000-0000-000000000699'),
+    'Interested is an answer, however old';
+  assert not (select app.not_responding(a) from public.applications a where a.id = '90000000-0000-0000-0000-00000000069a'),
+    'a closed job is nobody''s attention';
+  assert not (select app.not_responding(a) from public.applications a where a.id = '90000000-0000-0000-0000-000000000696'),
+    'Applied is not outreach: they came to us';
+end $$;
+set app.test_uid = '00000000-0000-0000-0000-000000000004';  -- Ada
+set role authenticated;
+do $$
+declare r jsonb;
+begin
+  r := public.recruitment_report('10000000-0000-0000-0000-00000000000b', current_date - 1, current_date + 1);
+  assert (r->'attention'->>'not_responding')::int = 1,
+    'one Company B application is not responding: ' || (r->'attention')::text;
+  assert r->'attention' ? 'overdue_next_actions' and r->'attention' ? 'unassigned' and r->'attention' ? 'stale',
+    'the three existing attention keys are untouched: ' || (r->'attention')::text;
+end $$;
+reset role;
+set app.test_uid = '';
+
 select 'SMOKE TESTS PASSED' as result;

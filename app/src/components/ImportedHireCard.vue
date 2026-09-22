@@ -32,7 +32,8 @@ const emit = defineEmits<{ changed: [] }>()
 
 const dialogs = useDialogStore()
 const employees = ref<{ id: string; name: string }[]>([])
-const personId = ref(props.zoho.proposed_person?.id ?? '')
+/** Preselected to the proposal only once `load` finds it among the employees here. */
+const personId = ref('')
 const loading = ref(true)
 const busy = ref(false)
 const error = ref<string | null>(null)
@@ -71,6 +72,10 @@ async function load(): Promise<void> {
     return
   }
   employees.value = uniquePeople((data ?? []) as PeriodRow[])
+  // A proposal with no employment record here stays a sentence; the select
+  // keeps its placeholder and "Link" waits for a pick.
+  const proposed = props.zoho.proposed_person?.id
+  if (proposed && employees.value.some((e) => e.id === proposed)) personId.value = proposed
 }
 
 async function callLink(target: string | null): Promise<boolean> {

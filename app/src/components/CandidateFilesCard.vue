@@ -132,7 +132,8 @@ async function remove(row: CandidateFileRow): Promise<void> {
 }
 
 function friendly(message: string): string {
-  if (/row-level security|permission|violates/i.test(message)) {
+  // Only a policy denial is a permission problem; a CHECK violation keeps its own sentence.
+  if (/row-level security/.test(message)) {
     return 'Changing this candidate\'s files needs the "Work the talent pool" capability, or "Record interview feedback" where they applied.'
   }
   return message

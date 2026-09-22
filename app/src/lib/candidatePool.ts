@@ -114,6 +114,8 @@ export type PoolRow = {
   last_activity_at: string
   archived_at: string | null
   files_count: number
+  /** Every application the viewer may see; `applications` is the latest three of them. */
+  applications_count: number
   applications: PoolApplication[]
 }
 

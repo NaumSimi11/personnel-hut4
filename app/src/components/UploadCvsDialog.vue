@@ -140,19 +140,25 @@ async function saveOne(i: number): Promise<void> {
 /**
  * A choice on a duplicate row is final: it re-runs the save at once. The
  * buttons unmount as the row turns `saving`; the state check keeps a second
- * click from sending the choice twice regardless.
+ * click from sending the choice twice regardless. `busy` holds for the
+ * re-run as it does in `submit`, so the Remove buttons cannot shift the row
+ * indexes mid-save.
  */
 async function attach(i: number, candidateId: string): Promise<void> {
-  if (rows.value[i]?.state !== 'duplicate') return
+  if (busy.value || rows.value[i]?.state !== 'duplicate') return
+  busy.value = true
   setRow(i, { attachTo: candidateId, ignoreMatches: false })
   await saveOne(i)
+  busy.value = false
   finish()
 }
 
 async function createNew(i: number): Promise<void> {
-  if (rows.value[i]?.state !== 'duplicate') return
+  if (busy.value || rows.value[i]?.state !== 'duplicate') return
+  busy.value = true
   setRow(i, { attachTo: null, ignoreMatches: true })
   await saveOne(i)
+  busy.value = false
   finish()
 }
 
@@ -214,6 +220,7 @@ function finish(): void {
                 v-if="m.attachable && !m.do_not_contact"
                 class="button secondary small-btn"
                 type="button"
+                :disabled="busy"
                 :data-testid="`cv-attach-${i}-${m.id}`"
                 @click="attach(i, m.id)"
               >
@@ -222,7 +229,7 @@ function finish(): void {
               <span v-else-if="m.do_not_contact" class="history">{{ m.full_name }} asked not to be contacted again.</span>
               <span v-else class="history">{{ NOT_ATTACHABLE }}</span>
             </div>
-            <button class="button secondary small-btn" type="button" :data-testid="`cv-create-new-${i}`" @click="createNew(i)">
+            <button class="button secondary small-btn" type="button" :disabled="busy" :data-testid="`cv-create-new-${i}`" @click="createNew(i)">
               Create a new candidate anyway
             </button>
           </div>

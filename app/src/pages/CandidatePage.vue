@@ -398,7 +398,7 @@ onMounted(load)
               <fieldset class="fields" :disabled="!canEditIdentity">
                 <div class="field">
                   <label for="cand-name">Full name</label>
-                  <input id="cand-name" :value="form.fullName" maxlength="120" @input="setField('fullName', ($event.target as HTMLInputElement).value)" />
+                  <input id="cand-name" :value="form.fullName" maxlength="200" @input="setField('fullName', ($event.target as HTMLInputElement).value)" />
                 </div>
                 <div class="grid">
                   <div class="field">

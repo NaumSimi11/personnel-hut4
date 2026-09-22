@@ -117,11 +117,11 @@ function skillsLine(r: PoolRow): string {
   return r.skills.slice(0, SKILLS_SHOWN).join(', ') + (rest > 0 ? ` +${rest}` : '')
 }
 
-/** From the visible list only — "—" when none, never a zero. */
+/** The visible count, then the latest of the capped list — "—" when none, never a zero. */
 function applicationsLine(r: PoolRow): string {
   const latest = r.applications[0]
-  if (!latest) return '—'
-  return `${r.applications.length} · latest: ${latest.job_title}, ${latest.company_name} — ${latest.stage_key}`
+  if (!r.applications_count || !latest) return '—'
+  return `${r.applications_count} · latest: ${latest.job_title}, ${latest.company_name} — ${latest.stage_key}`
 }
 
 function activityDate(r: PoolRow): string {

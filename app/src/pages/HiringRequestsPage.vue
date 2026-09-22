@@ -7,6 +7,7 @@ import DecideHiringRequestDialog from '@/components/DecideHiringRequestDialog.vu
 import JobOpeningsPanel from '@/components/hiring/JobOpeningsPanel.vue'
 import ApplicantsPanel from '@/components/hiring/ApplicantsPanel.vue'
 import TalentPoolPanel from '@/components/hiring/TalentPoolPanel.vue'
+import LabelsPanel from '@/components/hiring/LabelsPanel.vue'
 import { useAuthStore } from '@/stores/auth'
 import { awaitingLabel } from '@/lib/companyOps'
 import { deliverNotifications, deliverySentence } from '@/lib/notificationsApi'
@@ -38,13 +39,16 @@ const auth = useAuthStore()
 
 // Requests · Job openings · Applicants (plan 044) — the prototype's Recruitment
 // tabs, on the URL. The Talent pool (plan 052) is holding-wide and exists only
-// for pool holders; an unknown or hidden tab falls back to the requests.
-type TabId = 'requests' | 'openings' | 'applicants' | 'pool'
+// for pool holders; Labels renames the hiring vocabulary and is admin-only
+// (both lookups are admin_write). An unknown or hidden tab falls back to the
+// requests.
+type TabId = 'requests' | 'openings' | 'applicants' | 'pool' | 'labels'
 const TABS = computed<{ id: TabId; label: string }[]>(() => [
   { id: 'requests', label: 'Hiring requests' },
   { id: 'openings', label: 'Job openings' },
   { id: 'applicants', label: 'Applicants' },
   ...(auth.isAdmin || auth.canAnywhere('candidates.source') ? [{ id: 'pool' as const, label: 'Talent pool' }] : []),
+  ...(auth.isAdmin ? [{ id: 'labels' as const, label: 'Labels' }] : []),
 ])
 const activeTab = computed<TabId>(() => {
   const raw = route.query.tab
@@ -258,6 +262,7 @@ onMounted(load)
     <JobOpeningsPanel v-if="activeTab === 'openings'" />
     <ApplicantsPanel v-else-if="activeTab === 'applicants'" />
     <TalentPoolPanel v-else-if="activeTab === 'pool'" />
+    <LabelsPanel v-else-if="activeTab === 'labels'" />
     <div v-else class="card">
       <div class="card-head">
         <div>

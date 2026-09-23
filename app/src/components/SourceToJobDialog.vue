@@ -8,10 +8,17 @@ import { longDate } from '@/lib/candidatePool'
 import { todayDb } from '@/lib/compensation'
 
 /**
- * From a pool record to a job (plan 052): pick one of the live jobs the
- * viewer may recruit for, name the source, and add_candidate_to_job opens
- * the application at "New". A "contact later" wait warns and asks for
- * "Add anyway"; a "never" rule refuses in the RPC's own sentence.
+ * From a pool record to a job (plan 052): pick a job the viewer may recruit
+ * for, name the source, and add_candidate_to_job opens the application at
+ * "New". A "contact later" wait warns and asks for "Add anyway"; a "never"
+ * rule refuses in the RPC's own sentence.
+ *
+ * Plan 060 widened what is offered. A draft job — one being written, with no
+ * listing yet — is a perfectly ordinary place to park somebody, and the
+ * database has always allowed it; only this dialog did not. Filled and closed
+ * jobs stay out: `app.open_application` refuses them, and listing every job
+ * the holding has ever closed would put a few hundred unusable rows in a
+ * picker to teach one sentence. The sentence is under the heading instead.
  */
 
 const props = defineProps<{ candidateId: string; candidateName: string; contactAgainAfter: string | null }>()
@@ -20,7 +27,8 @@ const emit = defineEmits<{ added: [applicationId: string] }>()
 type JobOption = { id: string; title: string; status: string; company_id: string; company: { name: string } | null }
 type SourceOption = { key: string; label: string }
 
-const LIVE_STATUSES = ['ready', 'open', 'on_hold']
+/** What a candidate may be added to; `app.open_application` allows exactly these. */
+const OPEN_TO_CANDIDATES = ['draft', 'ready', 'open', 'on_hold']
 const DEFAULT_SOURCE = 'head_hunt'
 
 const router = useRouter()
@@ -49,6 +57,11 @@ const groups = computed(() =>
     .map((c) => ({ ...c, jobs: jobs.value.filter((j) => j.company_id === c.id) })),
 )
 
+/** A job that is not open says so, since that is the point of offering it. */
+function jobLabel(job: JobOption): string {
+  return job.status === 'open' ? job.title : `${job.title} — ${job.status.replace('_', ' ')}`
+}
+
 async function open(): Promise<void> {
   error.value = null
   companyId.value = ''
@@ -60,7 +73,7 @@ async function open(): Promise<void> {
     supabase
       .from('jobs')
       .select('id, title, status, company_id, company:companies(name)')
-      .in('status', LIVE_STATUSES)
+      .in('status', OPEN_TO_CANDIDATES)
       .order('title'),
     supabase.from('candidate_sources').select('key, label').is('archived_at', null).order('sort_order'),
   ])
@@ -111,7 +124,7 @@ async function submit(): Promise<void> {
     <form class="body" novalidate @submit.prevent="submit">
       <div class="eyebrow">Talent pool</div>
       <h2 id="source-to-job-title">Add {{ candidateName }} to a job.</h2>
-      <p class="hint">The application starts at "New".</p>
+      <p class="hint">The application starts at "New". A job still in draft is fine; a filled or closed one has to be reopened first.</p>
 
       <p v-if="waiting && contactAgainAfter" class="wait-note" role="status">
         {{ candidateName }} asked not to be contacted before {{ longDate(contactAgainAfter) }}.
@@ -119,7 +132,7 @@ async function submit(): Promise<void> {
 
       <div v-if="loading" class="empty">Loading jobs…</div>
       <template v-else>
-        <div v-if="!jobs.length && !error" class="empty">No live jobs where you may add candidates.</div>
+        <div v-if="!jobs.length && !error" class="empty">No jobs where you may add candidates.</div>
         <template v-else>
           <div class="field">
             <CompanyFilter id="source-job-company" :model-value="companyId" :companies="companies" all-label="All companies" label="Company" @update:model-value="onCompany" />
@@ -129,7 +142,7 @@ async function submit(): Promise<void> {
             <select id="source-job-select" v-model="jobId" data-testid="source-job-select">
               <option value="">Pick a job…</option>
               <optgroup v-for="g in groups" :key="g.id" :label="g.name">
-                <option v-for="j in g.jobs" :key="j.id" :value="j.id">{{ j.title }}</option>
+                <option v-for="j in g.jobs" :key="j.id" :value="j.id">{{ jobLabel(j) }}</option>
               </optgroup>
             </select>
           </div>

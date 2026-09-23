@@ -6992,4 +6992,186 @@ set app.test_uid = '';
 
 delete from public.activity_log where entity_type like 'zzz_probe_%';
 
+-- ================================================================ 0074
+-- Taking an attachment back (plan 060): an application may be undone while it
+-- is still nothing but an attachment, and never after. The refusals are the
+-- point — the foreign keys would not save anybody, since events, files,
+-- interviews and scorecards all cascade.
+-- Fixtures: one Company B job and six candidates, one per way of being past
+-- the point of no return. Bea (Company HR in B) does the work.
+insert into public.jobs (id, company_id, title, status) values
+  ('70000000-0000-0000-0000-000000000741', '10000000-0000-0000-0000-00000000000b', 'Detach Role B', 'open');
+insert into public.candidates (id, full_name) values
+  ('80000000-0000-0000-0000-000000000741', 'Undo One'),
+  ('80000000-0000-0000-0000-000000000742', 'Undo Two'),
+  ('80000000-0000-0000-0000-000000000743', 'Undo Three'),
+  ('80000000-0000-0000-0000-000000000744', 'Undo Four'),
+  ('80000000-0000-0000-0000-000000000745', 'Undo Five'),
+  ('80000000-0000-0000-0000-000000000746', 'Undo Six');
+insert into public.applications (id, job_id, company_id, candidate_id, stage_key, source_provider, provider_ref) values
+  ('90000000-0000-0000-0000-000000000741', '70000000-0000-0000-0000-000000000741',
+   '10000000-0000-0000-0000-00000000000b', '80000000-0000-0000-0000-000000000741', 'new', null, null),
+  ('90000000-0000-0000-0000-000000000742', '70000000-0000-0000-0000-000000000741',
+   '10000000-0000-0000-0000-00000000000b', '80000000-0000-0000-0000-000000000742', 'screening', null, null),
+  ('90000000-0000-0000-0000-000000000743', '70000000-0000-0000-0000-000000000741',
+   '10000000-0000-0000-0000-00000000000b', '80000000-0000-0000-0000-000000000743', 'new', 'zoho_recruit', 'ZA-UNDO3'),
+  ('90000000-0000-0000-0000-000000000744', '70000000-0000-0000-0000-000000000741',
+   '10000000-0000-0000-0000-00000000000b', '80000000-0000-0000-0000-000000000744', 'new', null, null),
+  ('90000000-0000-0000-0000-000000000745', '70000000-0000-0000-0000-000000000741',
+   '10000000-0000-0000-0000-00000000000b', '80000000-0000-0000-0000-000000000745', 'new', null, null),
+  ('90000000-0000-0000-0000-000000000746', '70000000-0000-0000-0000-000000000741',
+   '10000000-0000-0000-0000-00000000000b', '80000000-0000-0000-0000-000000000746', 'new', null, null);
+-- Four has an event, Five an interview, Six a file, and Seven an offer — the
+-- last two are the ones whose removal would cascade a CV away or meet a raw
+-- foreign-key error instead of a sentence.
+insert into public.candidates (id, full_name) values
+  ('80000000-0000-0000-0000-000000000747', 'Undo Seven');
+insert into public.applications (id, job_id, company_id, candidate_id, stage_key) values
+  ('90000000-0000-0000-0000-000000000747', '70000000-0000-0000-0000-000000000741',
+   '10000000-0000-0000-0000-00000000000b', '80000000-0000-0000-0000-000000000747', 'new');
+insert into public.application_events (application_id, kind, body) values
+  ('90000000-0000-0000-0000-000000000744', 'note', 'Spoke on the phone.');
+insert into public.interviews (application_id, company_id, kind, scheduled_at) values
+  ('90000000-0000-0000-0000-000000000745', '10000000-0000-0000-0000-00000000000b', 'phone', now());
+insert into public.application_files
+    (application_id, company_id, kind, storage_path, original_name, mime_type, size_bytes) values
+  ('90000000-0000-0000-0000-000000000746', '10000000-0000-0000-0000-00000000000b', 'cv',
+   'application/90000000-0000-0000-0000-000000000746/cv.pdf', 'cv.pdf', 'application/pdf', 1024);
+insert into public.offers (application_id, company_id, terms) values
+  ('90000000-0000-0000-0000-000000000747', '10000000-0000-0000-0000-00000000000b', '{"salary": 1000}'::jsonb);
+
+set app.test_uid = '00000000-0000-0000-0000-000000000005';  -- Bea, Company HR in B
+set role authenticated;
+do $$
+declare r jsonb;
+begin
+  -- 1. The one thing it is for: a fresh attachment, taken straight back.
+  r := public.detach_candidate_from_job('90000000-0000-0000-0000-000000000741');
+  assert (r->>'detached')::boolean and r->>'candidate' = 'Undo One' and r->>'job' = 'Detach Role B',
+    'a fresh attachment comes straight back: ' || r::text;
+  assert not exists (select 1 from public.applications where id = '90000000-0000-0000-0000-000000000741'),
+    'and the row is gone';
+
+  -- A second go says what happened, rather than pretending.
+  begin
+    r := public.detach_candidate_from_job('90000000-0000-0000-0000-000000000741');
+    raise exception 'FAIL: an application was detached twice';
+  exception when others then
+    assert sqlerrm like 'That application no longer exists%', 'gone means gone: ' || sqlerrm;
+  end;
+
+  -- 2. Past New is history.
+  begin
+    r := public.detach_candidate_from_job('90000000-0000-0000-0000-000000000742');
+    raise exception 'FAIL: a screened application was detached';
+  exception when others then
+    assert sqlerrm like 'Undo Two has already moved on from New%', 'past New: ' || sqlerrm;
+  end;
+
+  -- 3. An import is not a mistake somebody made here.
+  begin
+    r := public.detach_candidate_from_job('90000000-0000-0000-0000-000000000743');
+    raise exception 'FAIL: an imported application was detached';
+  exception when others then
+    assert sqlerrm like 'Undo Three came from zoho_recruit%', 'imported: ' || sqlerrm;
+  end;
+
+  -- 4. Anything recorded against it keeps it.
+  begin
+    r := public.detach_candidate_from_job('90000000-0000-0000-0000-000000000744');
+    raise exception 'FAIL: an application with history was detached';
+  exception when others then
+    assert sqlerrm like 'Something has already been recorded against Undo Four%', 'an event: ' || sqlerrm;
+  end;
+  begin
+    r := public.detach_candidate_from_job('90000000-0000-0000-0000-000000000745');
+    raise exception 'FAIL: an application with an interview was detached';
+  exception when others then
+    assert sqlerrm like 'Undo Five has an interview%', 'an interview: ' || sqlerrm;
+  end;
+  assert exists (select 1 from public.interviews where application_id = '90000000-0000-0000-0000-000000000745'),
+    'and the interview it would have cascaded away is still there';
+
+  begin
+    r := public.detach_candidate_from_job('90000000-0000-0000-0000-000000000746');
+    raise exception 'FAIL: an application with a file was detached';
+  exception when others then
+    assert sqlerrm like 'A file was filed against Undo Six%', 'a file: ' || sqlerrm;
+  end;
+  assert exists (select 1 from public.application_files where application_id = '90000000-0000-0000-0000-000000000746'),
+    'the CV it would have cascaded away is still there';
+
+  begin
+    r := public.detach_candidate_from_job('90000000-0000-0000-0000-000000000747');
+    raise exception 'FAIL: an application with an offer was detached';
+  exception when others then
+    assert sqlerrm like 'Undo Seven has an offer%',
+      'an offer is answered in words, not by a foreign key: ' || sqlerrm;
+  end;
+
+  -- 4c. An owner is a person carrying this in their queue, told by email when
+  --     they were given it — and being given it writes no event, so nothing
+  --     else here would have caught it.
+  update public.applications set owner_id = '20000000-0000-0000-0000-000000000005'
+   where id = '90000000-0000-0000-0000-000000000746';
+  begin
+    r := public.detach_candidate_from_job('90000000-0000-0000-0000-000000000746');
+    raise exception 'FAIL: an assigned application was detached';
+  exception when others then
+    assert sqlerrm like '%is assigned to somebody here%' or sqlerrm like 'A file was filed%',
+      'assigned or filed, either way it stays: ' || sqlerrm;
+  end;
+end $$;
+reset role;
+set app.test_uid = '';
+
+-- 4b. The person stays in the pool; only the attachment went. Read outside
+--     any role, because a reviewer sees a holding-wide candidate THROUGH an
+--     application in their company (0067) — take the last one back and the
+--     candidate leaves their sight with it. That is the visibility rule
+--     working, not the undo overreaching, and it is why the app's own card
+--     reloads the record afterwards rather than assuming it is still there.
+do $$
+begin
+  assert exists (select 1 from public.candidates where id = '80000000-0000-0000-0000-000000000741'),
+    'the candidate record itself is untouched';
+end $$;
+
+-- 5. Omar holds nothing: the capability is the first gate.
+set app.test_uid = '00000000-0000-0000-0000-000000000003';  -- Omar
+set role authenticated;
+do $$
+declare r jsonb;
+begin
+  begin
+    r := public.detach_candidate_from_job('90000000-0000-0000-0000-000000000746');
+    raise exception 'FAIL: an employee with no grants detached an application';
+  exception when insufficient_privilege then
+    assert sqlerrm like 'Undoing this needs "Record interview feedback" in Company B%',
+      'the refusal names what is needed and where: ' || sqlerrm;
+  end;
+end $$;
+reset role;
+set app.test_uid = '';
+
+-- 6. The removal is in the trail, because the audit trigger saw it.
+do $$
+begin
+  assert exists (select 1 from public.activity_log
+                  where entity_type = 'applications' and action = 'DELETE'
+                    and entity_id = '90000000-0000-0000-0000-000000000741'),
+    'an undo is never invisible';
+end $$;
+
+-- Tail: this block's fixtures go, the trail with them, so the audit assertion
+-- above can never pass on a row left by an earlier run.
+delete from public.offers where application_id::text like '90000000-0000-0000-0000-00000000074%';
+delete from public.application_files where application_id::text like '90000000-0000-0000-0000-00000000074%';
+delete from public.interviews where application_id::text like '90000000-0000-0000-0000-00000000074%';
+delete from public.applications where job_id = '70000000-0000-0000-0000-000000000741';
+delete from public.jobs where id = '70000000-0000-0000-0000-000000000741';
+delete from public.candidates where id::text like '80000000-0000-0000-0000-00000000074%';
+delete from public.activity_log where entity_type = 'applications'
+  and entity_id like '90000000-0000-0000-0000-00000000074%';
+
 select 'SMOKE TESTS PASSED' as result;

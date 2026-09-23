@@ -12,6 +12,7 @@ import { SOURCE_FALLBACK_LABEL, contactBadge, contactState, longDate } from '@/l
 import { friendlyRecruitmentError } from '@/lib/jobWorkspace'
 import { shortDate } from '@/lib/leave'
 import { todayDb } from '@/lib/compensation'
+import { countOf, detachable, friendlyDetachError } from '@/lib/detachApplication'
 import { missingRecordMessage } from '@/lib/missingRecord'
 
 /**
@@ -58,7 +59,16 @@ type ApplicationRow = {
   stage_key: string
   received_at: string
   source_key: string | null
-  job: { id: string; title: string; company: { name: string } | null } | null
+  /** Plan 060: what an undo has to look at before it is offered. */
+  owner_id: string | null
+  next_action: string | null
+  employment_period_id: string | null
+  source_provider: string | null
+  application_events: { count: number }[] | null
+  interviews: { count: number }[] | null
+  offers: { count: number }[] | null
+  application_files: { count: number }[] | null
+  job: { id: string; title: string; status: string; company: { name: string } | null } | null
 }
 
 type Education = {
@@ -182,6 +192,47 @@ function stageBadgeClass(stage: string): string {
   return 'blue'
 }
 
+/**
+ * Whether this attachment can still simply be taken back, and why not.
+ * The database decides (0074); this only lets the row say so in advance.
+ */
+function detachVerdict(a: ApplicationRow) {
+  return detachable(
+    {
+      stage_key: a.stage_key,
+      owner_id: a.owner_id,
+      next_action: a.next_action,
+      employment_period_id: a.employment_period_id,
+      source_provider: a.source_provider,
+      events: countOf(a.application_events),
+      interviews: countOf(a.interviews),
+      offers: countOf(a.offers),
+      files: countOf(a.application_files),
+    },
+    auth.can(a.company_id, 'candidates.review'),
+  )
+}
+
+async function detach(a: ApplicationRow): Promise<void> {
+  if (!detachVerdict(a).canDetach) return
+  const ok = await dialogs.confirmAction({
+    title: `Take ${candidate.value?.full_name ?? 'this candidate'} off ${a.job?.title ?? 'this job'}?`,
+    hint: 'Nothing has happened on it yet, so nothing is lost. The person stays in the pool and on their other jobs.',
+    confirmLabel: 'Take it back',
+    danger: true,
+  })
+  if (!ok) return
+  actionError.value = null
+  busy.value = true
+  const { error: err } = await supabase.rpc('detach_candidate_from_job', { p_application_id: a.id })
+  busy.value = false
+  if (err) {
+    actionError.value = friendlyDetachError(err.message)
+    return
+  }
+  await load()
+}
+
 function educationLine(e: Education): string {
   const what = [e.degree, e.major].filter(Boolean).join(', ')
   const years = [e.from?.slice(0, 4), e.current ? 'now' : e.to?.slice(0, 4)].filter(Boolean).join('–')
@@ -206,7 +257,11 @@ async function load(): Promise<void> {
       .maybeSingle(),
     supabase
       .from('applications')
-      .select('id, company_id, stage_key, received_at, source_key, job:jobs(id, title, company:companies(name))')
+      .select(
+        `id, company_id, stage_key, received_at, source_key, owner_id, next_action, employment_period_id, source_provider,
+         application_events(count), interviews(count), offers(count), application_files(count),
+         job:jobs(id, title, status, company:companies(name))`,
+      )
       .eq('candidate_id', candidateId)
       .order('received_at', { ascending: false }),
     supabase.from('candidate_sources').select('key, label').is('archived_at', null).order('sort_order'),
@@ -366,7 +421,10 @@ onMounted(load)
             <div class="card-head">
               <div>
                 <h2>Applications</h2>
-                <p>Every job this person applied to in your companies, newest first.</p>
+                <p>
+                  Every job this person applied to in your companies, newest first. An attachment nobody has acted on
+                  yet can be taken back; once anything has happened, reject or withdraw it instead.
+                </p>
               </div>
             </div>
             <div v-if="!applications.length" class="empty">No applications you can see.</div>
@@ -382,7 +440,20 @@ onMounted(load)
                   </small>
                 </div>
                 <span class="badge" :class="stageBadgeClass(a.stage_key)">{{ a.stage_key }}</span>
+                <span v-if="a.job && a.job.status !== 'open'" class="badge" :data-testid="`candidate-job-status-${a.id}`">
+                  job {{ a.job.status.replace('_', ' ') }}
+                </span>
                 <router-link v-if="a.job" class="button secondary small-btn" :to="{ name: 'job', params: { jobId: a.job.id }, query: { tab: 'applications' } }">Open job</router-link>
+                <button
+                  class="button secondary small-btn danger-text"
+                  type="button"
+                  :disabled="!detachVerdict(a).canDetach || busy"
+                  :title="detachVerdict(a).reason ?? 'Nothing has happened on this yet, so it can be taken back.'"
+                  :data-testid="`candidate-detach-${a.id}`"
+                  @click="detach(a)"
+                >
+                  Take back
+                </button>
               </div>
             </div>
           </div>

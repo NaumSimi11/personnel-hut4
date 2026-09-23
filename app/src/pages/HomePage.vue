@@ -35,6 +35,7 @@ import {
   type JobLite,
 } from '@/lib/dashboard'
 import DashboardStats from '@/components/home/DashboardStats.vue'
+import MyTasksCard from '@/components/tasks/MyTasksCard.vue'
 import RecruitmentSnapshot from '@/components/home/RecruitmentSnapshot.vue'
 import CelebratePanel from '@/components/home/CelebratePanel.vue'
 import AwayToday from '@/components/home/AwayToday.vue'
@@ -429,15 +430,17 @@ onMounted(load)
       </template>
     </CelebratePanel>
 
+    <MyTasksCard class="tasks-card" />
+
     <div class="card tasks-card">
       <div class="card-head">
         <div>
-          <h2>My tasks</h2>
-          <p>Onboarding tasks assigned to you that are still open.</p>
+          <h2>Checklist tasks</h2>
+          <p>Onboarding and offboarding lines with your name on them, still open.</p>
         </div>
       </div>
       <div v-if="loading" class="empty">Loading your tasks…</div>
-      <div v-else-if="!myTasks.length" class="empty">No tasks assigned to you.</div>
+      <div v-else-if="!myTasks.length" class="empty">No checklist lines are waiting on you.</div>
       <div v-else>
         <div v-for="t in myTasks" :key="t.id" class="queue-row">
           <div class="row-text">

@@ -2930,6 +2930,9 @@ export type Database = {
       }
       jobs: {
         Row: {
+          closed_at: string | null
+          closed_by: string | null
+          closed_reason: string | null
           company_id: string
           created_at: string
           custom: Json
@@ -2944,6 +2947,9 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          closed_at?: string | null
+          closed_by?: string | null
+          closed_reason?: string | null
           company_id: string
           created_at?: string
           custom?: Json
@@ -2958,6 +2964,9 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          closed_at?: string | null
+          closed_by?: string | null
+          closed_reason?: string | null
           company_id?: string
           created_at?: string
           custom?: Json
@@ -2972,6 +2981,13 @@ export type Database = {
           updated_at?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "jobs_closed_by_fkey"
+            columns: ["closed_by"]
+            isOneToOne: false
+            referencedRelation: "people"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "jobs_company_id_fkey"
             columns: ["company_id"]
@@ -4821,6 +4837,49 @@ export type Database = {
           },
         ]
       }
+      task_people: {
+        Row: {
+          added_at: string
+          added_by: string | null
+          person_id: string
+          task_id: string
+        }
+        Insert: {
+          added_at?: string
+          added_by?: string | null
+          person_id: string
+          task_id: string
+        }
+        Update: {
+          added_at?: string
+          added_by?: string | null
+          person_id?: string
+          task_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "task_people_added_by_fkey"
+            columns: ["added_by"]
+            isOneToOne: false
+            referencedRelation: "people"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "task_people_person_id_fkey"
+            columns: ["person_id"]
+            isOneToOne: false
+            referencedRelation: "people"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "task_people_task_id_fkey"
+            columns: ["task_id"]
+            isOneToOne: false
+            referencedRelation: "tasks"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       task_templates: {
         Row: {
           active: boolean
@@ -4855,6 +4914,80 @@ export type Database = {
             columns: ["company_id"]
             isOneToOne: false
             referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      tasks: {
+        Row: {
+          company_id: string | null
+          created_at: string
+          created_by: string
+          detail: string | null
+          done_at: string | null
+          done_by: string | null
+          due_date: string | null
+          id: string
+          person_id: string
+          status: string
+          title: string
+          updated_at: string
+        }
+        Insert: {
+          company_id?: string | null
+          created_at?: string
+          created_by: string
+          detail?: string | null
+          done_at?: string | null
+          done_by?: string | null
+          due_date?: string | null
+          id?: string
+          person_id: string
+          status?: string
+          title: string
+          updated_at?: string
+        }
+        Update: {
+          company_id?: string | null
+          created_at?: string
+          created_by?: string
+          detail?: string | null
+          done_at?: string | null
+          done_by?: string | null
+          due_date?: string | null
+          id?: string
+          person_id?: string
+          status?: string
+          title?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "tasks_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "tasks_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "people"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "tasks_done_by_fkey"
+            columns: ["done_by"]
+            isOneToOne: false
+            referencedRelation: "people"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "tasks_person_id_fkey"
+            columns: ["person_id"]
+            isOneToOne: false
+            referencedRelation: "people"
             referencedColumns: ["id"]
           },
         ]
@@ -5090,6 +5223,10 @@ export type Database = {
         Returns: Json
       }
       cancel_reservation: { Args: { p_assignment_id: string }; Returns: Json }
+      close_jobs: {
+        Args: { p_job_ids: string[]; p_reason?: string; p_withdraw?: boolean }
+        Returns: Json
+      }
       company_template: {
         Args: { p_company_id: string; p_kind: string }
         Returns: Json
@@ -5130,6 +5267,7 @@ export type Database = {
       }
       create_employee: { Args: { p: Json }; Returns: Json }
       dashboard_snapshot: { Args: { p_days?: number }; Returns: Json }
+      delete_task: { Args: { p_task_id: string }; Returns: Json }
       decide_compensation: {
         Args: { p_decision: string; p_note?: string; p_record_id: string }
         Returns: Json
@@ -5228,6 +5366,7 @@ export type Database = {
       mark_handover_sent: { Args: { p_id: string }; Returns: Json }
       mark_notifications_read: { Args: { p_ids?: string[] }; Returns: number }
       mark_payroll_exported: { Args: { p_period_id: string }; Returns: Json }
+      my_tasks: { Args: Record<PropertyKey, never>; Returns: Json }
       payroll_settings: { Args: { p_company_id: string }; Returns: Json }
       person_can_sign: { Args: { p_person_id: string }; Returns: boolean }
       prepare_payroll_period: {
@@ -5345,6 +5484,7 @@ export type Database = {
         Args: { p_date: string; p_id: string; p_name: string }
         Returns: Json
       }
+      save_task: { Args: { p: Json }; Returns: Json }
       schedule_departure: {
         Args: {
           p_employment_period_id: string
@@ -5395,6 +5535,7 @@ export type Database = {
         Args: { p_company_id: string; p_items: string[] }
         Returns: Json
       }
+      set_task_done: { Args: { p_done?: boolean; p_task_id: string }; Returns: Json }
       start_equipment_return: {
         Args: {
           p_asset_id: string
@@ -5423,6 +5564,7 @@ export type Database = {
         }
         Returns: Json
       }
+      task_candidates: { Args: Record<PropertyKey, never>; Returns: Json }
       team_leave: {
         Args: { p_company_id: string; p_from: string; p_to: string }
         Returns: Json

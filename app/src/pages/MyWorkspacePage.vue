@@ -10,6 +10,7 @@ import LeaveCard from '@/components/LeaveCard.vue'
 import AvatarUpload from '@/components/AvatarUpload.vue'
 import DocumentsCard from '@/components/DocumentsCard.vue'
 import MyRequestsCard from '@/components/MyRequestsCard.vue'
+import MyTasksCard from '@/components/tasks/MyTasksCard.vue'
 import MyPoliciesCard from '@/components/MyPoliciesCard.vue'
 import PersonEquipmentCard from '@/components/PersonEquipmentCard.vue'
 
@@ -297,6 +298,7 @@ onMounted(load)
 
       <div v-else class="grid-two">
         <div class="left-column">
+          <MyTasksCard />
           <MyRequestsCard />
           <MyPoliciesCard />
           <div v-if="plan" class="card plan-card">
@@ -320,8 +322,8 @@ onMounted(load)
           <div class="card tasks-card">
             <div class="card-head">
               <div>
-                <h2>My tasks</h2>
-                <p>Onboarding tasks assigned to you that are still open.</p>
+                <h2>Checklist tasks</h2>
+                <p>Onboarding and offboarding lines with your name on them, still open.</p>
               </div>
             </div>
             <p v-if="taskError" class="error-note" role="alert">{{ taskError }}</p>

@@ -6648,4 +6648,256 @@ end $$;
 reset role;
 set app.test_uid = '';
 
+-- ================================================================ 0072
+-- Tasks that stand on their own (plan 057): write one down for yourself,
+-- connect a colleague who can then work it, and let the manager or HR put one
+-- on your list.
+--
+-- Fixtures of its own, because every rule here turns on being *actively*
+-- employed beside somebody and the shared fixtures do not survive that far:
+-- earlier blocks end both Omar's and Fiona's Company A employment. Tomo and
+-- Tina are two plain employees of Company A with no grants at all; Alex
+-- (Director @ A, and no tasks.assign) is Tomo's manager; Bea is HR in Company
+-- B only; Ada is the platform admin who must NOT see any of it.
+insert into auth.users (id, email) values
+  ('00000000-0000-0000-0000-000000000721', 'tomo@a.test'),
+  ('00000000-0000-0000-0000-000000000722', 'tina@a.test');
+insert into public.people (id, user_id, full_name, work_email) values
+  ('20000000-0000-0000-0000-000000000721', '00000000-0000-0000-0000-000000000721', 'Tomo Task', 'tomo@a.test'),
+  ('20000000-0000-0000-0000-000000000722', '00000000-0000-0000-0000-000000000722', 'Tina Task', 'tina@a.test');
+insert into public.employment_periods (id, person_id, company_id, job_title, status, start_date, manager_id) values
+  ('30000000-0000-0000-0000-000000000721', '20000000-0000-0000-0000-000000000721',
+   '10000000-0000-0000-0000-00000000000a', 'Engineer', 'active', '2024-01-01',
+   '20000000-0000-0000-0000-000000000001'),
+  ('30000000-0000-0000-0000-000000000722', '20000000-0000-0000-0000-000000000722',
+   '10000000-0000-0000-0000-00000000000a', 'Engineer', 'active', '2024-01-01', null);
+
+-- 1. A plain employee writes a task down for himself.
+set app.test_uid = '00000000-0000-0000-0000-000000000721';  -- Tomo
+set role authenticated;
+do $$
+declare r jsonb; v_id uuid; v_mine jsonb;
+begin
+  r := public.save_task('{"title":"  Book the meeting room  ","detail":"For the Monday review","due_date":"2026-10-05"}'::jsonb);
+  v_id := (r->>'id')::uuid;
+  assert v_id is not null, 'the task is written down: ' || r::text;
+  assert (select title from public.tasks where id = v_id) = 'Book the meeting room', 'the title is trimmed';
+  assert (select person_id = '20000000-0000-0000-0000-000000000721'
+            and created_by = '20000000-0000-0000-0000-000000000721'
+            and status = 'open' and done_at is null
+            and company_id = '10000000-0000-0000-0000-00000000000a'
+            from public.tasks where id = v_id),
+    'it is his, open, and belongs to the company he works in';
+
+  v_mine := public.my_tasks()->'mine';
+  assert jsonb_array_length(v_mine) = 1, 'it is on his list: ' || v_mine::text;
+  assert v_mine->0->>'person_name' = 'Tomo Task' and (v_mine->0->>'is_mine')::boolean, 'as his own';
+  assert v_mine->0->>'done_by_name' is null, 'an open task has no finisher';
+  assert jsonb_array_length(public.my_tasks()->'set_by_me') = 0, 'he has handed nothing out';
+
+  -- A title is the one thing a task cannot do without.
+  begin
+    r := public.save_task('{"title":"   "}'::jsonb);
+    raise exception 'FAIL: a task with no title was accepted';
+  exception when others then
+    assert sqlerrm like 'Give the task a title%', 'blank title: ' || sqlerrm;
+  end;
+
+  -- 2. He cannot put one on a colleague's list: no tasks.assign, not her manager.
+  begin
+    r := public.save_task('{"person_id":"20000000-0000-0000-0000-000000000722","title":"Do my filing"}'::jsonb);
+    raise exception 'FAIL: an employee assigned work to a colleague';
+  exception when insufficient_privilege then
+    assert sqlerrm like 'You cannot put a task on Tina Task%', 'the refusal names her: ' || sqlerrm;
+  end;
+
+  -- 3. He connects that colleague instead. She is on it; he is told nothing.
+  r := public.save_task(('{"id":"' || v_id || '","title":"Book the meeting room","with_ids":["20000000-0000-0000-0000-000000000722"]}')::jsonb);
+  assert (r->>'connected')::int = 1 and (r->>'told')::int = 1, 'one connected, told once: ' || r::text;
+  assert (select count(*) from public.task_people where task_id = v_id) = 1, 'one row on the task';
+
+  -- Saving again with the same list tells nobody a second time.
+  r := public.save_task(('{"id":"' || v_id || '","title":"Book the meeting room","with_ids":["20000000-0000-0000-0000-000000000722"]}')::jsonb);
+  assert (r->>'told')::int = 0, 'an unchanged list is not re-announced: ' || r::text;
+
+  -- Editing the title without mentioning the list leaves her on it.
+  r := public.save_task(('{"id":"' || v_id || '","title":"Book the big meeting room"}')::jsonb);
+  assert (select count(*) from public.task_people where task_id = v_id) = 1,
+    'a title edit does not quietly drop a colleague';
+
+  -- The owner is already on it; connecting them is a nonsense.
+  begin
+    r := public.save_task(('{"id":"' || v_id || '","title":"x","with_ids":["20000000-0000-0000-0000-000000000721"]}')::jsonb);
+    raise exception 'FAIL: the owner was connected to their own task';
+  exception when others then
+    assert sqlerrm like 'That task is already theirs%', 'owner as a guest: ' || sqlerrm;
+  end;
+
+  -- And a task never changes hands.
+  begin
+    r := public.save_task(('{"id":"' || v_id || '","person_id":"20000000-0000-0000-0000-000000000722","title":"x"}')::jsonb);
+    raise exception 'FAIL: a task changed hands';
+  exception when others then
+    assert sqlerrm like 'A task does not change hands%', 'no hand-over: ' || sqlerrm;
+  end;
+
+  -- 4. What the dialog may offer him: himself to assign, colleagues to connect.
+  assert (select count(*) from jsonb_array_elements(public.task_candidates()->'assignable') e
+           where e->>'id' = '20000000-0000-0000-0000-000000000721') = 1,
+    'he may always give himself a task';
+  assert (select count(*) from jsonb_array_elements(public.task_candidates()->'assignable')) = 1,
+    'and nobody else: ' || (public.task_candidates()->'assignable')::text;
+  assert (select count(*) from jsonb_array_elements(public.task_candidates()->'connectable') e
+           where e->>'id' = '20000000-0000-0000-0000-000000000722') = 1,
+    'a colleague in his own company is connectable even though he may not view her';
+  assert (select count(*) from jsonb_array_elements(public.task_candidates()->'connectable') e
+           where e->>'id' = '20000000-0000-0000-0000-000000000005') = 0,
+    'somebody who works only in Company B is not his colleague';
+end $$;
+reset role;
+set app.test_uid = '';
+
+-- 5. The colleague sees it, may work it, may not rewrite it, may not delete it.
+set app.test_uid = '00000000-0000-0000-0000-000000000722';  -- Tina
+set role authenticated;
+do $$
+declare v_id uuid; r jsonb; v_mine jsonb;
+begin
+  select id into v_id from public.tasks where title = 'Book the big meeting room';
+  v_mine := public.my_tasks()->'mine';
+  assert jsonb_array_length(v_mine) = 1, 'a connected task is on her list too';
+  assert not (v_mine->0->>'is_mine')::boolean and v_mine->0->>'person_name' = 'Tomo Task',
+    'shown as his, not hers';
+  assert jsonb_array_length(v_mine->0->'with_people') = 1, 'the task carries the names of the people on it';
+
+  begin
+    r := public.save_task(('{"id":"' || v_id || '","title":"Something else entirely"}')::jsonb);
+    raise exception 'FAIL: a connected colleague rewrote the task';
+  exception when insufficient_privilege then
+    assert sqlerrm like 'Only the person whose task it is%', 'she may work it, not rewrite it: ' || sqlerrm;
+  end;
+
+  begin
+    r := public.delete_task(v_id);
+    raise exception 'FAIL: a connected colleague deleted the task';
+  exception when insufficient_privilege then
+    assert sqlerrm like 'Only the person whose task it is%', 'nor delete it: ' || sqlerrm;
+  end;
+
+  -- She ticks it off, and the owner is told.
+  r := public.set_task_done(v_id, true);
+  assert r->>'status' = 'done', 'she may tick it: ' || r::text;
+  assert (select done_by = '20000000-0000-0000-0000-000000000722' and done_at is not null
+            from public.tasks where id = v_id), 'the finisher is recorded';
+
+  -- Unticking puts it back, and clears the stamp with it.
+  r := public.set_task_done(v_id, false);
+  assert (select status = 'open' and done_at is null and done_by is null from public.tasks where id = v_id),
+    'unticking clears the whole stamp';
+end $$;
+reset role;
+set app.test_uid = '';
+
+-- 6. The manager may hand one over; HR from another company may not.
+set app.test_uid = '00000000-0000-0000-0000-000000000001';  -- Alex, Tomo's manager
+set role authenticated;
+do $$
+declare r jsonb; v_id uuid;
+begin
+  r := public.save_task('{"person_id":"20000000-0000-0000-0000-000000000721","title":"Send the quarterly numbers","due_date":"2026-10-09"}'::jsonb);
+  v_id := (r->>'id')::uuid;
+  assert (select person_id = '20000000-0000-0000-0000-000000000721'
+            and created_by = '20000000-0000-0000-0000-000000000001'
+            from public.tasks where id = v_id),
+    'it is on Tomo''s list, set by his manager';
+  -- It shows under what he has handed out, not under what he has to do.
+  assert jsonb_array_length(public.my_tasks()->'set_by_me') = 1, 'the manager sees what he set';
+  assert jsonb_array_length(public.my_tasks()->'mine') = 0, 'and it is not on his own list';
+end $$;
+reset role;
+set app.test_uid = '';
+
+set app.test_uid = '00000000-0000-0000-0000-000000000005';  -- Bea, HR in Company B only
+set role authenticated;
+do $$
+declare r jsonb;
+begin
+  begin
+    r := public.save_task('{"person_id":"20000000-0000-0000-0000-000000000721","title":"Not your company"}'::jsonb);
+    raise exception 'FAIL: HR from another company assigned a task';
+  exception when insufficient_privilege then
+    assert sqlerrm like 'You cannot put a task on Tomo Task%', 'tasks.assign is per company: ' || sqlerrm;
+  end;
+end $$;
+reset role;
+set app.test_uid = '';
+
+-- 7. The rule the maintainer chose: a task is the people on it. Not the admin.
+set app.test_uid = '00000000-0000-0000-0000-000000000004';  -- Ada, platform admin
+set role authenticated;
+do $$
+begin
+  assert (select count(*) from public.tasks) = 0, 'an admin browsing sees no task she is not on';
+  assert (select count(*) from public.task_people) = 0, 'nor who is on one';
+  assert jsonb_array_length(public.my_tasks()->'mine') = 0, 'and has none of her own';
+end $$;
+reset role;
+set app.test_uid = '';
+
+-- 8. Deleting is the owner's (or the setter's), and takes the connections.
+set app.test_uid = '00000000-0000-0000-0000-000000000721';  -- Tomo
+set role authenticated;
+do $$
+declare v_id uuid; r jsonb;
+begin
+  select id into v_id from public.tasks where title = 'Book the big meeting room';
+  r := public.delete_task(v_id);
+  assert (r->>'deleted')::boolean, 'the owner deletes his own task';
+  assert not exists (select 1 from public.task_people where task_id = v_id), 'the connections go with it';
+  begin
+    r := public.delete_task(v_id);
+    raise exception 'FAIL: a task was deleted twice';
+  exception when others then
+    assert sqlerrm like 'That task no longer exists%', 'and it is gone: ' || sqlerrm;
+  end;
+end $$;
+reset role;
+set app.test_uid = '';
+
+-- 9. The three things a task says out loud, checked as the owner: a
+--    notification is only ever readable by the person it is for, so none of
+--    the roles above could have checked anybody else's.
+do $$
+begin
+  assert exists (select 1 from public.notifications
+                  where kind = 'task.connected' and person_id = '20000000-0000-0000-0000-000000000722'
+                    and title = 'Tomo Task put you on a task: Book the meeting room'),
+    'the colleague is told she was put on it';
+  assert (select count(*) from public.notifications
+           where kind = 'task.connected' and person_id = '20000000-0000-0000-0000-000000000722') = 1,
+    'and told once, however many times the task is saved';
+  assert exists (select 1 from public.notifications
+                  where kind = 'task.done' and person_id = '20000000-0000-0000-0000-000000000721'
+                    and title = 'Tina Task ticked off: Book the big meeting room'),
+    'the owner hears that somebody else finished his task';
+  assert exists (select 1 from public.notifications
+                  where kind = 'task.assigned' and person_id = '20000000-0000-0000-0000-000000000721'
+                    and title = 'Alex Director gave you a task: Send the quarterly numbers'),
+    'and hears about a task his manager set him';
+  assert not exists (select 1 from public.notifications
+                      where kind = 'task.assigned' and person_id = '20000000-0000-0000-0000-000000000722'),
+    'nobody is told about a task they merely watched being written';
+end $$;
+
+-- Tail: this block's fixtures go, and take their tasks with them.
+delete from public.tasks where created_by in
+  ('20000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000721');
+delete from public.notifications where entity_type = 'task';
+delete from public.employment_periods where id in
+  ('30000000-0000-0000-0000-000000000721', '30000000-0000-0000-0000-000000000722');
+delete from public.people where id in
+  ('20000000-0000-0000-0000-000000000721', '20000000-0000-0000-0000-000000000722');
+delete from auth.users where id in
+  ('00000000-0000-0000-0000-000000000721', '00000000-0000-0000-0000-000000000722');
+
 select 'SMOKE TESTS PASSED' as result;

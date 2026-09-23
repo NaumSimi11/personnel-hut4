@@ -7834,4 +7834,48 @@ end $$;
 delete from public.jobs where id = '70000000-0000-0000-0000-000000000831';
 delete from public.candidates where id = '80000000-0000-0000-0000-000000000831';
 
+-- ================================================================ 0083
+-- A job with no applicants but a promotion could not be deleted, and nothing
+-- in the app deletes a promotion — the second dead end behind the maintainer's
+-- grey Delete button. The marketing brief leaves with the job it describes;
+-- the applications do not, because a person who applied is not an artefact.
+insert into public.jobs (id, company_id, title, status) values
+  ('70000000-0000-0000-0000-000000000841', '10000000-0000-0000-0000-00000000000b', 'Promoted Empty Role', 'ready'),
+  ('70000000-0000-0000-0000-000000000842', '10000000-0000-0000-0000-00000000000b', 'Promoted Busy Role', 'ready');
+insert into public.promotions (id, job_id, company_id, channel_key) values
+  ('d0000000-0000-0000-0000-000000000841', '70000000-0000-0000-0000-000000000841',
+   '10000000-0000-0000-0000-00000000000b', 'linkedin'),
+  ('d0000000-0000-0000-0000-000000000842', '70000000-0000-0000-0000-000000000842',
+   '10000000-0000-0000-0000-00000000000b', 'linkedin');
+insert into public.job_channels (job_id, channel_key) values
+  ('70000000-0000-0000-0000-000000000841', 'linkedin');
+insert into public.candidates (id, full_name) values
+  ('80000000-0000-0000-0000-000000000841', 'Still Applying');
+insert into public.applications (id, job_id, company_id, candidate_id) values
+  ('90000000-0000-0000-0000-000000000841', '70000000-0000-0000-0000-000000000842',
+   '10000000-0000-0000-0000-00000000000b', '80000000-0000-0000-0000-000000000841');
+
+do $$
+begin
+  -- The empty one goes, and takes its brief and its channel row with it.
+  delete from public.jobs where id = '70000000-0000-0000-0000-000000000841';
+  assert not exists (select 1 from public.promotions where id = 'd0000000-0000-0000-0000-000000000841'),
+    'the promotion leaves with the job it describes';
+  assert not exists (select 1 from public.job_channels where job_id = '70000000-0000-0000-0000-000000000841'),
+    'as the channel row always has';
+
+  -- The one somebody applied to still does not, promotion or no promotion.
+  begin
+    delete from public.jobs where id = '70000000-0000-0000-0000-000000000842';
+    raise exception 'FAIL: a job with an application was deleted';
+  exception when foreign_key_violation then null;
+  end;
+  assert exists (select 1 from public.jobs where id = '70000000-0000-0000-0000-000000000842'),
+    'an application still holds a job in place — a person who applied is not an artefact';
+end $$;
+
+delete from public.applications where id = '90000000-0000-0000-0000-000000000841';
+delete from public.jobs where id = '70000000-0000-0000-0000-000000000842';
+delete from public.candidates where id = '80000000-0000-0000-0000-000000000841';
+
 select 'SMOKE TESTS PASSED' as result;

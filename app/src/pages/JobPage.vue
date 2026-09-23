@@ -546,6 +546,38 @@ async function onHired(): Promise<void> {
   await Promise.all([loadApplications(), loadJob()])
 }
 
+/**
+ * Delete the job itself, once its applicant list is empty (plan 064).
+ *
+ * The database is the rule — `applications.job_id` is NO ACTION, so a job
+ * anybody applied to cannot go — and the button says the count rather than
+ * simply refusing, because the way out is the Delete on each row above.
+ */
+async function removeJob(): Promise<void> {
+  if (!job.value || applications.value.length > 0) return
+  const ok = await dialogs.confirmAction({
+    title: `Delete ${job.value.title}?`,
+    hint: 'Its applicant list is empty, so nothing is lost. This cannot be undone — close it instead if you only want it out of the way.',
+    confirmLabel: 'Delete job',
+    danger: true,
+  })
+  if (!ok) return
+  statusError.value = null
+  statusBusy.value = true
+  const { data, error: err } = await supabase.from('jobs').delete().eq('id', job.value.id).select('id')
+  statusBusy.value = false
+  if (err) {
+    statusError.value = friendlyJobsError(err.message)
+    return
+  }
+  // A row the policies filtered away comes back with no error and no rows.
+  if (!data?.length) {
+    statusError.value = 'That job was not deleted — you may not have permission to.'
+    return
+  }
+  void router.push({ name: 'hiring', query: { tab: 'openings' } })
+}
+
 function friendlyJobsError(message: string): string {
   if (/row-level security/.test(message)) return 'This change needs jobs.edit in this company.'
   return message
@@ -670,6 +702,18 @@ onMounted(async () => {
                 @click="setStatus(a.to)"
               >
                 {{ a.label }}
+              </button>
+              <button
+                class="button secondary small-btn danger-text"
+                type="button"
+                :disabled="statusBusy || applications.length > 0"
+                :title="applications.length > 0
+                  ? `${applications.length} application${applications.length === 1 ? '' : 's'} on this job. Delete them first, from the list below.`
+                  : 'Nothing was ever received for this job, so it can go.'"
+                data-testid="job-delete"
+                @click="removeJob"
+              >
+                Delete job
               </button>
             </div>
           </div>

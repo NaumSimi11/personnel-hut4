@@ -5,7 +5,8 @@ import CompanyFilter from '@/components/CompanyFilter.vue'
 import { PIPELINE_STAGES } from '@/lib/dashboard'
 import { NOT_RESPONDING_FILTER, applicantRows, type ApplicantLite, type ApplicantRow } from '@/lib/hiringTabs'
 import { SUB_STATUS_STAGES, subStatusesFor, type SubStatusRow } from '@/lib/outreach'
-import { friendlyHardDeleteError } from '@/lib/hardDelete'
+import { blockerCount, blockerWords, friendlyHardDeleteError } from '@/lib/hardDelete'
+import { FILE_BUCKET } from '@/lib/applicationFiles'
 import { useAuthStore } from '@/stores/auth'
 import { useDialogStore } from '@/stores/dialogs'
 
@@ -61,21 +62,35 @@ function badgeClass(stageKey: string): string {
  * candidate and any employment record alone.
  */
 async function removeApplication(r: ApplicantRow): Promise<void> {
-  if (r.blockers > 0) return
+  // Attached records are not a wall, only a question asked properly: the
+  // confirmation names what goes, because nothing else in the app can remove
+  // an offer or an interview once it exists (0082).
+  const force = blockerCount(r.blockers) > 0
   const ok = await dialogs.confirmAction({
     title: `Delete ${r.name}'s application?`,
-    hint: `${r.position} at ${r.company}. The application and its history go; ${r.name} stays in the talent pool. This cannot be undone.`,
-    confirmLabel: 'Delete application',
+    hint: force
+      ? `${r.position} at ${r.company}. This one also has ${blockerWords(r.blockers)}, and they go with it. ${r.name} stays in the talent pool. This cannot be undone.`
+      : `${r.position} at ${r.company}. The application and its history go; ${r.name} stays in the talent pool. This cannot be undone.`,
+    confirmLabel: force ? 'Delete it and everything on it' : 'Delete application',
     danger: true,
   })
   if (!ok) return
   error.value = null
   busyId.value = r.id
-  const { error: err } = await supabase.rpc('delete_job_application', { p_application_id: r.id })
+  const { data, error: err } = await supabase.rpc('delete_job_application', {
+    p_application_id: r.id,
+    p_force: force,
+  })
   busyId.value = null
   if (err) {
     error.value = friendlyHardDeleteError(err.message)
     return
+  }
+  // The files' objects outlive their rows; only the app can reach Storage.
+  const paths = ((data ?? {}) as { storage_paths?: string[] }).storage_paths ?? []
+  if (paths.length) {
+    const { error: fileErr } = await supabase.storage.from(FILE_BUCKET).remove(paths)
+    if (fileErr) console.error('Application files not removed:', fileErr.message)
   }
   await load()
 }
@@ -184,9 +199,9 @@ watch(stage, load)
                   v-if="auth.can(r.companyId, 'candidates.review')"
                   class="button secondary small-btn danger-text"
                   type="button"
-                  :disabled="busyId === r.id || r.blockers > 0"
-                  :title="r.blockers > 0
-                    ? 'This application has files, interviews or offers. Remove those first.'
+                  :disabled="busyId === r.id"
+                  :title="blockerCount(r.blockers) > 0
+                    ? `Also deletes ${blockerWords(r.blockers)}. The candidate stays.`
                     : 'Deletes the application and its stage history. The candidate and any employment record stay.'"
                   :data-testid="`delete-application-${r.id}`"
                   @click="removeApplication(r)"

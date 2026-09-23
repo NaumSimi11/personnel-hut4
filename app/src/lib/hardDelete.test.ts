@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest'
-import { bodyEditable, candidateDeletable, friendlyHardDeleteError, policyDeletable } from './hardDelete'
+import {
+  blockerCount,
+  blockerWords,
+  bodyEditable,
+  candidateDeletable,
+  friendlyHardDeleteError,
+  policyDeletable,
+} from './hardDelete'
 
 describe('policyDeletable', () => {
   it('allows one nobody has agreed to, published or not', () => {
@@ -56,5 +63,19 @@ describe('friendlyHardDeleteError', () => {
   it("passes the database's own sentence through", () => {
     const raised = '3 people have already agreed to "Code of Conduct". Archive it instead.'
     expect(friendlyHardDeleteError(raised)).toBe(raised)
+  })
+})
+
+describe('blockerWords', () => {
+  it('names exactly what a forced delete would take', () => {
+    expect(blockerWords({ files: 1, interviews: 1, offers: 1 })).toBe('1 file, 1 interview and 1 offer')
+    expect(blockerWords({ files: 2, interviews: 0, offers: 0 })).toBe('2 files')
+    expect(blockerWords({ files: 0, interviews: 3, offers: 1 })).toBe('3 interviews and 1 offer')
+  })
+
+  it('says nothing when there is nothing, rather than an empty string', () => {
+    expect(blockerWords({ files: 0, interviews: 0, offers: 0 })).toBe('nothing')
+    expect(blockerCount({ files: 0, interviews: 0, offers: 0 })).toBe(0)
+    expect(blockerCount({ files: 1, interviews: 2, offers: 3 })).toBe(6)
   })
 })

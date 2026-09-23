@@ -72,3 +72,21 @@ export function friendlyHardDeleteError(message: string): string {
   }
   return message
 }
+
+// --------------------------------------------------- what blocks a delete
+/** What is attached to an application, and so what a forced delete takes. */
+export type Blockers = { files: number; interviews: number; offers: number }
+
+export const blockerCount = (b: Blockers): number => b.files + b.interviews + b.offers
+
+/** "1 file, 1 interview and 1 offer" — the sentence the confirmation needs. */
+export function blockerWords(b: Blockers): string {
+  const parts = [
+    b.files ? plural(b.files, 'file') : '',
+    b.interviews ? plural(b.interviews, 'interview') : '',
+    b.offers ? plural(b.offers, 'offer') : '',
+  ].filter(Boolean)
+  if (!parts.length) return 'nothing'
+  if (parts.length === 1) return parts[0]
+  return `${parts.slice(0, -1).join(', ')} and ${parts[parts.length - 1]}`
+}

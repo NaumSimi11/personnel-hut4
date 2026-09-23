@@ -124,8 +124,8 @@ export type ApplicantRow = {
   id: string
   jobId: string | null
   companyId: string
-  /** Plan 063: what `delete_job_application` refuses on. */
-  blockers: number
+  /** Plan 063/064: what `delete_job_application` refuses on, and takes when forced. */
+  blockers: { files: number; interviews: number; offers: number }
   name: string
   email: string | null
   position: string
@@ -165,11 +165,12 @@ export function applicantRows(
       jobId: a.job?.id ?? null,
       companyId: a.company_id,
       // Files, interviews and offers are what `delete_job_application`
-      // refuses on; counted here so the button can say so before the click.
-      blockers:
-        (a.application_files?.[0]?.count ?? 0) +
-        (a.interviews?.[0]?.count ?? 0) +
-        (a.offers?.[0]?.count ?? 0),
+      // refuses on; counted here so the confirmation can name them.
+      blockers: {
+        files: a.application_files?.[0]?.count ?? 0,
+        interviews: a.interviews?.[0]?.count ?? 0,
+        offers: a.offers?.[0]?.count ?? 0,
+      },
       name: a.candidate?.full_name ?? 'Candidate',
       email: a.candidate?.email ?? null,
       position: a.job?.title ?? '—',

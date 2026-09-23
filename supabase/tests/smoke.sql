@@ -7765,4 +7765,73 @@ delete from public.candidates where id::text like '80000000-0000-0000-0000-00000
 delete from public.policy_acknowledgements where policy_id::text like 'c0000000-0000-0000-0000-00000000080%';
 delete from public.policies where id::text like 'c0000000-0000-0000-0000-00000000080%';
 
+-- ================================================================ 0082
+-- "Delete anyway" (plan 064). 0081's refusal was a dead end: nothing in the
+-- app deletes an offer or an interview, so an application that had one could
+-- never be removed at all. Off, the refusal stands; on, it takes them and says
+-- what it took.
+insert into public.candidates (id, full_name) values
+  ('80000000-0000-0000-0000-000000000831', 'Everything Attached');
+insert into public.jobs (id, company_id, title, status) values
+  ('70000000-0000-0000-0000-000000000831', '10000000-0000-0000-0000-00000000000b', 'Force Delete Role', 'open');
+insert into public.applications (id, job_id, company_id, candidate_id, stage_key) values
+  ('90000000-0000-0000-0000-000000000831', '70000000-0000-0000-0000-000000000831',
+   '10000000-0000-0000-0000-00000000000b', '80000000-0000-0000-0000-000000000831', 'rejected');
+insert into public.application_files
+    (application_id, company_id, kind, storage_path, original_name, mime_type, size_bytes) values
+  ('90000000-0000-0000-0000-000000000831', '10000000-0000-0000-0000-00000000000b', 'cv',
+   'application/90000000-0000-0000-0000-000000000831/cv.pdf', 'cv.pdf', 'application/pdf', 2048);
+insert into public.interviews (id, application_id, company_id, kind, scheduled_at) values
+  ('e0000000-0000-0000-0000-000000000831', '90000000-0000-0000-0000-000000000831',
+   '10000000-0000-0000-0000-00000000000b', 'phone', now());
+insert into public.scorecards (interview_id, ratings, recommendation, author_name)
+  values ('e0000000-0000-0000-0000-000000000831', '[]'::jsonb, 'yes', 'A reviewer');
+insert into public.offers (application_id, company_id, terms)
+  values ('90000000-0000-0000-0000-000000000831', '10000000-0000-0000-0000-00000000000b', '{"salary": 1}'::jsonb);
+
+set app.test_uid = '00000000-0000-0000-0000-000000000005';  -- Bea, candidates.review in B
+set role authenticated;
+do $$
+declare r jsonb;
+begin
+  -- Off: exactly 0081's refusal, unchanged.
+  begin
+    r := public.delete_job_application('90000000-0000-0000-0000-000000000831');
+    raise exception 'FAIL: an application with everything attached was deleted by default';
+  exception when others then
+    assert sqlerrm like 'This application has files, interviews or offers%', 'the default still refuses: ' || sqlerrm;
+  end;
+
+  -- On: it goes, and says what it took so the app could warn first.
+  r := public.delete_job_application('90000000-0000-0000-0000-000000000831', true);
+  assert (r->>'deleted')::boolean, 'it goes when asked twice: ' || r::text;
+  assert (r->>'files')::int = 1 and (r->>'interviews')::int = 1 and (r->>'offers')::int = 1,
+    'and reports exactly what went with it: ' || r::text;
+  assert r->'storage_paths'->>0 = 'application/90000000-0000-0000-0000-000000000831/cv.pdf',
+    'with the storage path the app has to clean up: ' || r::text;
+
+  assert not exists (select 1 from public.applications where id = '90000000-0000-0000-0000-000000000831'),
+    'the application is gone';
+  assert not exists (select 1 from public.interviews where id = 'e0000000-0000-0000-0000-000000000831'),
+    'the interview with it';
+  assert not exists (select 1 from public.scorecards where interview_id = 'e0000000-0000-0000-0000-000000000831'),
+    'and the scorecard that hung off the interview, by cascade';
+end $$;
+reset role;
+set app.test_uid = '';
+
+-- Read back outside the role: a reviewer sees a holding-wide candidate THROUGH
+-- an application in their company (0067), so deleting the last one takes the
+-- person out of their sight. That is the visibility rule, not a deletion.
+do $$
+begin
+  assert exists (select 1 from public.candidates where id = '80000000-0000-0000-0000-000000000831'),
+    'the candidate stays — they are a person, not an application';
+  assert exists (select 1 from public.jobs where id = '70000000-0000-0000-0000-000000000831'),
+    'and so does the job';
+end $$;
+
+delete from public.jobs where id = '70000000-0000-0000-0000-000000000831';
+delete from public.candidates where id = '80000000-0000-0000-0000-000000000831';
+
 select 'SMOKE TESTS PASSED' as result;

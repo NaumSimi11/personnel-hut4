@@ -107,9 +107,9 @@ describe('hiring tabs', () => {
     const ana = rows.find((r) => r.id === 'a1')!
     const ben = rows.find((r) => r.id === 'a2')!
     expect(ana.companyId).toBe('A')
-    expect(ana.blockers).toBe(3)
-    // Nothing attached, and PostgREST simply omits the embeds: not a blocker.
-    expect(ben.blockers).toBe(0)
+    expect(ana.blockers).toEqual({ files: 1, interviews: 2, offers: 0 })
+    // Nothing attached, and PostgREST simply omits the embeds: all zero.
+    expect(ben.blockers).toEqual({ files: 0, interviews: 0, offers: 0 })
   })
 
   it('applicants: carries the sub-status, flags not responding and filters on it (plan 054)', () => {

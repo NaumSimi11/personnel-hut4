@@ -75,6 +75,43 @@ describe('hiring tabs', () => {
     expect(applicantRows(list, { companyId: '', stage: 'all', search: 'ANA' }).map((r) => r.id)).toEqual(['a1'])
   })
 
+  it('applicants: carries the company and counts what blocks a delete (plan 063)', () => {
+    const list: ApplicantLite[] = [
+      {
+        id: 'a1',
+        company_id: 'A',
+        stage_key: 'new',
+        received_at: '2026-09-01T00:00:00Z',
+        next_action: null,
+        next_action_due: null,
+        candidate: { full_name: 'Ana Kova', email: null },
+        job: { id: 'j1', title: 'Designer', company: { name: 'Synami' } },
+        owner: null,
+        application_files: [{ count: 1 }],
+        interviews: [{ count: 2 }],
+        offers: [],
+      },
+      {
+        id: 'a2',
+        company_id: 'B',
+        stage_key: 'new',
+        received_at: '2026-09-02T00:00:00Z',
+        next_action: null,
+        next_action_due: null,
+        candidate: { full_name: 'Ben Ilic', email: null },
+        job: { id: 'j2', title: 'Engineer', company: { name: 'Praedium' } },
+        owner: null,
+      },
+    ]
+    const rows = applicantRows(list, { companyId: '', stage: 'all', search: '' })
+    const ana = rows.find((r) => r.id === 'a1')!
+    const ben = rows.find((r) => r.id === 'a2')!
+    expect(ana.companyId).toBe('A')
+    expect(ana.blockers).toBe(3)
+    // Nothing attached, and PostgREST simply omits the embeds: not a blocker.
+    expect(ben.blockers).toBe(0)
+  })
+
   it('applicants: carries the sub-status, flags not responding and filters on it (plan 054)', () => {
     const today = '2026-09-21'
     const job = { id: 'j1', title: 'Designer', status: 'open', company: { name: 'Synami' } }

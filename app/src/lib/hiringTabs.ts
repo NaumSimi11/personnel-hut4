@@ -106,6 +106,9 @@ export function openingRows(
 export type ApplicantLite = {
   id: string
   company_id: string
+  application_files?: { count: number }[] | null
+  interviews?: { count: number }[] | null
+  offers?: { count: number }[] | null
   stage_key: string
   /** Plan 054; the candidate's last activity and the job status judge "not responding" (see outreachRowOf). */
   sub_status_key?: string | null
@@ -120,6 +123,9 @@ export type ApplicantLite = {
 export type ApplicantRow = {
   id: string
   jobId: string | null
+  companyId: string
+  /** Plan 063: what `delete_job_application` refuses on. */
+  blockers: number
   name: string
   email: string | null
   position: string
@@ -157,6 +163,13 @@ export function applicantRows(
     .map((a) => ({
       id: a.id,
       jobId: a.job?.id ?? null,
+      companyId: a.company_id,
+      // Files, interviews and offers are what `delete_job_application`
+      // refuses on; counted here so the button can say so before the click.
+      blockers:
+        (a.application_files?.[0]?.count ?? 0) +
+        (a.interviews?.[0]?.count ?? 0) +
+        (a.offers?.[0]?.count ?? 0),
       name: a.candidate?.full_name ?? 'Candidate',
       email: a.candidate?.email ?? null,
       position: a.job?.title ?? '—',

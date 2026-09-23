@@ -5,6 +5,9 @@ import CompanyFilter from '@/components/CompanyFilter.vue'
 import { PIPELINE_STAGES } from '@/lib/dashboard'
 import { NOT_RESPONDING_FILTER, applicantRows, type ApplicantLite, type ApplicantRow } from '@/lib/hiringTabs'
 import { SUB_STATUS_STAGES, subStatusesFor, type SubStatusRow } from '@/lib/outreach'
+import { friendlyHardDeleteError } from '@/lib/hardDelete'
+import { useAuthStore } from '@/stores/auth'
+import { useDialogStore } from '@/stores/dialogs'
 
 /**
  * The prototype's "Applicants" tab (plan 044): every application across
@@ -23,7 +26,10 @@ const CLOSED_STAGES = '(hired,rejected,withdrawn)'
 const CAPPED_NOTICE = 'Showing the newest 1,000 — narrow the filters to see older ones.'
 
 const loading = ref(true)
+const auth = useAuthStore()
+const dialogs = useDialogStore()
 const error = ref<string | null>(null)
+const busyId = ref<string | null>(null)
 const applications = ref<ApplicantLite[]>([])
 const subStatusRows = ref<SubStatusRow[]>([])
 const subStatusLabels = computed<Record<string, string>>(() =>
@@ -48,6 +54,32 @@ function badgeClass(stageKey: string): string {
   return 'blue'
 }
 
+/**
+ * Delete a mistaken or test application from the list somebody is looking at
+ * (plan 063). `delete_job_application` (0081) is the rule: it refuses files,
+ * interviews and offers, takes the stage history with it, and leaves the
+ * candidate and any employment record alone.
+ */
+async function removeApplication(r: ApplicantRow): Promise<void> {
+  if (r.blockers > 0) return
+  const ok = await dialogs.confirmAction({
+    title: `Delete ${r.name}'s application?`,
+    hint: `${r.position} at ${r.company}. The application and its history go; ${r.name} stays in the talent pool. This cannot be undone.`,
+    confirmLabel: 'Delete application',
+    danger: true,
+  })
+  if (!ok) return
+  error.value = null
+  busyId.value = r.id
+  const { error: err } = await supabase.rpc('delete_job_application', { p_application_id: r.id })
+  busyId.value = null
+  if (err) {
+    error.value = friendlyHardDeleteError(err.message)
+    return
+  }
+  await load()
+}
+
 async function load(): Promise<void> {
   loading.value = true
   error.value = null
@@ -55,7 +87,11 @@ async function load(): Promise<void> {
   let query = supabase
     .from('applications')
     .select(
-      'id, company_id, stage_key, sub_status_key, received_at, next_action, next_action_due, candidate:candidates(full_name, email, last_activity_at), job:jobs(id, title, status, company:companies(name)), owner:people!applications_owner_id_fkey(full_name)',
+      `id, company_id, stage_key, sub_status_key, received_at, next_action, next_action_due,
+       application_files(count), interviews(count), offers(count),
+       candidate:candidates(full_name, email, last_activity_at),
+       job:jobs(id, title, status, company:companies(name)),
+       owner:people!applications_owner_id_fkey(full_name)`,
     )
   if (stageKey === 'live') query = query.not('stage_key', 'in', CLOSED_STAGES)
   else if (stageKey === NOT_RESPONDING_FILTER) query = query.in('stage_key', [...SUB_STATUS_STAGES])
@@ -144,6 +180,19 @@ watch(stage, load)
               <div class="action-group">
                 <router-link class="button secondary small-btn" :to="{ name: 'application', params: { applicationId: r.id } }">Open candidate</router-link>
                 <router-link v-if="r.jobId" class="button secondary small-btn" :to="{ name: 'job', params: { jobId: r.jobId }, query: { tab: 'applications' } }">Open job</router-link>
+                <button
+                  v-if="auth.can(r.companyId, 'candidates.review')"
+                  class="button secondary small-btn danger-text"
+                  type="button"
+                  :disabled="busyId === r.id || r.blockers > 0"
+                  :title="r.blockers > 0
+                    ? 'This application has files, interviews or offers. Remove those first.'
+                    : 'Deletes the application and its stage history. The candidate and any employment record stay.'"
+                  :data-testid="`delete-application-${r.id}`"
+                  @click="removeApplication(r)"
+                >
+                  Delete
+                </button>
               </div>
             </td>
           </tr>

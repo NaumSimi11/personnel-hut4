@@ -1,0 +1,22 @@
+-- 0078_lookup_write_grants.sql
+-- The editable lookups can actually be edited (plan 062, second half).
+--
+-- `application_sub_statuses` (0069) and `candidate_sources` (0067) both carry
+-- an `admin_write` policy and both granted `authenticated` nothing but SELECT.
+-- The Labels panel writes to them directly — that is the whole of the feature
+-- the maintainer asked for, "the status label need ot have an edit because out
+-- hr is used to her names" — so on any database that does not hand out DML by
+-- default, renaming a sub-status fails with "permission denied for table".
+--
+-- It works on the live project only because Supabase grants INSERT, UPDATE and
+-- DELETE to `authenticated` on every new table in `public` by default, and RLS
+-- is what actually holds the door. That is fine until the day somebody
+-- restores the database somewhere else, stands up a second environment, or
+-- runs the migrations on a fresh project — and then a feature that was tested
+-- and shipped is simply broken, for a reason nobody will look for.
+--
+-- So the grants are made explicit, to match what the policies already assume.
+-- Nothing is widened: `admin_write` still refuses everyone but an admin.
+-- `access_systems` got the same treatment in 0076 for the same reason.
+grant insert, update, delete on public.application_sub_statuses to authenticated;
+grant insert, update, delete on public.candidate_sources to authenticated;

@@ -64,13 +64,26 @@ async function patch(task: ChecklistTask, fields: TaskPatch): Promise<boolean> {
   return true
 }
 
-/** The box follows the record: a refused tick snaps it back. */
+/**
+ * The box follows the record: a refused tick snaps it back.
+ *
+ * Ticking goes through `complete_my_plan_task` (0079) rather than an update,
+ * because the line may belong to somebody with no capability at all — the
+ * manager or the person themselves — and because the function refuses a line
+ * that still needs its document filed, which the plain update never checked.
+ */
 async function toggle(task: ChecklistTask, input: HTMLInputElement): Promise<void> {
   const checked = input.checked
-  const ok = checked
-    ? await patch(task, { status: 'done', done_by: auth.personId, done_at: new Date().toISOString() })
-    : await patch(task, { status: 'open', done_by: null, done_at: null })
-  if (!ok) input.checked = !checked
+  error.value = null
+  busyId.value = task.id
+  const { error: err } = await supabase.rpc('complete_my_plan_task', { p_task_id: task.id, p_done: checked })
+  busyId.value = null
+  if (err) {
+    error.value = messageForChecklist(err)
+    input.checked = !checked
+    return
+  }
+  emit('changed')
 }
 
 async function skip(task: ChecklistTask): Promise<void> {

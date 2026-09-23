@@ -5351,6 +5351,10 @@ export type Database = {
         Args: { p_employment_period_id: string }
         Returns: Json
       }
+      complete_my_plan_task: {
+        Args: { p_done?: boolean; p_task_id: string }
+        Returns: Json
+      }
       confirm_hire: {
         Args: {
           p_application_id: string

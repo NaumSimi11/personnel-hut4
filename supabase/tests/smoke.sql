@@ -7436,4 +7436,179 @@ delete from public.employment_periods where id::text like '30000000-0000-0000-00
 delete from public.people where id::text like '20000000-0000-0000-0000-00000000075%';
 delete from auth.users where id::text like '00000000-0000-0000-0000-00000000075%';
 
+-- ========================================================== 0077 / 0078
+-- The manager, from a label into a person (plan 062), and the lookups that
+-- could not be written to.
+--
+-- Fixtures: Manny manages Milo, both actively employed in Company A, and
+-- Company A gets an it_owner so the IT lines have somebody to go to. Neither
+-- of them holds a capability anywhere — that is the point.
+insert into auth.users (id, email) values
+  ('00000000-0000-0000-0000-000000000771', 'manny@a.test'),
+  ('00000000-0000-0000-0000-000000000772', 'milo@a.test');
+insert into public.people (id, user_id, full_name, work_email) values
+  ('20000000-0000-0000-0000-000000000771', '00000000-0000-0000-0000-000000000771', 'Manny Manager', 'manny@a.test'),
+  ('20000000-0000-0000-0000-000000000772', '00000000-0000-0000-0000-000000000772', 'Milo Newstart', 'milo@a.test');
+insert into public.employment_periods (id, person_id, company_id, job_title, status, start_date, manager_id) values
+  ('30000000-0000-0000-0000-000000000771', '20000000-0000-0000-0000-000000000771',
+   '10000000-0000-0000-0000-00000000000a', 'Team lead', 'active', '2024-01-01', null),
+  ('30000000-0000-0000-0000-000000000772', '20000000-0000-0000-0000-000000000772',
+   '10000000-0000-0000-0000-00000000000a', 'Engineer', 'active', '2024-01-01',
+   '20000000-0000-0000-0000-000000000771');
+-- Remembered, not clobbered: another block may have set this, and the tail
+-- puts back exactly what was here.
+create temp table it_owner_before as
+  select person_id from public.workflow_owners
+   where company_id = '10000000-0000-0000-0000-00000000000a' and role_key = 'it_owner';
+insert into public.workflow_owners (company_id, role_key, person_id)
+  values ('10000000-0000-0000-0000-00000000000a', 'it_owner', '20000000-0000-0000-0000-000000000002')
+  on conflict (company_id, role_key) do update set person_id = excluded.person_id;
+
+-- 1. A starting plan turns every role into a person.
+do $$
+declare v_plan uuid; v_hr uuid := '20000000-0000-0000-0000-000000000005';
+begin
+  set app.test_uid = '00000000-0000-0000-0000-000000000005';   -- somebody starts it
+  v_plan := app.start_onboarding_plan('20000000-0000-0000-0000-000000000772',
+                                      '10000000-0000-0000-0000-00000000000a',
+                                      '30000000-0000-0000-0000-000000000772', current_date);
+  set app.test_uid = '';
+  assert v_plan is not null, 'the plan started';
+  perform set_config('smoke.milo_plan', v_plan::text, false);
+
+  -- A second plan, for somebody Manny does not manage, so the negative
+  -- assertion below has something real to fail against.
+  insert into public.plans (kind, person_id, company_id, employment_period_id, start_date)
+    values ('onboarding', '20000000-0000-0000-0000-000000000771', '10000000-0000-0000-0000-00000000000a',
+            '30000000-0000-0000-0000-000000000771', current_date);
+
+  assert (select count(*) from public.plan_tasks
+           where plan_id = v_plan and owner_role = 'manager'
+             and owner_id = '20000000-0000-0000-0000-000000000771') > 0,
+    'the manager lines are the manager''s, by name';
+  assert (select count(*) from public.plan_tasks
+           where plan_id = v_plan and owner_role = 'employee'
+             and owner_id = '20000000-0000-0000-0000-000000000772') > 0,
+    'the person''s own lines are theirs, so they appear on their workspace';
+  assert (select count(*) from public.plan_tasks
+           where plan_id = v_plan and owner_role = 'it'
+             and owner_id = '20000000-0000-0000-0000-000000000002') > 0,
+    'the IT lines go to the company''s configured IT owner';
+  assert (select count(*) from public.plan_tasks
+           where plan_id = v_plan and owner_role = 'hr' and owner_id = v_hr) > 0,
+    'the HR lines go to whoever started the plan';
+  assert not exists (select 1 from public.plan_tasks
+                      where plan_id = v_plan and owner_role = 'finance' and owner_id is not null),
+    'a role with nobody behind it stays unassigned rather than guessing';
+end $$;
+
+-- 2. The manager can open the plan, and only for their own people.
+set app.test_uid = '00000000-0000-0000-0000-000000000771';  -- Manny, no capability anywhere
+set role authenticated;
+do $$
+declare v_plan_of_milo uuid;
+begin
+  -- Read as the owner first, so "all of them" has a number to mean.
+  v_plan_of_milo := current_setting('smoke.milo_plan')::uuid;
+  assert (select count(*) from public.plans
+           where person_id = '20000000-0000-0000-0000-000000000772') = 1,
+    'he can read the plan of somebody he manages';
+  -- ALL of its lines, not just his own. The page decides whether the critical
+  -- work is finished by counting what it was given, so a partial read would
+  -- let somebody finish an onboarding with the IT lines still open.
+  assert (select count(*) from public.plan_tasks pt join public.plans p on p.id = pt.plan_id
+           where p.person_id = '20000000-0000-0000-0000-000000000772')
+       = (select count(*) from public.plan_tasks where plan_id = v_plan_of_milo),
+    'and every line of it, not only the ones with his name on';
+  assert (select count(*) from public.plan_tasks pt join public.plans p on p.id = pt.plan_id
+           where p.person_id = '20000000-0000-0000-0000-000000000772' and pt.owner_role = 'hr') > 0,
+    'including the HR lines, which are what a partial read would have hidden';
+end $$;
+reset role;
+set app.test_uid = '';
+
+-- 3. Milo sees his own plan, as he always could, and the lines now have his
+--    name on them so they reach his workspace.
+set app.test_uid = '00000000-0000-0000-0000-000000000772';  -- Milo
+set role authenticated;
+do $$
+begin
+  assert (select count(*) from public.plan_tasks
+           where owner_id = '20000000-0000-0000-0000-000000000772' and status = 'open') > 0,
+    'his own lines are on his list — the card that has been empty for everybody';
+
+  -- 0079: owning a line is not a licence to rewrite it.
+  begin
+    delete from public.plan_tasks where owner_id = '20000000-0000-0000-0000-000000000772';
+    assert (select count(*) from public.plan_tasks
+             where owner_id = '20000000-0000-0000-0000-000000000772') > 0,
+      'an owner cannot delete their own checklist line';
+  exception when insufficient_privilege then null;
+  end;
+end $$;
+reset role;
+set app.test_uid = '';
+
+-- 4. A colleague who manages nobody is unchanged: no plan, no lines.
+set app.test_uid = '00000000-0000-0000-0000-000000000003';  -- Omar
+set role authenticated;
+do $$
+begin
+  assert (select count(*) from public.plans
+           where person_id = '20000000-0000-0000-0000-000000000772') = 0,
+    'somebody who manages nobody reads nobody''s plan';
+end $$;
+reset role;
+set app.test_uid = '';
+
+-- 5. 0078: the lookups the Labels panel writes to can be written to — by an
+--    admin, and by nobody else. The grant is what was missing; the policy
+--    was always right.
+set app.test_uid = '00000000-0000-0000-0000-000000000004';  -- Ada, admin
+set role authenticated;
+do $$
+begin
+  update public.application_sub_statuses set label = 'Interested (renamed)' where key = 'interested';
+  assert (select label from public.application_sub_statuses where key = 'interested') = 'Interested (renamed)',
+    'an admin can rename a sub-status, which is the whole of the feature';
+  update public.application_sub_statuses set label = 'Interested' where key = 'interested';
+  update public.candidate_sources set label = 'Referral (renamed)' where key = 'referral';
+  assert (select label from public.candidate_sources where key = 'referral') = 'Referral (renamed)',
+    'and a source';
+  update public.candidate_sources set label = 'Referral' where key = 'referral';
+end $$;
+reset role;
+set app.test_uid = '';
+
+set app.test_uid = '00000000-0000-0000-0000-000000000003';  -- Omar, no grants
+set role authenticated;
+do $$
+declare v_n int;
+begin
+  update public.application_sub_statuses set label = 'Mine now' where key = 'interested';
+  get diagnostics v_n = row_count;
+  assert v_n = 0, 'the policy still refuses everyone but an admin — nothing was renamed';
+end $$;
+reset role;
+set app.test_uid = '';
+
+-- Tail: the IT owner goes back to whatever it was, and this block's fixtures go.
+delete from public.workflow_owners
+  where company_id = '10000000-0000-0000-0000-00000000000a' and role_key = 'it_owner';
+insert into public.workflow_owners (company_id, role_key, person_id)
+  select '10000000-0000-0000-0000-00000000000a', 'it_owner', person_id from it_owner_before;
+drop table it_owner_before;
+
+-- The starter kit opens an IT request against
+-- a plan line (0042), and that reference has no ON DELETE, so it goes first.
+delete from public.it_requests ir using public.plan_tasks pt, public.plans p
+  where ir.plan_task_id = pt.id and pt.plan_id = p.id
+    and p.person_id::text like '20000000-0000-0000-0000-00000000077%';
+delete from public.plan_tasks pt using public.plans p
+  where pt.plan_id = p.id and p.person_id::text like '20000000-0000-0000-0000-00000000077%';
+delete from public.plans where person_id::text like '20000000-0000-0000-0000-00000000077%';
+delete from public.employment_periods where id::text like '30000000-0000-0000-0000-00000000077%';
+delete from public.people where id::text like '20000000-0000-0000-0000-00000000077%';
+delete from auth.users where id::text like '00000000-0000-0000-0000-00000000077%';
+
 select 'SMOKE TESTS PASSED' as result;

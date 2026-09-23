@@ -154,10 +154,9 @@ function fetchMyTasks() {
 async function markComplete(task: MyTaskRow): Promise<void> {
   taskError.value = null
   busyId.value = task.id
-  const { error: err } = await supabase
-    .from('plan_tasks')
-    .update({ status: 'done', done_by: auth.personId, done_at: new Date().toISOString() })
-    .eq('id', task.id)
+  // Through the function (0079): the line is this person's, and owning a line
+  // is no longer a licence to write to the row.
+  const { error: err } = await supabase.rpc('complete_my_plan_task', { p_task_id: task.id, p_done: true })
   busyId.value = null
   if (err) {
     taskError.value = friendlyTaskError(err.message)

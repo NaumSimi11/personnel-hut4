@@ -12,6 +12,13 @@ describe('jobDeletable', () => {
     expect(jobDeletable({ applications: 1 }, true).canDelete).toBe(false)
   })
 
+  it('refuses when the count could not be read — an unknown count is not a zero (plan 056)', () => {
+    expect(jobDeletable({ applications: 0 }, true, false)).toEqual({
+      canDelete: false,
+      reason: 'You cannot see the applications for this company, so this job cannot be deleted from here.',
+    })
+  })
+
   it('refuses without the capability, whatever the count', () => {
     expect(jobDeletable({ applications: 0 }, false)).toEqual({
       canDelete: false,

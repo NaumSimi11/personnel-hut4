@@ -6440,4 +6440,212 @@ delete from public.grant_capabilities gc using omar_notes_added a
   where gc.grant_id = a.grant_id and gc.capability_key = a.capability_key;
 drop table omar_notes_added;
 
+-- ================================================================ 0071
+-- Closing job openings (plan 056): the closing stamp the trigger keeps
+-- honest, and close_jobs — one opening or a selection, with the option to
+-- withdraw whoever is still in play. Fixtures: three Company B jobs and one
+-- Company A job, five candidates on the first B job covering every stage
+-- that matters. Bea (Company HR in B only) does the work; Omar (no grants)
+-- is the refusal, and Company A is where Bea's reach ends.
+insert into public.jobs (id, company_id, title, status) values
+  ('70000000-0000-0000-0000-000000000711', '10000000-0000-0000-0000-00000000000b', 'Sweep Role B', 'open'),
+  ('70000000-0000-0000-0000-000000000712', '10000000-0000-0000-0000-00000000000b', 'Sweep Quiet B', 'open'),
+  ('70000000-0000-0000-0000-000000000713', '10000000-0000-0000-0000-00000000000b', 'Sweep Third B', 'open'),
+  ('70000000-0000-0000-0000-000000000714', '10000000-0000-0000-0000-00000000000a', 'Sweep Role A', 'open');
+insert into public.candidates (id, full_name) values
+  ('80000000-0000-0000-0000-000000000711', 'Sweep One'),
+  ('80000000-0000-0000-0000-000000000712', 'Sweep Two'),
+  ('80000000-0000-0000-0000-000000000713', 'Sweep Three'),
+  ('80000000-0000-0000-0000-000000000714', 'Sweep Four'),
+  ('80000000-0000-0000-0000-000000000715', 'Sweep Five');
+insert into public.applications (id, job_id, company_id, candidate_id, stage_key, rejected_reason) values
+  ('90000000-0000-0000-0000-000000000711', '70000000-0000-0000-0000-000000000711',
+   '10000000-0000-0000-0000-00000000000b', '80000000-0000-0000-0000-000000000711', 'new', null),
+  ('90000000-0000-0000-0000-000000000712', '70000000-0000-0000-0000-000000000711',
+   '10000000-0000-0000-0000-00000000000b', '80000000-0000-0000-0000-000000000712', 'screening', null),
+  ('90000000-0000-0000-0000-000000000713', '70000000-0000-0000-0000-000000000711',
+   '10000000-0000-0000-0000-00000000000b', '80000000-0000-0000-0000-000000000713', 'interview', null),
+  ('90000000-0000-0000-0000-000000000714', '70000000-0000-0000-0000-000000000711',
+   '10000000-0000-0000-0000-00000000000b', '80000000-0000-0000-0000-000000000714', 'hired', null),
+  ('90000000-0000-0000-0000-000000000715', '70000000-0000-0000-0000-000000000711',
+   '10000000-0000-0000-0000-00000000000b', '80000000-0000-0000-0000-000000000715', 'rejected', 'Not this time.');
+
+set app.test_uid = '00000000-0000-0000-0000-000000000005';  -- Bea, Company HR in B
+set role authenticated;
+
+-- 1. Closing on its own: the stamp is written, the candidates are not touched.
+do $$
+declare r jsonb; j record;
+begin
+  r := public.close_jobs(array['70000000-0000-0000-0000-000000000712']::uuid[], null, false);
+  assert r = '{"closed": 1, "already_closed": 0, "withdrawn": 0}'::jsonb, 'one closed, nobody withdrawn: ' || r::text;
+  select status, closed_at, closed_by, closed_reason into j
+    from public.jobs where id = '70000000-0000-0000-0000-000000000712';
+  assert j.status = 'closed', 'the job is closed';
+  assert j.closed_at is not null, 'closed_at is stamped';
+  assert j.closed_by = '20000000-0000-0000-0000-000000000005', 'closed_by is the person who closed it';
+  assert j.closed_reason is null, 'a close with no reason keeps none';
+end $$;
+
+-- 2. Abandoning: closed, and everybody still in play withdrawn with the
+--    reason — the hired and the rejected untouched, each withdrawal carrying
+--    the stage it really came from.
+do $$
+declare r jsonb; n int;
+begin
+  r := public.close_jobs(array['70000000-0000-0000-0000-000000000711']::uuid[],
+                         'Headcount withdrawn for the year.', true);
+  assert r = '{"closed": 1, "already_closed": 0, "withdrawn": 3}'::jsonb,
+    'one closed, the three in play withdrawn: ' || r::text;
+  assert (select closed_reason from public.jobs where id = '70000000-0000-0000-0000-000000000711')
+    = 'Headcount withdrawn for the year.', 'the reason is on the job';
+  assert (select count(*) from public.applications
+           where job_id = '70000000-0000-0000-0000-000000000711' and stage_key = 'withdrawn'
+             and withdrawn_reason = 'Headcount withdrawn for the year.') = 3,
+    'three withdrawn, each with the reason';
+  assert (select stage_key from public.applications where id = '90000000-0000-0000-0000-000000000714') = 'hired'
+     and (select stage_key from public.applications where id = '90000000-0000-0000-0000-000000000715') = 'rejected',
+    'an answer somebody gave is never overwritten';
+  assert (select rejected_reason from public.applications where id = '90000000-0000-0000-0000-000000000715')
+    = 'Not this time.', 'the rejection keeps its own reason';
+  select count(*) into n from public.application_events
+    where application_id in ('90000000-0000-0000-0000-000000000711', '90000000-0000-0000-0000-000000000712',
+                             '90000000-0000-0000-0000-000000000713')
+      and kind = 'stage_change' and to_stage_key = 'withdrawn'
+      and body = 'Headcount withdrawn for the year.'
+      and actor_id = '20000000-0000-0000-0000-000000000005';
+  assert n = 3, 'one event each, attributed and dated: ' || n;
+  assert (select from_stage_key from public.application_events
+           where application_id = '90000000-0000-0000-0000-000000000713' and kind = 'stage_change'
+             and to_stage_key = 'withdrawn') = 'interview',
+    'the event carries the stage the application left, not a guess';
+  assert (select sub_status_key from public.applications where id = '90000000-0000-0000-0000-000000000711') is null,
+    'a withdrawn row carries no sub-status (0069)';
+end $$;
+
+-- 3. The same call again: counted, not repeated, and the closing is not re-dated.
+do $$
+declare r jsonb; v_was timestamptz;
+begin
+  select closed_at into v_was from public.jobs where id = '70000000-0000-0000-0000-000000000711';
+  r := public.close_jobs(array['70000000-0000-0000-0000-000000000711',
+                               '70000000-0000-0000-0000-000000000711']::uuid[], 'Again.', true);
+  assert r = '{"closed": 0, "already_closed": 1, "withdrawn": 0}'::jsonb,
+    'the same id twice is one job, already closed, nobody left to withdraw: ' || r::text;
+  assert (select closed_at from public.jobs where id = '70000000-0000-0000-0000-000000000711') = v_was,
+    'a second close does not re-date the first';
+  assert (select closed_reason from public.jobs where id = '70000000-0000-0000-0000-000000000711')
+    = 'Headcount withdrawn for the year.', 'nor overwrite the reason';
+end $$;
+
+-- 4. Reopening clears the stamp; the people who were told stay told.
+do $$
+begin
+  update public.jobs set status = 'open' where id = '70000000-0000-0000-0000-000000000711';
+  assert (select closed_at is null and closed_by is null and closed_reason is null
+            from public.jobs where id = '70000000-0000-0000-0000-000000000711'),
+    'reopening clears the whole stamp';
+  assert (select count(*) from public.applications
+           where job_id = '70000000-0000-0000-0000-000000000711' and stage_key = 'withdrawn') = 3,
+    'reopening does not un-withdraw anybody';
+  -- ...and closing again re-stamps it, so the columns and the status never disagree.
+  update public.jobs set status = 'closed' where id = '70000000-0000-0000-0000-000000000711';
+  assert (select closed_at is not null and closed_by = '20000000-0000-0000-0000-000000000005'
+            from public.jobs where id = '70000000-0000-0000-0000-000000000711'),
+    'a plain status update stamps too — the trigger, not the RPC, guarantees it';
+end $$;
+
+-- 4b. A job that arrives closed keeps the stamp it was given and no more.
+--     The Zoho import writes each job with the status it had, so dating a
+--     2023 closure today, under the name of whoever ran the import, would be
+--     exactly the invention the stamp exists to prevent.
+do $$
+begin
+  insert into public.jobs (id, company_id, title, status)
+    values ('70000000-0000-0000-0000-000000000715', '10000000-0000-0000-0000-00000000000b', 'Sweep Born Closed B', 'closed');
+  assert (select closed_at is null and closed_by is null from public.jobs where id = '70000000-0000-0000-0000-000000000715'),
+    'a job inserted as closed is not given a date and an author it never had';
+  -- An importer that does know when it happened may say so, and is believed.
+  insert into public.jobs (id, company_id, title, status, closed_at)
+    values ('70000000-0000-0000-0000-000000000716', '10000000-0000-0000-0000-00000000000b', 'Sweep Old Closed B', 'closed',
+            timestamptz '2023-05-04 10:00+00');
+  assert (select closed_at = timestamptz '2023-05-04 10:00+00'
+            from public.jobs where id = '70000000-0000-0000-0000-000000000716'),
+    'a stamp the writer supplied is kept as given';
+  -- ...and the way out still clears it, whichever way the row arrived.
+  update public.jobs set status = 'draft' where id = '70000000-0000-0000-0000-000000000716';
+  assert (select closed_at is null and closed_by is null from public.jobs where id = '70000000-0000-0000-0000-000000000716'),
+    'leaving closed clears the stamp';
+end $$;
+
+-- 5. The refusals.
+do $$
+declare r jsonb;
+begin
+  begin
+    r := public.close_jobs(array[]::uuid[], 'Anything.', false);
+    raise exception 'FAIL: an empty selection was accepted';
+  exception when others then
+    assert sqlerrm like 'Pick at least one job opening%', 'empty selection: ' || sqlerrm;
+  end;
+
+  begin
+    r := public.close_jobs(array['70000000-0000-0000-0000-0000000007ff']::uuid[], null, false);
+    raise exception 'FAIL: an unknown job was accepted';
+  exception when others then
+    assert sqlerrm like 'That job opening no longer exists%', 'unknown job: ' || sqlerrm;
+  end;
+
+  begin
+    r := public.close_jobs(array['70000000-0000-0000-0000-000000000713']::uuid[], '  ', true);
+    raise exception 'FAIL: a withdrawal with no reason was accepted';
+  exception when others then
+    assert sqlerrm like 'Give the reason%', 'blank reason: ' || sqlerrm;
+  end;
+  assert (select status from public.jobs where id = '70000000-0000-0000-0000-000000000713') = 'open',
+    'the refused call closed nothing';
+end $$;
+
+-- 6. All-or-nothing across companies: Bea may close in B and not in A, so a
+--    selection spanning both closes neither.
+do $$
+declare r jsonb;
+begin
+  begin
+    r := public.close_jobs(array['70000000-0000-0000-0000-000000000713',
+                                 '70000000-0000-0000-0000-000000000714']::uuid[], 'Sweep.', false);
+    raise exception 'FAIL: a job in a company Bea cannot edit was closed';
+  exception when insufficient_privilege then
+    assert sqlerrm like 'You need "Edit job descriptions" in Company A%', 'the refusal names the company: ' || sqlerrm;
+  end;
+end $$;
+reset role;
+set app.test_uid = '';
+-- Read both back as the owner: the Company A job is not Bea's to see, so
+-- asking under her role would answer "no row" and prove nothing.
+do $$
+begin
+  assert (select status from public.jobs where id = '70000000-0000-0000-0000-000000000713') = 'open'
+     and (select status from public.jobs where id = '70000000-0000-0000-0000-000000000714') = 'open',
+    'one refusal rolls the whole call back: 713='
+      || (select status from public.jobs where id = '70000000-0000-0000-0000-000000000713')
+      || ' 714=' || (select status from public.jobs where id = '70000000-0000-0000-0000-000000000714');
+end $$;
+
+-- 7. Omar holds nothing: he cannot close anything at all.
+set app.test_uid = '00000000-0000-0000-0000-000000000003';  -- Omar, no grants
+set role authenticated;
+do $$
+declare r jsonb;
+begin
+  begin
+    r := public.close_jobs(array['70000000-0000-0000-0000-000000000713']::uuid[], null, false);
+    raise exception 'FAIL: an employee with no grants closed a job';
+  exception when insufficient_privilege then
+    assert sqlerrm like 'You need "Edit job descriptions"%', 'Omar is refused by capability: ' || sqlerrm;
+  end;
+end $$;
+reset role;
+set app.test_uid = '';
+
 select 'SMOKE TESTS PASSED' as result;

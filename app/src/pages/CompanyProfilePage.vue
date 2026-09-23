@@ -239,8 +239,11 @@ const mayDeleteRequests = computed(() =>
 function jobApplications(job: JobRow): number {
   return job.applications?.[0]?.count ?? 0
 }
+// The count is read under the viewer's own visibility, so somebody without
+// candidates.view here reads zero for every job (plan 056).
+const seesApplications = computed(() => auth.can(companyId, 'candidates.view'))
 function jobVerdict(job: JobRow) {
-  return jobDeletable({ applications: jobApplications(job) }, mayDeleteJobs.value)
+  return jobDeletable({ applications: jobApplications(job) }, mayDeleteJobs.value, seesApplications.value)
 }
 function requestVerdict(request: HiringRequestRow) {
   return requestDeletable(

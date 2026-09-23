@@ -28,6 +28,37 @@ describe('hiring tabs', () => {
     expect(openingRows(jobs, apps, { companyId: '', status: 'all' }).map((r) => r.id)).toEqual(['j1', 'j2', 'j3', 'j4'])
   })
 
+  it('openings: carries the total received and the closing stamp (plan 056)', () => {
+    const closed: OpeningJobLite[] = [
+      {
+        id: 'j2',
+        title: 'Analyst',
+        status: 'closed',
+        company_id: 'A',
+        company: { name: 'Synami' },
+        request: null,
+        closed_at: '2026-09-12T08:30:00+00:00',
+        closed_reason: 'Headcount withdrawn.',
+        closed_by_person: { full_name: 'Ivana Frost' },
+        applications: [{ count: 14 }],
+      },
+    ]
+    const [row] = openingRows(closed, apps, { companyId: '', status: 'all' })
+    expect(row).toMatchObject({
+      applications: 14,
+      companyId: 'A',
+      status: 'closed',
+      closedLine: 'Closed 12 Sep by Ivana Frost',
+      closedReason: 'Headcount withdrawn.',
+    })
+  })
+
+  it('openings: an opening closed before the stamp existed claims no author, and no count means none', () => {
+    const [row] = openingRows(jobs.filter((j) => j.id === 'j2'), apps, { companyId: '', status: 'all' })
+    expect(row.closedLine).toBeNull()
+    expect(row.applications).toBe(0)
+  })
+
   it('applicants: flat rows newest first, with stage filter and name / position search', () => {
     const list: ApplicantLite[] = [
       { id: 'a1', company_id: 'A', stage_key: 'new', received_at: '2026-09-01T00:00:00Z', next_action: null, next_action_due: null, candidate: { full_name: 'Ana Kova', email: 'ana@x.test' }, job: { id: 'j1', title: 'Designer', company: { name: 'Synami' } }, owner: null },

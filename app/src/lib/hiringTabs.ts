@@ -27,6 +27,12 @@ export type OpeningJobLite = {
   company_id: string
   company: { name: string } | null
   request: { headcount: number; manager: { full_name: string } | null } | null
+  /** Plan 056: the closing stamp, null on every job that is not closed. */
+  closed_at?: string | null
+  closed_reason?: string | null
+  closed_by_person?: { full_name: string } | null
+  /** PostgREST's embedded count of every application ever received here. */
+  applications?: ReadonlyArray<{ count: number }> | null
 }
 export type OpeningApplicationLite = { id: string; job_id: string; stage_key: string }
 
@@ -34,12 +40,19 @@ export type JobOpeningRow = {
   id: string
   title: string
   company: string
+  companyId: string
+  status: string
   statusLabel: string
   statusTone: 'green' | 'amber' | 'blue' | ''
   headcount: number
   inPlay: number
   hired: number
   manager: string | null
+  /** Plan 056: everything ever received here — the rule for deleting. */
+  applications: number
+  /** "Closed 12 Sep by Ivana Frost", or null when the job is not closed. */
+  closedLine: string | null
+  closedReason: string | null
 }
 
 function jobStatusTone(status: string): JobOpeningRow['statusTone'] {
@@ -47,6 +60,18 @@ function jobStatusTone(status: string): JobOpeningRow['statusTone'] {
   if (status === 'on_hold') return 'amber'
   if (status === 'ready') return 'blue'
   return ''
+}
+
+/**
+ * "Closed 12 Sep by Ivana Frost" (plan 056) — who ended this opening and
+ * when. Null unless the job is closed and the stamp is there: an opening
+ * closed before 0071 existed has a status and no stamp, and inventing an
+ * author for it would be a lie.
+ */
+function closedLine(j: OpeningJobLite): string | null {
+  if (j.status !== 'closed' || !j.closed_at) return null
+  const who = j.closed_by_person?.full_name
+  return `Closed ${shortDate(j.closed_at.slice(0, 10))}${who ? ` by ${who}` : ''}`
 }
 
 export function openingRows(
@@ -63,12 +88,17 @@ export function openingRows(
         id: j.id,
         title: j.title,
         company: j.company?.name ?? '—',
+        companyId: j.company_id,
+        status: j.status,
         statusLabel: JOB_STATUS_LABEL[j.status] ?? j.status,
         statusTone: jobStatusTone(j.status),
         headcount: j.request?.headcount ?? 1,
         inPlay: own.filter((a) => !CLOSED_STAGES.has(a.stage_key)).length,
         hired: own.filter((a) => a.stage_key === 'hired').length,
         manager: j.request?.manager?.full_name ?? null,
+        applications: j.applications?.[0]?.count ?? 0,
+        closedLine: closedLine(j),
+        closedReason: j.closed_reason ?? null,
       }
     })
 }

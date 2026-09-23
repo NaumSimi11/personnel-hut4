@@ -15,9 +15,23 @@ export type DeleteVerdict = { canDelete: boolean; reason: string | null }
 const ALLOWED: DeleteVerdict = { canDelete: true, reason: null }
 const NOT_ALLOWED = 'You do not have permission to delete this.'
 
-/** A job goes only while nothing has been received against it. */
-export function jobDeletable(job: { applications: number }, permitted: boolean): DeleteVerdict {
+/**
+ * A job goes only while nothing has been received against it.
+ *
+ * `countVisible` (plan 056) is whether the caller could see the applications
+ * at all: the count comes from PostgREST under the viewer's own RLS, so
+ * somebody without `candidates.view` in that company reads zero for every job
+ * and would be told nothing was ever received. An unknown count is not a
+ * zero, so the button stays off and says why.
+ */
+export function jobDeletable(job: { applications: number }, permitted: boolean, countVisible = true): DeleteVerdict {
   if (!permitted) return { canDelete: false, reason: NOT_ALLOWED }
+  if (!countVisible) {
+    return {
+      canDelete: false,
+      reason: 'You cannot see the applications for this company, so this job cannot be deleted from here.',
+    }
+  }
   if (job.applications > 0) {
     const n = job.applications
     return {

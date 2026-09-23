@@ -21,6 +21,7 @@ import OutreachDialog, { type OutreachApplication } from '@/components/OutreachD
 import { NOT_RESPONDING_DAYS, SUB_STATUS_STAGES, notResponding, subStatusesFor, type SubStatus, type SubStatusRow } from '@/lib/outreach'
 import { todayDb } from '@/lib/compensation'
 import { PAGE_SIZE } from '@/lib/pageAll'
+import { friendlyDetachError } from '@/lib/detachApplication'
 import {
   currentStep,
   friendlyRecruitmentError,
@@ -456,6 +457,33 @@ async function onJobOpened(): Promise<void> {
   await loadJob()
 }
 
+async function deleteApplication(app: ApplicationRow): Promise<void> {
+  if (!canReview.value || busyId.value) return
+  busyId.value = app.id
+  actionError.value = null
+  try {
+    const confirmed = await dialogs.confirmAction({
+      title: `Delete ${app.candidate?.full_name ?? 'this candidate'}'s application?`,
+      hint: `This permanently removes their application and its notes and stage history from ${job.value?.title ?? 'this job'}. Their candidate profile, other applications and any employee record will remain. This cannot be undone.`,
+      confirmLabel: 'Delete application',
+      danger: true,
+    })
+    if (!confirmed) return
+    const { error: err } = await supabase.rpc('delete_job_application', { p_application_id: app.id })
+    if (err) {
+      actionError.value = friendlyDetachError(err.message)
+      return
+    }
+    applications.value = applications.value.filter((a) => a.id !== app.id)
+    selectedIds.value = selectedIds.value.filter((id) => id !== app.id)
+    await loadApplications()
+  } catch {
+    actionError.value = 'Could not confirm deletion. Refresh the page before trying again.'
+  } finally {
+    busyId.value = null
+  }
+}
+
 async function updateStage(app: ApplicationRow, toStage: string, body?: string): Promise<void> {
   actionError.value = null
   busyId.value = app.id
@@ -833,6 +861,15 @@ onMounted(async () => {
             <span v-if="a.sub_status_key && subStatusLabels[a.sub_status_key]" class="sub-badge" data-testid="sub-badge">{{ subStatusLabels[a.sub_status_key] }}</span>
             <span v-if="isNotResponding(a)" class="sub-badge amber" data-testid="not-responding-badge">Not responding</span>
             <div class="row-actions">
+              <button
+                v-if="canReview"
+                class="button secondary small-btn delete-application"
+                type="button"
+                :disabled="busyId !== null"
+                :aria-label="`Delete application for ${a.candidate?.full_name ?? 'this candidate'}`"
+                :data-testid="`delete-application-${a.id}`"
+                @click="deleteApplication(a)"
+              >Delete application</button>
               <router-link
                 v-if="a.stage_key === 'hired' && a.employment_period?.person_id"
                 class="button secondary small-btn"
@@ -911,6 +948,7 @@ onMounted(async () => {
 </template>
 
 <style scoped>
+.delete-application { color: var(--red); }
 .journey-focus { padding: 20px 24px; margin-bottom: 18px; display: flex; align-items: center; justify-content: space-between; gap: 18px; flex-wrap: wrap; }
 .journey-focus h2 { margin: 5px 0; }
 .journey-focus p, .journey-candidate p { margin: 6px 0; font-size: 12px; }

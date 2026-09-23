@@ -155,3 +155,13 @@ JobChannelsPanel exists, for publishing a job to destinations. Same question.
 - **The E2E specs for the last four slices are written but never run.**
   `app/playwright.config.ts` refuses without `E2E_ALLOW_PRODUCTION=true`,
   because those specs seed and hard-delete rows in the live project. Your call.
+
+
+
+hirering/candicates - here on each candicate we have archive button - this need to be hard delete also 
+
+
+we have bug in leaves. we dont have the same queries there as the hr.hut4.com uses them. 
+
+
+https://peopleos.hut4.com/leave?tab=balances here we ned a search

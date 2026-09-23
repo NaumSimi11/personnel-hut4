@@ -3,8 +3,10 @@ import { computed, onMounted, ref, watch } from 'vue'
 import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/stores/auth'
 import { useDialogStore } from '@/stores/dialogs'
+import { bodyEditable, friendlyHardDeleteError, policyDeletable } from '@/lib/hardDelete'
 import {
   POLICY_ACCEPT,
+  POLICY_BUCKET,
   createPolicy,
   friendlyPolicyError,
   policyInput,
@@ -34,11 +36,16 @@ const error = ref<string | null>(null)
 const notice = ref<string | null>(null)
 const policies = ref<PolicyRow[]>([])
 const acknowledged = ref<Record<string, number>>({})
+/** Agreed to at ANY version — the number `delete_policy` refuses on. */
+const acknowledgedEver = ref<Record<string, number>>({})
 const headcount = ref<number | null>(null)
 const adding = ref(false)
 const form = ref({ title: '', summary: '', body: '' })
 const reading = ref<PolicyRow | null>(null)
 const newText = ref<Record<string, string>>({})
+/** The policy being corrected in place, and the fields as they are being typed. */
+const editing = ref<string | null>(null)
+const edit = ref({ title: '', summary: '', body: '' })
 const fileInput = ref<HTMLInputElement | null>(null)
 const fileInputs = ref<Record<string, HTMLInputElement | null>>({})
 
@@ -73,14 +80,22 @@ async function load(): Promise<void> {
   if (ids.length) {
     const { data } = await supabase.from('policy_acknowledgements').select('policy_id, version, person_id').in('policy_id', ids)
     const counts: Record<string, Set<string>> = {}
+    const ever: Record<string, number> = {}
     for (const ack of data ?? []) {
       const policy = policies.value.find((p) => p.id === ack.policy_id)
-      if (!policy || ack.version !== policy.version) continue
+      if (!policy) continue
+      // "Ever agreed" is what decides whether a policy may be deleted (0080
+      // counts every version); "agreed to THIS version" is what the count on
+      // screen means. They are different numbers and both are needed.
+      ever[ack.policy_id] = (ever[ack.policy_id] ?? 0) + 1
+      if (ack.version !== policy.version) continue
       counts[ack.policy_id] = (counts[ack.policy_id] ?? new Set<string>()).add(ack.person_id)
     }
     acknowledged.value = Object.fromEntries(Object.entries(counts).map(([id, people]) => [id, people.size]))
+    acknowledgedEver.value = ever
   } else {
     acknowledged.value = {}
+    acknowledgedEver.value = {}
   }
   loading.value = false
 }
@@ -159,6 +174,67 @@ async function publishDraft(policy: PolicyRow): Promise<void> {
   } finally {
     busy.value = false
   }
+}
+
+function startEdit(policy: PolicyRow): void {
+  editing.value = policy.id
+  edit.value = { title: policy.title, summary: policy.summary ?? '', body: policy.body ?? '' }
+  error.value = null
+}
+
+/**
+ * Correct a policy in place. The title and summary are how it is referred to
+ * and may be fixed whenever; the body only while it is a draft, because once
+ * published it is what people agreed to and changes by version (0080).
+ */
+async function saveEdit(policy: PolicyRow): Promise<void> {
+  error.value = null
+  busy.value = true
+  const payload: Record<string, string | null> = {
+    title: edit.value.title,
+    summary: edit.value.summary,
+    ...(bodyEditable(policy) ? { body: edit.value.body } : {}),
+  }
+  const { error: err } = await supabase.rpc('update_policy', { p_policy_id: policy.id, p: payload as never })
+  busy.value = false
+  if (err) {
+    error.value = friendlyHardDeleteError(err.message)
+    return
+  }
+  editing.value = null
+  notice.value = 'Saved.'
+  await load()
+}
+
+/** Hard delete, for a policy that was a mistake. Archive is for the rest. */
+async function remove(policy: PolicyRow): Promise<void> {
+  const verdict = policyDeletable({ acknowledgements: acknowledgedEver.value[policy.id] ?? 0, status: policy.status }, canPublish.value)
+  if (!verdict.canDelete) return
+  const ok = await dialogs.confirmAction({
+    title: `Delete "${policy.title}"?`,
+    hint: 'Nobody has agreed to it, so nothing is lost. This cannot be undone — archive instead if you only want it out of the way.',
+    confirmLabel: 'Delete policy',
+    danger: true,
+  })
+  if (!ok) return
+  error.value = null
+  busy.value = true
+  const { data, error: err } = await supabase.rpc('delete_policy', { p_policy_id: policy.id })
+  if (err) {
+    busy.value = false
+    error.value = friendlyHardDeleteError(err.message)
+    return
+  }
+  // The row is gone; the file it pointed at is not, and only the app can reach
+  // Storage to remove it.
+  const path = (data as { storage_path?: string | null } | null)?.storage_path
+  if (path) {
+    const { error: fileErr } = await supabase.storage.from(POLICY_BUCKET).remove([path])
+    if (fileErr) console.error('Policy file not removed:', fileErr.message)
+  }
+  busy.value = false
+  notice.value = `"${policy.title}" deleted.`
+  await load()
 }
 
 async function archive(policy: PolicyRow): Promise<void> {
@@ -315,8 +391,40 @@ watch(() => props.companyId, load)
                 {{ p.status === 'published' ? 'Publish new version' : 'Replace file' }}
               </span>
             </label>
+            <button class="button secondary small-btn" type="button" :disabled="busy" :data-testid="`edit-${p.id}`" @click="startEdit(p)">Edit</button>
             <button class="button secondary small-btn" type="button" :disabled="busy" @click="archive(p)">Archive</button>
+            <button
+              class="button secondary small-btn danger-text"
+              type="button"
+              :disabled="busy || !policyDeletable({ acknowledgements: acknowledgedEver[p.id] ?? 0, status: p.status }, canPublish).canDelete"
+              :title="policyDeletable({ acknowledgements: acknowledgedEver[p.id] ?? 0, status: p.status }, canPublish).reason ?? 'Nobody has agreed to this one, so it can go.'"
+              :data-testid="`delete-${p.id}`"
+              @click="remove(p)"
+            >
+              Delete
+            </button>
           </template>
+        </div>
+        <div v-if="editing === p.id" class="wide-row edit-row" :data-testid="`edit-form-${p.id}`">
+          <label>
+            <span>Title</span>
+            <input v-model="edit.title" type="text" maxlength="200" :data-testid="`edit-title-${p.id}`" />
+          </label>
+          <label>
+            <span>Summary — the one line that goes in the welcome note</span>
+            <input v-model="edit.summary" type="text" maxlength="500" :data-testid="`edit-summary-${p.id}`" />
+          </label>
+          <label v-if="bodyEditable(p)">
+            <span>Text</span>
+            <textarea v-model="edit.body" rows="6" maxlength="20000" :data-testid="`edit-body-${p.id}`"></textarea>
+          </label>
+          <p v-else class="hint">
+            This one is published, so its text is what people agreed to. Change it by publishing a new version below.
+          </p>
+          <div class="edit-actions">
+            <button class="button secondary small-btn" type="button" @click="editing = null">Cancel</button>
+            <button class="button small-btn" type="button" :disabled="busy" :data-testid="`edit-save-${p.id}`" @click="saveEdit(p)">Save</button>
+          </div>
         </div>
         <div v-if="reading?.id === p.id && p.body" class="body-text wide-row" :data-testid="`body-${p.id}`">{{ p.body }}</div>
         <div v-if="canPublish && p.status === 'published' && !p.storage_path" class="wide-row new-text">

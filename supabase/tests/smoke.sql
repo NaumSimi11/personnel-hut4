@@ -7611,4 +7611,158 @@ delete from public.employment_periods where id::text like '30000000-0000-0000-00
 delete from public.people where id::text like '20000000-0000-0000-0000-00000000077%';
 delete from auth.users where id::text like '00000000-0000-0000-0000-00000000077%';
 
+-- ================================================================ 0080
+-- Delete is for a mistake, archive is for history (plan 063). The refusals
+-- are the feature: candidate_files and candidate_notes both CASCADE, so
+-- without them a delete would take a CV and a person's history quietly.
+-- Inserted as drafts, because 0021's trigger forces that on insert, then
+-- published through the real door — which is the only way a policy ever
+-- becomes published, and worth the two extra lines to go through.
+insert into public.policies (id, company_id, title, summary, body) values
+  ('c0000000-0000-0000-0000-000000000801', '10000000-0000-0000-0000-00000000000a',
+   'Delete Me Draft', 'A draft nobody has seen.', 'Some words.'),
+  ('c0000000-0000-0000-0000-000000000802', '10000000-0000-0000-0000-00000000000a',
+   'Agreed Policy', 'Somebody agreed to this one.', 'The agreed words.'),
+  ('c0000000-0000-0000-0000-000000000803', '10000000-0000-0000-0000-00000000000a',
+   'Published Untouched', 'Published, nobody has agreed.', 'Published words.');
+set app.test_uid = '00000000-0000-0000-0000-000000000004';  -- Ada publishes them
+do $$
+begin
+  perform public.publish_policy('c0000000-0000-0000-0000-000000000802');
+  perform public.publish_policy('c0000000-0000-0000-0000-000000000803');
+  assert (select count(*) from public.policies
+           where id in ('c0000000-0000-0000-0000-000000000802', 'c0000000-0000-0000-0000-000000000803')
+             and status = 'published') = 2,
+    'both are published before the rules are tested';
+end $$;
+set app.test_uid = '';
+insert into public.policy_acknowledgements (policy_id, person_id, version)
+  values ('c0000000-0000-0000-0000-000000000802', '20000000-0000-0000-0000-000000000003', 1);
+insert into public.candidates (id, full_name) values
+  ('80000000-0000-0000-0000-000000000801', 'Delete Me Clean'),
+  ('80000000-0000-0000-0000-000000000802', 'Has An Application'),
+  ('80000000-0000-0000-0000-000000000803', 'Has A Note'),
+  ('80000000-0000-0000-0000-000000000804', 'Asked Not To Be Contacted');
+update public.candidates set do_not_contact = true, do_not_contact_reason = 'Asked in writing.'
+  where id = '80000000-0000-0000-0000-000000000804';
+insert into public.jobs (id, company_id, title, status) values
+  ('70000000-0000-0000-0000-000000000801', '10000000-0000-0000-0000-00000000000b', 'Delete Rules Role', 'open');
+insert into public.applications (id, job_id, company_id, candidate_id) values
+  ('90000000-0000-0000-0000-000000000801', '70000000-0000-0000-0000-000000000801',
+   '10000000-0000-0000-0000-00000000000b', '80000000-0000-0000-0000-000000000802');
+insert into public.candidate_notes (candidate_id, kind, body, actor_name)
+  values ('80000000-0000-0000-0000-000000000803', 'note', 'Worth a call in spring.', 'The import');
+
+set app.test_uid = '00000000-0000-0000-0000-000000000004';  -- Ada, admin (pool holder, policies.publish)
+set role authenticated;
+do $$
+declare r jsonb;
+begin
+  -- 1. A policy nobody agreed to simply goes.
+  r := public.delete_policy('c0000000-0000-0000-0000-000000000801');
+  assert (r->>'deleted')::boolean and r->>'title' = 'Delete Me Draft', 'a draft policy goes: ' || r::text;
+  assert not exists (select 1 from public.policies where id = 'c0000000-0000-0000-0000-000000000801'),
+    'and it is gone';
+
+  -- A published one nobody agreed to goes too: publishing is not history, being
+  -- agreed to is.
+  r := public.delete_policy('c0000000-0000-0000-0000-000000000803');
+  assert (r->>'deleted')::boolean, 'published but unacknowledged goes as well';
+
+  -- 2. One somebody agreed to does not, and the refusal counts them.
+  begin
+    r := public.delete_policy('c0000000-0000-0000-0000-000000000802');
+    raise exception 'FAIL: a policy somebody agreed to was deleted';
+  exception when others then
+    assert sqlerrm like '1 person has already agreed to "Agreed Policy"%', 'agreed: ' || sqlerrm;
+  end;
+  assert exists (select 1 from public.policy_acknowledgements
+                  where policy_id = 'c0000000-0000-0000-0000-000000000802'),
+    'and the record of them agreeing still points at something';
+
+  -- 3. Editing in place: the label any time, the agreed text never.
+  r := public.update_policy('c0000000-0000-0000-0000-000000000802',
+        '{"title":"Agreed Policy (2026)","summary":"Corrected summary."}'::jsonb);
+  assert (select title = 'Agreed Policy (2026)' and summary = 'Corrected summary.'
+            from public.policies where id = 'c0000000-0000-0000-0000-000000000802'),
+    'HR may fix how a policy is referred to, published or not';
+  assert (select version from public.policies where id = 'c0000000-0000-0000-0000-000000000802') = 1,
+    'and that is not a new version — nobody has to re-agree to a corrected title';
+
+  begin
+    r := public.update_policy('c0000000-0000-0000-0000-000000000802', '{"body":"Quietly different words."}'::jsonb);
+    raise exception 'FAIL: the agreed text of a published policy was rewritten in place';
+  exception when others then
+    assert sqlerrm like 'This policy is published%', 'the agreed text is not editable in place: ' || sqlerrm;
+  end;
+  assert (select body from public.policies where id = 'c0000000-0000-0000-0000-000000000802') = 'The agreed words.',
+    'and the words people agreed to are untouched';
+
+  begin
+    r := public.update_policy('c0000000-0000-0000-0000-000000000802', '{"title":"   "}'::jsonb);
+    raise exception 'FAIL: a policy was left with no title';
+  exception when others then
+    assert sqlerrm like 'A policy needs a title%', 'blank title: ' || sqlerrm;
+  end;
+
+  -- 4. A candidate who is nothing but a name goes.
+  r := public.delete_candidate('80000000-0000-0000-0000-000000000801');
+  assert (r->>'deleted')::boolean and r->>'name' = 'Delete Me Clean', 'a bare record goes: ' || r::text;
+
+  -- 5. ...and the three that must not.
+  begin
+    r := public.delete_candidate('80000000-0000-0000-0000-000000000802');
+    raise exception 'FAIL: a candidate with an application was deleted';
+  exception when others then
+    assert sqlerrm like 'Has An Application has an application on record%', 'an application: ' || sqlerrm;
+  end;
+  begin
+    r := public.delete_candidate('80000000-0000-0000-0000-000000000803');
+    raise exception 'FAIL: a candidate with a note was deleted';
+  exception when others then
+    assert sqlerrm like 'There is a note on Has A Note%', 'a note, which would have cascaded away: ' || sqlerrm;
+  end;
+  assert exists (select 1 from public.candidate_notes where candidate_id = '80000000-0000-0000-0000-000000000803'),
+    'and the note is still there';
+  begin
+    r := public.delete_candidate('80000000-0000-0000-0000-000000000804');
+    raise exception 'FAIL: somebody who asked not to be contacted was forgotten';
+  exception when others then
+    assert sqlerrm like 'Asked Not To Be Contacted asked never to be contacted again%',
+      'forgetting a do-not-contact is how they get sourced again: ' || sqlerrm;
+  end;
+end $$;
+reset role;
+set app.test_uid = '';
+
+-- 6. Omar holds nothing: neither door opens.
+set app.test_uid = '00000000-0000-0000-0000-000000000003';
+set role authenticated;
+do $$
+declare r jsonb;
+begin
+  begin
+    r := public.delete_policy('c0000000-0000-0000-0000-000000000802');
+    raise exception 'FAIL: an employee with no grants deleted a policy';
+  exception when insufficient_privilege then
+    assert sqlerrm like 'Deleting needs policies.publish%', 'policy: ' || sqlerrm;
+  end;
+  begin
+    r := public.delete_candidate('80000000-0000-0000-0000-000000000803');
+    raise exception 'FAIL: an employee with no grants deleted a candidate';
+  exception when insufficient_privilege then
+    assert sqlerrm like 'Deleting a candidate needs "Work the talent pool"%', 'candidate: ' || sqlerrm;
+  end;
+end $$;
+reset role;
+set app.test_uid = '';
+
+-- Tail: this block's fixtures go.
+delete from public.candidate_notes where candidate_id::text like '80000000-0000-0000-0000-00000000080%';
+delete from public.applications where id = '90000000-0000-0000-0000-000000000801';
+delete from public.jobs where id = '70000000-0000-0000-0000-000000000801';
+delete from public.candidates where id::text like '80000000-0000-0000-0000-00000000080%';
+delete from public.policy_acknowledgements where policy_id::text like 'c0000000-0000-0000-0000-00000000080%';
+delete from public.policies where id::text like 'c0000000-0000-0000-0000-00000000080%';
+
 select 'SMOKE TESTS PASSED' as result;

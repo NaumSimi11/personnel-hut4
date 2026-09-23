@@ -220,6 +220,26 @@ xlsx_writer:
   what: buildWorkbook(sheets) -> Buffer. No dependency added: the zip container is hand-written over node:zlib. Bold frozen header, autofilter, guessed widths, dates as real serials under an explicit yyyy-mm-dd format (the built-in date formats are locale-dependent). Verified by generating a file and opening it with python openpyxl — dates come back as datetimes, 0.5 as a float, Cyrillic intact.
   RESOLVED 2026-09-23: the maintainer pointed at the source — /Users/naum/Downloads/starter-web-app is the same repo. The report is built in slice 058 from server/financeReport.ts, not from a guess.
 
+# ---------------------------------------------------------------------------
+# SLICE 063 — delete means delete (migration 0080, applied live 2026-09-23)
+execution_063:
+  plan: plans/063-delete-means-delete.md
+  rule: "Delete is for a mistake. Archive is for history. A thing may be deleted only while nothing has happened to it."
+  what_shipped: delete_policy, update_policy (title/summary whenever, body only while a draft), delete_candidate; buttons on the Requests tab, the candidate record and the policies panel
+  review_found_of_mine: the candidate Delete button sat between Archive and Restore and broke Restore's v-else-if chain entirely; the panel counted acknowledgements of the current version while the function counts every version; two .delete() calls reported success for rows RLS had filtered away. All three fixed.
+
+# ---------------------------------------------------------------------------
+# TWO SESSIONS IN ONE WORKING TREE, 2026-09-23 — read this before assuming anything
+concurrent_work_2026_09_23:
+  what_happened: another session wrote `0081_delete_job_application.sql`, a "Delete application" button on the job page, `supabase/tests/delete-job-application.sql` and a line in `local-verify.sh`, while this session was writing slice 063. JobPage.vue was rewritten at 14:54 and THIS SESSION'S job-page delete was lost — only its import survived, and was removed. Nothing else of either side was lost.
+  lesson: two agents editing one tree lose work quietly. Check `git status` and file mtimes before assuming an edit survived.
+  the_disagreement_left_open:
+    - there are now TWO rules for deleting an application. `detach_candidate_from_job` (0074, this session) refuses if anything at all happened — imported, hired, owned, past New, any event. `delete_job_application` (0081, the other session) refuses only files, interviews and offers, and deliberately allows deleting a HIRED application, with a test asserting exactly that.
+    - the other session's intent is legitimate and stated in its header — clearing mistaken and test applications, which is a real need on live (the leftover E2E hires).
+    - the cost is real too: `applications.employment_period_id` is how the app knows which application somebody was hired from. `link_hired_application` sets it and the imported-hire card reads it. Delete the application and the employment row survives, but the answer to "how did this person get here" is gone, silently, from a button on a job list.
+    - a guard was written (0082) and WITHDRAWN rather than override a deliberate choice; the other session's test would have failed. The maintainer said "push everything", so 0081 ships as its author wrote it and was applied live.
+    - TO DECIDE: one rule or two. If one, fold 0081's file/interview/offer wording into detach_candidate_from_job and drop the second function.
+
 next:
   say_to_start: "next slice" — 052–055 are closed; what is left needs the maintainer: keys (Resend, Anthropic), setup (grant candidates.source to Holding HR, real start/birth dates, invite the 14 without accounts), go-live (plan 038 runbook), the MK payroll rules; small developable follow-ups sit under execution_052/054/055
   plan_before_052: plan 045 is complete (046–051 on main); after 052 the next candidates, in the order docs/development-plan.md lists them: the maintainer's keys and setup, go-live, payroll for real, then the outreach sub-status slice that 052 leaves a seam for

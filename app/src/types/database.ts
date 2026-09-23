@@ -5386,7 +5386,10 @@ export type Database = {
       }
       create_employee: { Args: { p: Json }; Returns: Json }
       dashboard_snapshot: { Args: { p_days?: number }; Returns: Json }
+      delete_candidate: { Args: { p_candidate_id: string }; Returns: Json }
+      delete_policy: { Args: { p_policy_id: string }; Returns: Json }
       delete_task: { Args: { p_task_id: string }; Returns: Json }
+      delete_job_application: { Args: { p_application_id: string }; Returns: Json }
       detach_candidate_from_job: { Args: { p_application_id: string }; Returns: Json }
       decide_compensation: {
         Args: { p_decision: string; p_note?: string; p_record_id: string }
@@ -5707,6 +5710,7 @@ export type Database = {
         Returns: Json
       }
       update_kudos: { Args: { p: Json; p_id: string }; Returns: Json }
+      update_policy: { Args: { p: Json; p_policy_id: string }; Returns: Json }
       upsert_sourced_candidate: {
         Args: { p: Json; p_provider: string; p_ref?: string | null }
         Returns: Json
@@ -5848,4 +5852,3 @@ export const Constants = {
     },
   },
 } as const
-

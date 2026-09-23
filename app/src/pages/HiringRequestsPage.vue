@@ -2,6 +2,8 @@
 import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { supabase } from '@/lib/supabase'
+import { friendlyDeleteError, requestDeletable } from '@/lib/hiringDelete'
+import { useDialogStore } from '@/stores/dialogs'
 import RequestHireDialog from '@/components/RequestHireDialog.vue'
 import DecideHiringRequestDialog from '@/components/DecideHiringRequestDialog.vue'
 import JobOpeningsPanel from '@/components/hiring/JobOpeningsPanel.vue'
@@ -36,6 +38,7 @@ type HistoryRow = { id: string; kind: string; reason: string | null; at: string;
 const router = useRouter()
 const route = useRoute()
 const auth = useAuthStore()
+const dialogs = useDialogStore()
 
 // Requests · Job openings · Applicants (plan 044) — the prototype's Recruitment
 // tabs, on the URL. The Talent pool (plan 052) is holding-wide and exists only
@@ -97,6 +100,45 @@ const HISTORY_LABEL: Record<string, string> = {
 function stamp(iso: string): string {
   return new Date(iso).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })
 }
+/**
+ * Deleting a request that came to nothing (plan 063). The rule is the
+ * database's — `jobs.hiring_request_id` is NO ACTION, so a request that became
+ * a job cannot go — and this says so before the click rather than after. It
+ * lives here as well as on the company page because this is where the requests
+ * are actually worked.
+ */
+function deleteVerdict(r: HiringRequestRow) {
+  const permitted = ['jobs.request', 'jobs.edit', 'jobs.approve'].some((c) => auth.can(r.company_id, c))
+  return requestDeletable({ hasJob: Boolean(jobFor(r)) }, permitted)
+}
+
+async function removeRequest(r: HiringRequestRow): Promise<void> {
+  if (!deleteVerdict(r).canDelete) return
+  const ok = await dialogs.confirmAction({
+    title: `Delete "${r.title}"?`,
+    hint: 'No job was opened from it, so nothing is lost. This cannot be undone.',
+    confirmLabel: 'Delete request',
+    danger: true,
+  })
+  if (!ok) return
+  actionError.value = null
+  busyId.value = r.id
+  // `.select()` so a delete the policies filtered away is not reported as a
+  // success: PostgREST returns no error for a row it simply could not see.
+  const { data, error: err } = await supabase.from('hiring_requests').delete().eq('id', r.id).select('id')
+  busyId.value = null
+  if (err) {
+    actionError.value = friendlyDeleteError(err.message)
+    return
+  }
+  if (!data?.length) {
+    actionError.value = 'That request was not deleted — you may not have permission to.'
+    return
+  }
+  notice.value = `"${r.title}" deleted.`
+  await load()
+}
+
 function toggleHistory(id: string): void {
   openHistory.value = { ...openHistory.value, [id]: !openHistory.value[id] }
 }
@@ -308,6 +350,18 @@ onMounted(load)
               </ol>
             </div>
             <span class="badge" :class="badgeClass(r.status)">{{ r.status.replace('_', ' ') }}</span>
+            <div class="row-actions">
+              <button
+                class="button secondary small-btn danger-text"
+                type="button"
+                :disabled="busyId === r.id || !deleteVerdict(r).canDelete"
+                :title="deleteVerdict(r).reason ?? 'Nothing came of this request, so it can go.'"
+                :data-testid="`delete-request-${r.id}`"
+                @click="removeRequest(r)"
+              >
+                Delete
+              </button>
+            </div>
             <div v-if="canRevise(r)" class="row-actions">
               <button class="button small-btn" type="button" :disabled="busyId === r.id" @click="revise(r)">Edit and resubmit</button>
             </div>

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/stores/auth'
 import { useDialogStore } from '@/stores/dialogs'
@@ -13,6 +13,7 @@ import { friendlyRecruitmentError } from '@/lib/jobWorkspace'
 import { shortDate } from '@/lib/leave'
 import { todayDb } from '@/lib/compensation'
 import { countOf, detachable, friendlyDetachError } from '@/lib/detachApplication'
+import { candidateDeletable, friendlyHardDeleteError } from '@/lib/hardDelete'
 import { missingRecordMessage } from '@/lib/missingRecord'
 
 /**
@@ -48,6 +49,9 @@ type Candidate = {
   contact_later: boolean
   contact_again_after: string | null
   custom: unknown
+  /** Plan 063: what a delete would take with it — both of these CASCADE. */
+  candidate_notes: { count: number }[] | null
+  candidate_files: { count: number }[] | null
   source: { label: string } | null
   sourcer: { full_name: string } | null
   flagged_by: { full_name: string } | null
@@ -98,6 +102,7 @@ const ZOHO_PROVIDER = 'zoho_recruit'
 const RLS_REFUSED = 'new row violates row-level security policy for table "candidates"'
 
 const route = useRoute()
+const router = useRouter()
 const auth = useAuthStore()
 const dialogs = useDialogStore()
 const candidateId = route.params.candidateId as string
@@ -249,6 +254,7 @@ async function load(): Promise<void> {
         `id, full_name, email, phone, linkedin_url, current_title, current_employer, location, skills, summary,
          referred_by, source_key, provider, provider_ref, sourced_by, created_at, archived_at,
          do_not_contact, do_not_contact_reason, do_not_contact_at, contact_later, contact_again_after, custom,
+         candidate_notes(count), candidate_files(count),
          source:candidate_sources(label),
          sourcer:people!candidates_sourced_by_fkey(full_name),
          flagged_by:people!candidates_do_not_contact_by_fkey(full_name)`,
@@ -326,6 +332,43 @@ async function saveDetails(): Promise<void> {
   }
   saved.value = true
   await load()
+}
+
+/**
+ * Delete, for a record that was a mistake — a duplicate, a test row, a name
+ * typed twice. Anything actually attached to the person and the answer is
+ * Archive, which is what it has always been (plan 063).
+ */
+const deleteVerdict = computed(() =>
+  candidateDeletable(
+    {
+      applications: applications.value.length,
+      notes: countOf(candidate.value?.candidate_notes),
+      files: countOf(candidate.value?.candidate_files),
+      do_not_contact: candidate.value?.do_not_contact ?? false,
+    },
+    canEditPool.value,
+  ),
+)
+
+async function remove(): Promise<void> {
+  if (!candidate.value || !deleteVerdict.value.canDelete) return
+  const ok = await dialogs.confirmAction({
+    title: `Delete ${candidate.value.full_name}?`,
+    hint: 'Nothing is attached to this record, so nothing is lost. This cannot be undone — archive instead if you only want them out of the pool.',
+    confirmLabel: 'Delete candidate',
+    danger: true,
+  })
+  if (!ok) return
+  actionError.value = null
+  busy.value = true
+  const { error: err } = await supabase.rpc('delete_candidate', { p_candidate_id: candidate.value.id })
+  busy.value = false
+  if (err) {
+    actionError.value = friendlyHardDeleteError(err.message)
+    return
+  }
+  void router.push({ name: 'hiring', query: { tab: 'pool' } })
 }
 
 async function setArchived(archived: boolean): Promise<void> {
@@ -411,6 +454,17 @@ onMounted(load)
           <button v-if="canEditPool" class="button secondary" type="button" data-testid="candidate-contact-rule" @click="openContactRule">Contact rule</button>
           <button v-if="canEditPool && !candidate.archived_at" class="button secondary" type="button" :disabled="busy" data-testid="candidate-archive" @click="setArchived(true)">Archive</button>
           <button v-else-if="canEditPool" class="button secondary" type="button" :disabled="busy" data-testid="candidate-restore" @click="setArchived(false)">Restore</button>
+          <button
+            v-if="canEditPool"
+            class="button secondary danger-text"
+            type="button"
+            :disabled="busy || !deleteVerdict.canDelete"
+            :title="deleteVerdict.reason ?? 'Nothing is attached to this record, so it can go.'"
+            data-testid="candidate-delete"
+            @click="remove"
+          >
+            Delete
+          </button>
         </div>
       </div>
       <p v-if="actionError" class="error-note" role="alert">{{ actionError }}</p>

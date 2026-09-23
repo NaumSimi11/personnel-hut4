@@ -33,5 +33,6 @@ done
 
 echo "Running smoke tests…"
 psql "$URL" -v ON_ERROR_STOP=1 -f "$DIR/tests/smoke.sql"
+psql "$URL" -v ON_ERROR_STOP=1 -f "$DIR/tests/delete-job-application.sql"
 
 echo "All migrations applied and smoke tests passed."

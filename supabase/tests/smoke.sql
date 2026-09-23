@@ -6900,4 +6900,96 @@ delete from public.people where id in
 delete from auth.users where id in
   ('00000000-0000-0000-0000-000000000721', '00000000-0000-0000-0000-000000000722');
 
+-- ================================================================ 0073
+-- The Activity tab's dropdowns (plan 059): who has acted in this company and
+-- on what, from the whole trail rather than a window of it. The function is
+-- SECURITY INVOKER, so the two select policies on activity_log decide what it
+-- can see — that is the property worth testing, because a definer version
+-- would have had to restate those rules.
+--
+-- Fixtures: rows written by hand into activity_log, since the trail is a
+-- by-product of every other block and asserting against it would couple this
+-- to all of them. Company A carries one row by Alex and one by nobody
+-- (the system); Company B one by Bea; and one row belongs to no company at
+-- all, the way a holding-wide candidate's does.
+insert into public.activity_log (company_id, actor_person_id, entity_type, action) values
+  ('10000000-0000-0000-0000-00000000000a', '20000000-0000-0000-0000-000000000001', 'zzz_probe_people', 'UPDATE'),
+  ('10000000-0000-0000-0000-00000000000a', null,                                   'zzz_probe_system', 'INSERT'),
+  ('10000000-0000-0000-0000-00000000000b', '20000000-0000-0000-0000-000000000005', 'zzz_probe_people', 'UPDATE'),
+  (null,                                   '20000000-0000-0000-0000-000000000004', 'zzz_probe_pool',   'INSERT');
+
+-- 1. An admin sees every actor and kind, and the holding-wide rows only when
+--    asked for them.
+set app.test_uid = '00000000-0000-0000-0000-000000000004';  -- Ada, platform admin
+set role authenticated;
+do $$
+declare r jsonb;
+begin
+  r := public.activity_choices('10000000-0000-0000-0000-00000000000a', false);
+  assert (select count(*) from jsonb_array_elements(r->'actors') a
+           where a->>'id' = '20000000-0000-0000-0000-000000000001') = 1,
+    'Alex acted in Company A and is offered: ' || (r->'actors')::text;
+  assert not exists (select 1 from jsonb_array_elements(r->'actors') a where a->>'id' is null),
+    'the system is never an actor in the list — the app offers it separately';
+  assert (select count(*) from jsonb_array_elements_text(r->'entity_types') t where t = 'zzz_probe_people') = 1
+     and (select count(*) from jsonb_array_elements_text(r->'entity_types') t where t = 'zzz_probe_system') = 1,
+    'both kinds are offered, the system row included: ' || (r->'entity_types')::text;
+  assert (select count(*) from jsonb_array_elements_text(r->'entity_types') t where t = 'zzz_probe_pool') = 0,
+    'what belongs to no company stays out until it is asked for';
+
+  r := public.activity_choices('10000000-0000-0000-0000-00000000000a', true);
+  assert (select count(*) from jsonb_array_elements_text(r->'entity_types') t where t = 'zzz_probe_pool') = 1,
+    'the holding-wide rows join in when the holding asks';
+  assert (select count(*) from jsonb_array_elements(r->'actors') a
+           where a->>'id' = '20000000-0000-0000-0000-000000000004') = 1,
+    'and their actor with them';
+
+  -- A company nobody touched answers with two empty lists, not with null.
+  r := public.activity_choices('10000000-0000-0000-0000-00000000000b', false);
+  assert jsonb_typeof(r->'actors') = 'array' and jsonb_typeof(r->'entity_types') = 'array',
+    'always two arrays: ' || r::text;
+end $$;
+reset role;
+set app.test_uid = '';
+
+-- 2. The row policies decide, not the function. Bea holds Company HR in B
+--    only: she sees B's actor and nothing of A's.
+set app.test_uid = '00000000-0000-0000-0000-000000000005';  -- Bea
+set role authenticated;
+do $$
+declare r jsonb;
+begin
+  r := public.activity_choices('10000000-0000-0000-0000-00000000000b', false);
+  assert (select count(*) from jsonb_array_elements(r->'actors') a
+           where a->>'id' = '20000000-0000-0000-0000-000000000005') = 1,
+    'she sees who acted in her own company: ' || (r->'actors')::text;
+
+  r := public.activity_choices('10000000-0000-0000-0000-00000000000a', false);
+  assert (select count(*) from jsonb_array_elements(r->'actors') a
+           where a->>'id' = '20000000-0000-0000-0000-000000000001') = 0,
+    'and nobody from a company she cannot audit: ' || (r->'actors')::text;
+
+  -- Asking for the holding-wide rows does not hand them over either.
+  r := public.activity_choices('10000000-0000-0000-0000-00000000000b', true);
+  assert (select count(*) from jsonb_array_elements_text(r->'entity_types') t where t = 'zzz_probe_pool') = 0,
+    'the flag widens the question, never the permission';
+end $$;
+reset role;
+set app.test_uid = '';
+
+-- 3. Omar holds nothing at all: no trail, no choices.
+set app.test_uid = '00000000-0000-0000-0000-000000000003';  -- Omar
+set role authenticated;
+do $$
+declare r jsonb;
+begin
+  r := public.activity_choices('10000000-0000-0000-0000-00000000000a', true);
+  assert jsonb_array_length(r->'actors') = 0 and jsonb_array_length(r->'entity_types') = 0,
+    'an employee with no grants is offered nothing: ' || r::text;
+end $$;
+reset role;
+set app.test_uid = '';
+
+delete from public.activity_log where entity_type like 'zzz_probe_%';
+
 select 'SMOKE TESTS PASSED' as result;

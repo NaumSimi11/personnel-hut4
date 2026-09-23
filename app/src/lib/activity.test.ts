@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { actionLabel, entityLabel, summarizeChange } from './activity'
+import { actionLabel, activityCount, entityLabel, periodStart, summarizeChange } from './activity'
 
 describe('summarizeChange', () => {
   it('lists the fields that differ on an update, old → new, skipping bookkeeping columns', () => {
@@ -28,5 +28,25 @@ describe('labels', () => {
     expect(entityLabel('unknown_table')).toBe('unknown table')
     expect(actionLabel('INSERT')).toBe('created')
     expect(actionLabel('DELETE')).toBe('removed')
+  })
+})
+
+describe('reading the trail (plan 059)', () => {
+  const NOW = new Date('2026-09-23T14:30:00Z')
+
+  it('starts a period at UTC midnight, so it does not drift with the hour', () => {
+    expect(periodStart('30', NOW)).toBe('2026-08-24T00:00:00.000Z')
+    expect(periodStart('7', NOW)).toBe('2026-09-16T00:00:00.000Z')
+    expect(periodStart('90', NOW)).toBe('2026-06-25T00:00:00.000Z')
+  })
+
+  it('has no start for all time', () => {
+    expect(periodStart('all', NOW)).toBeNull()
+  })
+
+  it('says what is on screen without pretending it is everything', () => {
+    expect(activityCount(1, 200)).toBe('1 change')
+    expect(activityCount(37, 200)).toBe('37 changes')
+    expect(activityCount(200, 200)).toBe('the 200 most recent changes')
   })
 })

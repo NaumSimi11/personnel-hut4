@@ -83,3 +83,53 @@ export function summarizeChange(action: string, before: Row | null, after: Row |
   const picked = action === 'DELETE' ? present.slice(0, 1) : present
   return cap(picked.map((k) => `${fieldLabel(k)}: ${show(row[k])}`))
 }
+
+// ------------------------------------------------------------- filtering
+/**
+ * Reading the trail (plan 059).
+ *
+ * The panel used to load the most recent 200 rows and filter those in the
+ * page. After the Zoho import wrote some 24,000 rows in one burst, the most
+ * recent 200 are all import — so filtering by entity, or searching a
+ * colleague's name, searched inside the import and found nothing. Ivana's 55
+ * real changes were invisible behind Naum's 12,902 imported ones.
+ *
+ * So the filters below are applied by the *query*, not to what it returned.
+ * These are the pieces both the panel and its tests agree on.
+ */
+
+export type ActivityPeriod = '7' | '30' | '90' | 'all'
+
+export const PERIOD_LABELS: Record<ActivityPeriod, string> = {
+  '7': 'Last 7 days',
+  '30': 'Last 30 days',
+  '90': 'Last 90 days',
+  all: 'All time',
+}
+
+/** The default: recent enough to be today's work, wide enough to hold a week off. */
+export const DEFAULT_PERIOD: ActivityPeriod = '30'
+
+/**
+ * The instant a period starts, or null for all time. Returned as an ISO
+ * string because that is what the query wants, and computed from UTC
+ * midnight so a filter does not shift with the hour it is used at.
+ */
+export function periodStart(period: ActivityPeriod, now = new Date()): string | null {
+  if (period === 'all') return null
+  const start = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()))
+  start.setUTCDate(start.getUTCDate() - Number(period))
+  return start.toISOString()
+}
+
+export type ActorChoice = { id: string; full_name: string }
+
+/** "Anyone" and "The system itself" are not people, so they are not ids. */
+export const ANY_ACTOR = ''
+export const SYSTEM_ACTOR = 'system'
+
+/** What the heading says about what is on screen. */
+export function activityCount(shown: number, limit: number): string {
+  if (shown < limit) return `${shown} ${shown === 1 ? 'change' : 'changes'}`
+  return `the ${limit} most recent changes`
+}

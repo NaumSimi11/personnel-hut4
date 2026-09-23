@@ -865,7 +865,7 @@ onMounted(load)
           </p>
         </div>
 
-        <ActivityPanel v-else-if="activeTab === 'activity'" :company-id="companyId" />
+        <ActivityPanel v-else-if="activeTab === 'activity'" :company-id="companyId" :company-kind="company.kind" />
 
         <div v-else-if="activeTab === 'settings'" class="stack">
           <ChecklistTemplatePanel :company-id="companyId" :company-name="company.name" />

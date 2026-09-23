@@ -5167,6 +5167,10 @@ export type Database = {
         }
         Returns: Json
       }
+      activity_choices: {
+        Args: { p_company_id: string; p_holding_wide?: boolean }
+        Returns: Json
+      }
       adjust_leave_balance: {
         Args: {
           p_company_id: string

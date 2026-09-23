@@ -5,6 +5,8 @@ import { useAuthStore } from '@/stores/auth'
 import { departureState } from '@/lib/departure'
 import { DIRECTORY_FILTERS, currentPeriod, matchesFilter, type DirectoryFilter } from '@/lib/employmentChanges'
 import { personRemovable, removalConfirmation } from '@/lib/personRemoval'
+import { friendlyHardDeleteError } from '@/lib/hardDelete'
+import { useDialogStore } from '@/stores/dialogs'
 import InviteAccessDialog from '@/components/InviteAccessDialog.vue'
 import AddEmployeeDialog from '@/components/AddEmployeeDialog.vue'
 import ImportPeopleDialog from '@/components/ImportPeopleDialog.vue'
@@ -30,6 +32,7 @@ type DirectoryRow = {
 }
 
 const auth = useAuthStore()
+const dialogs = useDialogStore()
 const rows = ref<DirectoryRow[]>([])
 const query = ref('')
 // The directory opens on the people who work here. 'Everyone' includes those
@@ -123,6 +126,36 @@ async function setArchived(p: DirectoryRow, archived: boolean): Promise<void> {
     error.value = err.message.includes('row-level security')
       ? 'Only platform admins remove people from the directory.'
       : err.message
+    return
+  }
+  await load()
+}
+
+/**
+ * Delete, for a row that was never anybody: a name typed twice, a test
+ * record, an import against the wrong file (plan 065).
+ *
+ * The database is the rule and needs no mirror here — 93 of the 98 keys
+ * pointing at `people` block a delete, so anyone with an employment, a kudos
+ * or a line of activity is refused with a sentence saying which. The button
+ * offers it to admins and lets that refusal do the teaching, rather than
+ * fetching a dozen counts to guess the same answer.
+ */
+async function deletePerson(p: DirectoryRow): Promise<void> {
+  const ok = await dialogs.confirmAction({
+    title: `Delete ${p.full_name}?`,
+    hint: 'For a record that was a mistake. Anyone with real history is refused, and should be removed from the directory instead. This cannot be undone.',
+    confirmLabel: 'Delete person',
+    danger: true,
+  })
+  if (!ok) return
+  error.value = null
+  removing.value = true
+  const { error: err } = await supabase.rpc('delete_person', { p_person_id: p.id })
+  removing.value = false
+  confirmingRemoval.value = null
+  if (err) {
+    error.value = friendlyHardDeleteError(err.message)
     return
   }
   await load()
@@ -276,6 +309,17 @@ onMounted(load)
                     @click="setArchived(p, false)"
                   >
                     {{ removing ? 'Restoring…' : 'Restore' }}
+                  </button>
+                  <button
+                    v-if="p.archived_at && auth.isAdmin"
+                    class="button secondary small-link danger-text"
+                    type="button"
+                    :disabled="removing"
+                    title="Deletes the record outright. Refused for anyone with any history."
+                    :data-testid="`delete-person-${p.id}`"
+                    @click="deletePerson(p)"
+                  >
+                    Delete
                   </button>
                   <button
                     v-else-if="auth.isAdmin"

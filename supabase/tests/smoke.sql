@@ -7878,4 +7878,105 @@ delete from public.applications where id = '90000000-0000-0000-0000-000000000841
 delete from public.jobs where id = '70000000-0000-0000-0000-000000000842';
 delete from public.candidates where id = '80000000-0000-0000-0000-000000000841';
 
+-- ================================================================ 0084
+-- Deleting a person who was never anybody (plan 065). 93 of the 98 keys
+-- pointing at `people` block a delete, so this leans on them rather than
+-- restating them — and turns what they say into a sentence.
+insert into public.people (id, full_name) values
+  ('20000000-0000-0000-0000-000000000851', 'Typo Duplicate'),
+  ('20000000-0000-0000-0000-000000000852', 'Has A Kudos'),
+  ('20000000-0000-0000-0000-000000000853', 'Has An Employment'),
+  ('20000000-0000-0000-0000-000000000854', 'Has A Sign In'),
+  ('20000000-0000-0000-0000-000000000855', 'Has Acted');
+insert into auth.users (id, email) values ('00000000-0000-0000-0000-000000000854', 'signin@a.test');
+update public.people set user_id = '00000000-0000-0000-0000-000000000854'
+  where id = '20000000-0000-0000-0000-000000000854';
+insert into public.employment_periods (id, person_id, company_id, job_title, status, start_date) values
+  ('30000000-0000-0000-0000-000000000853', '20000000-0000-0000-0000-000000000853',
+   '10000000-0000-0000-0000-00000000000a', 'Engineer', 'former', '2024-01-01');
+insert into public.kudos (from_person_id, to_person_id, message)
+  values ('20000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000852', 'Nicely done.');
+insert into public.activity_log (actor_person_id, entity_type, action)
+  values ('20000000-0000-0000-0000-000000000855', 'zzz_probe_person', 'UPDATE');
+
+set app.test_uid = '00000000-0000-0000-0000-000000000004';  -- Ada, platform admin
+set role authenticated;
+do $$
+declare r jsonb;
+begin
+  -- 1. The row that was a mistake simply goes.
+  r := public.delete_person('20000000-0000-0000-0000-000000000851');
+  assert (r->>'deleted')::boolean and r->>'name' = 'Typo Duplicate', 'a typo goes: ' || r::text;
+  assert not exists (select 1 from public.people where id = '20000000-0000-0000-0000-000000000851'), 'and is gone';
+
+  -- 2. Employment is named directly, because it is the likeliest answer.
+  begin
+    r := public.delete_person('20000000-0000-0000-0000-000000000853');
+    raise exception 'FAIL: somebody with an employment was deleted';
+  exception when others then
+    assert sqlerrm like 'Has An Employment has an employment on record%', 'employment: ' || sqlerrm;
+  end;
+
+  -- 3. A sign-in outliving its person could still log in to an app that no
+  --    longer knows who they are.
+  begin
+    r := public.delete_person('20000000-0000-0000-0000-000000000854');
+    raise exception 'FAIL: somebody with an account was deleted';
+  exception when others then
+    assert sqlerrm like 'Has A Sign In still has a sign-in%', 'account first: ' || sqlerrm;
+  end;
+
+  -- 4. Their own actions would silently become "system".
+  begin
+    r := public.delete_person('20000000-0000-0000-0000-000000000855');
+    raise exception 'FAIL: somebody who had acted was deleted';
+  exception when others then
+    assert sqlerrm like 'Has Acted has acted in this system%', 'the trail would forget: ' || sqlerrm;
+  end;
+
+  -- 5. Anything else the 93 keys refuse becomes a sentence, not a constraint
+  --    name. A kudos is nobody's idea of a blocker until it blocks.
+  begin
+    r := public.delete_person('20000000-0000-0000-0000-000000000852');
+    raise exception 'FAIL: somebody with a kudos was deleted';
+  exception when others then
+    assert sqlerrm like 'Has A Kudos still has kudos on record%',
+      'the foreign key is translated, not shown raw: ' || sqlerrm;
+  end;
+
+  -- 6. Never yourself.
+  begin
+    r := public.delete_person('20000000-0000-0000-0000-000000000004');
+    raise exception 'FAIL: somebody deleted themselves';
+  exception when others then
+    assert sqlerrm like 'You cannot delete yourself%', 'not yourself: ' || sqlerrm;
+  end;
+end $$;
+reset role;
+set app.test_uid = '';
+
+-- 7. It is admins only, like the archive it sits beside.
+set app.test_uid = '00000000-0000-0000-0000-000000000003';  -- Omar
+set role authenticated;
+do $$
+declare r jsonb;
+begin
+  begin
+    r := public.delete_person('20000000-0000-0000-0000-000000000852');
+    raise exception 'FAIL: a non-admin deleted a person';
+  exception when insufficient_privilege then
+    assert sqlerrm like 'Only platform admins delete people%', 'admins only: ' || sqlerrm;
+  end;
+end $$;
+reset role;
+set app.test_uid = '';
+
+-- Tail: this block's fixtures go.
+delete from public.activity_log where entity_type = 'zzz_probe_person';
+delete from public.kudos where to_person_id = '20000000-0000-0000-0000-000000000852';
+delete from public.employment_periods where id = '30000000-0000-0000-0000-000000000853';
+update public.people set user_id = null where id = '20000000-0000-0000-0000-000000000854';
+delete from auth.users where id = '00000000-0000-0000-0000-000000000854';
+delete from public.people where id::text like '20000000-0000-0000-0000-00000000085%';
+
 select 'SMOKE TESTS PASSED' as result;

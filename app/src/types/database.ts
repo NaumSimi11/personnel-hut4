@@ -5388,6 +5388,7 @@ export type Database = {
       dashboard_snapshot: { Args: { p_days?: number }; Returns: Json }
       delete_candidate: { Args: { p_candidate_id: string }; Returns: Json }
       delete_policy: { Args: { p_policy_id: string }; Returns: Json }
+      delete_person: { Args: { p_person_id: string }; Returns: Json }
       delete_task: { Args: { p_task_id: string }; Returns: Json }
       delete_job_application: { Args: { p_application_id: string }; Returns: Json }
       detach_candidate_from_job: { Args: { p_application_id: string }; Returns: Json }

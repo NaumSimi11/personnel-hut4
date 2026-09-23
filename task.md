@@ -1,131 +1,157 @@
-i suggest, when we click on any equipment, we ned to have an equipment preview page. 
+# Round 03 — where it stands, 23 Sep 2026
 
-inside we present what we have for that equipment. 
-we can edit delete or whatever. 
+Everything marked DONE is on `main` and live on personnel-hut4.vercel.app.
+Migrations 0071–0079 are applied to the live database.
 
-if the equipment have a owner assigned, we can remove from it ( with a  signing document - sent to him also - we are talkign as an hr now or admin or whoever can do that by th role ). then we can assignit to another one employee, with a document again. 
-
-we need to keep history of them ( as service notes maybe ). 
-
-leave page : https://personnel-hut4.vercel.app/leave
-
-we have 2 tabs. let's make the tabs to get full width, and responsive. 
-
-when https://personnel-hut4.vercel.app/leave here. we click any day of the calendar, on the right side the events for that day appears. that is not fking responsive at all. make it more responsive. also, when we have that cards on the side ( example who is away that day blabalbla ) , i can see at the top even if i press any day in the pass as working day : Working day
-A normal day
-
-yea, but this WAS workign day, so if not today, mark it red, color it, whatever. 
-
-
-also , here we have 6 people are away
-and for each of them a card. 
-
-When the card is clicked, dialog to be opened with  detaield preview of that used ( or not ) vacation of that person. 
-
-
-
-ALSO in the cards if we see this in the past cards : 
-Thursday
-10
-September 2026
-
-Working day
-A normal day
-4 people are away
-Alina Gostovikj
-annual · Hut4
-31 Aug → 11 Sep · 9 working days
-working day 8 of 9 · 1 left
-“Imported from September 2026 leave calendar correction. · Imported from workbook: Sep 2026 (V day)”
-
-i know it's calcualted on the selected day, what way it was  ( ex 9 from 10 , 8 from 10 ) . but from dotays perspective, it's full used vacation.. 
-
-
-
-https://personnel-hut4.vercel.app/hiring
-here, report a hide, only hr's need to be listed in the hiring manager dropdown. ( and that one with bigger roles than hr ) . 
-
-
-https://personnel-hut4.vercel.app/directory when in people, the first selected tab shoyld be active, and not everyone. 
-
-https://personnel-hut4.vercel.app/people/42dd912e-16c6-4bbc-abf3-77cbbdf17eb1
-when we are here, all the cards that needs to get update ( edit mode ) are not responsive, when in edit or preview mode. review them. 
-
-
-https://personnel-hut4.vercel.app/equipment
-in the equipment sidebar page , we need filter ( search by equipment, ) filter by user, and so on. 
-
-
-in the return equipment thing we build before, with the sign in, we need top open dialog instead of toogle down up that signing thing. opening dialog, standing int he viewport is much more usable from all perspectives
+Original notes kept word for word, with what happened to each.
 
 ---
-STATUS (17 Sep, updated as each lands)
 
-DONE
-- leave: tabs full width and responsive
-- leave: day panel responsive (was cramped between 720 and 1080px)
-- leave: past days in the past tense; "8 people were away"
-- leave: a finished leave reads "taken in full", not "8 of 9 · 1 left"
-- leave: clicking a person opens a dialog with both readings
-- hiring: only HR and above in the hiring manager dropdown (3 of 42 at Synami)
-- directory: opens on Active, not Everyone
-- equipment: search by tag, inventory no., model, serial or holder; filter by
-  who holds it (only people who hold something are listed)
-- equipment return: signing is a centred dialog, not an inline expand
+## Done (14 of 22)
 
-- person page: edit forms fold on their own width, not the window's
-- equipment preview page: full detail, delete, and a service history
+**companipanies - structure - hide it. only on hut4 if must.**
+Done — the company page keeps Structure to the holding only. `99ebbda`
 
-- equipment preview page: reassigning from the page itself. Built by
-  generalising the return rather than copying it: equipment_returns became
-  asset_handovers, which records an asset changing hands in either direction.
-  The register's two-party rule, the signature pad and the forms are shared.
-  On a reassign the outgoing holder does not sign — they are told, and their
-  return form is filed while they still hold it, so equipment can still be
-  recovered from somebody on leave or not answering.
+**company - hiring. we need to be able to delete**
+Done — from the company page (`a8df79c`), and now from the Job openings list
+too, with close / abandon beside it. Plan 056, migration 0071.
 
-ALSO DONE (18 Sep)
-- equipment register: two new filters — "kept somewhere, not with a person"
-  (58 rows: office, office Struga, the company itself, a car, a server, a
-  trademark) and "books name a person we have not matched" (6 rows). Before,
-  "In magacin" swept all 64 in and claimed they were free to hand out.
-- equipment never passes from one employee straight to another. The one-step
-  reassign is gone. Ask for it back → it lands in magacin → hand it out.
-  Two acts, two forms, and the register can see it in between.
-- the HR side is emailed, at the company's HR inbox when one is set.
-- an accepted handover whose signed paper copy never came back is flagged in
-  amber on the asset page and has its own tab on the new page below.
-- /equipment/movements — everything that has changed hands, read-only.
+**company -> equipmpnt remove it**
+Done. `99ebbda`
 
-LEFT
-(nothing from the list above)
+**Project hide - needs to be workt on it later.**
+Hidden. `99ebbda` — the "later" work is still later.
+
+**Company activity / activity, onlu ivana, filter by main.**
+Done — plan 059, migration 0073. The panel used to load the 200 most recent
+rows and filter *those*, so after the import wrote 12,302 rows in a day,
+searching for a name searched inside the import and found nothing. Every
+filter is now part of the query, and the actor dropdown is built from the
+whole trail. Hut4's list is exactly Ivana and Naum. Hut4 also shows the 8,201
+rows that belong to no single company (candidates and their files), which were
+on nobody's page before.
+
+**people & access , we need delete ( we have manage access & remove access )**
+Done — removable from the directory, and restorable. `8c68a31`
+
+**hiring: sub-status - we need to have eduit on the status**
+Done. `38dd0de` — and migration 0078 fixed a bug that would have broken it on
+any fresh database: the table had an admin-write policy but only ever granted
+SELECT. It worked on live purely because Supabase grants DML by default.
+
+**hireing - we need to b abel to edit the labels on the sources.**
+Done, same slice, same fix. `38dd0de` + 0078.
+
+**ook, so we need to be bale to add an existing cancidate to another
+possiotion ( transver possition to opening or not openings )**
+Done — plan 060, migration 0074. Draft jobs are offered now (the database
+always allowed them; only the picker did not), every option says its status,
+the candidate record shows the job's status, and **Take back** undoes an
+attachment while it is still nothing but an attachment — not imported, nobody
+hired, nobody carrying it, still at New, no events, interviews, offers or
+files. On live, 0 of 4,157 applications are detachable, so it protects
+mistakes from here on and cannot reach anything that exists.
+
+**templated for offer.** → see Left.
+
+**equipment - print inentory list.**
+Done. `2e94fbf`
+
+**my tasks - how cna we use them - i want to add task to myself, connect some 1
+to my task, and the higher profiles can assign tasks to me.**
+Done — plan 057, migration 0072. All three: write one for yourself, connect a
+colleague who can then work and tick it, and be given one by HR or by the
+manager named on your employment. A task is seen by the people on it and
+nobody else — not HR, not an admin.
+
+**onobading, we need to add access to the actual worek. - the manager mange
+that access, and on the offboarding we need to have preview what we need to
+shut down.**
+Done — plans 061 and 062, migrations 0075–0079. A list of systems, a record
+per person of what they were given and when it was taken away, and "Access to
+shut down" on the offboarding checklist. Kept by IT, the manager, or an admin;
+never by the person themselves. Both checklist lines now answer themselves.
+
+**export from ht leaves, to be moved in the leave in personal.**
+Built — plan 058, no migration. The same two sheets HT's manager desk hands
+out, from its own source, filtered by exactly what the leave desk is showing.
+**Not yet run against live data** — see Waiting on you.
 
 ---
-NEXT — things I noticed while building, in the order I would do them
 
-1. 14 of 42 people have no login, and 11 of them hold equipment.
-   If HR asks one of them for a laptop back, that person cannot sign —
-   they have nothing to sign in to. It works anyway: a second person in
-   IT or HR signs it in on the company's behalf when the laptop actually
-   turns up, and the form says exactly that instead of pretending they
-   signed. The asset page warns you before you start.
-   TO DO (maybe): decide whether those 14 should get accounts. It is a
-   people decision, not a code one.
+## Left
 
-2. Nobody has clicked through this in a browser except me, by hand.
-   We have tests, and I drove the database directly, but the automated
-   browser tests have not been run on ANY of the equipment work.
-   TO DO: run them. Problem: they would run against the live database and
-   leave junk in it, like last time. They want a copy to play in first.
+**Connection to teams.**
+Nothing exists. No design discussed yet.
 
-3. A handover nobody signs just sits there forever.
-   You ask Marko for a laptop back. Marko never signs. Six months later
-   the app still says he has it, and the request hangs in the air.
-   TO DO: after two weeks, show it as old and tell whoever started it.
-   NOT auto-cancel — quietly undoing it is worse.
+**Conneciton to zoho.**
+Recruit is fully imported (3,611 candidates, 4,157 applications, 2,710 files,
+plus notes, interviews and reviews) but that was a one-off CSV import — there
+is no live connection or sync. Zoho Projects was dropped by your decision on
+22 Sep.
 
-4. The form prints everything the person holds, not the one thing.
-   You hand back one laptop; the PDF lists your laptop AND your phone AND
-   your monitor. Correct when somebody is leaving the company. Misleading
-   for a single handover.
-   TO DO: when the form is about one asset, print one asset.
+**templated for offer.**
+Nothing yet. An offer is still salary, currency and start date, with no letter
+and no template. Self-contained, needs no keys, and reuses the PDF machinery
+that already prints the equipment forms. **This is the next one up.**
+
+**integration with carriers page.**
+The careers pages exist. What is missing depends on what you meant: embedding
+them on the real hut4 site, or pulling applicants in from it. Needs a sentence
+from you.
+
+**Onbaording - when we are thrre, each step on completition should se dn an
+emails to the dedicatd ppl ( if it, send to it )**
+Nothing fires per line today; the handover mails on four events only. Blocked
+twice over — no RESEND_API_KEY, and no IT owner configured to send to. Worth
+doing right after those two are sorted.
+
+**back from archie. - hiring - candidates { id }**
+Unclear, and I could not reproduce it. Archive and restore both work on the
+candidate record, and the pool has "Show archived". This reads like a broken
+link — if you hit it again, send me the URL.
+
+---
+
+## Decided against
+
+**starter kit, we shoyld go and filtr by the actual field.**
+Skipped, on my recommendation and your agreement. Only two of five companies
+have a kit at all (Hut4 7 items, Synami 6); at 42 people the cost of a wrong
+item is one IT request edited by hand. Fifteen minutes to add whenever it
+starts to hurt.
+
+---
+
+## Still open questions
+
+**- Propmtion - what is it and do we need it**
+There is a JobPromotionPanel for promoting a job listing — probably not what
+you meant. Keep or cut?
+
+**- -chanels?**
+JobChannelsPanel exists, for publishing a job to destinations. Same question.
+
+---
+
+## Waiting on you, not on code
+
+- **RESEND_API_KEY and EMAIL_FROM.** Neither is in `.env.local`. If they are
+  set in Vercel, production sends and nothing can be tested locally. Nothing
+  emails until both exist — invites, leave decisions, handover, the per-step
+  onboarding mails above. Note 10 handover sends are already queued and will
+  fire when the key lands.
+- **Record the managers.** 0 of the live employments name one, so the manager
+  half of access, and four seeded checklist lines, still reach nobody. The
+  employee record's corrections already edit it.
+- **Set an it_owner per company** (Settings → workflow owners). 0 configured,
+  so the 12 IT checklist lines have nobody to go to and handover mail to IT
+  has no destination.
+- **Grant `candidates.source`** to the Holding HR people, or only admins see
+  the talent pool tab.
+- **Run the leave report once.** `cd server && npm run dev`, open the leave
+  desk, click Download report. I would rather you saw the file before finance
+  does.
+- **The E2E specs for the last four slices are written but never run.**
+  `app/playwright.config.ts` refuses without `E2E_ALLOW_PRODUCTION=true`,
+  because those specs seed and hard-delete rows in the live project. Your call.

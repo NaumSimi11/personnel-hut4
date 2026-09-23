@@ -3,7 +3,7 @@
 # Keep it current: rewrite the `state` and `next` sections at each handoff.
 
 meta:
-  written: 2026-09-22 (updated after slices 052–055 — the talent pool, the Zoho import incl. notes / interviews / reviews, search by words, outreach; all live)
+  written: 2026-09-23 (slices 056, 057 and 058 code complete; 0071 and 0072 not yet applied live, 058 needs no migration; previously updated after slices 052–055 — the talent pool, the Zoho import incl. notes / interviews / reviews, search by words, outreach; all live)
   repo: E:\personnel-hut4 (GitHub NaumSimi11/personnel-hut4, branch main)
   head: main (pushed to origin after slice 055; git log for the sha)
   origin_main: 5f4c2a5
@@ -127,6 +127,98 @@ execution_055:
     - reviewers without accounts: 18 Zoho users are names only; inviting them later does not relink history (author_name stays)
     - CandidateNotesCard: Show more pages are dropped on add/remove (reload from page 0); the heading prop has no caller
   decisions_taken_for_the_maintainer: Zoho interviews map to kind phone/other with the Zoho name kept; Zoho 1–4 rating → strong_no..strong_yes; interview outcomes (Move to next round, Rejected, …) are kept as text, not replayed as stage changes
+
+# ---------------------------------------------------------------------------
+# SLICE 056 — CODE COMPLETE 2026-09-23, 0071 NOT YET APPLIED LIVE
+execution_056:
+  plan: plans/056-closing-openings.md
+  why: the maintainer's task.md round — "i dont know why do we have that much open positions … just to have a way of closing them (abandon) and deleting if needed"
+  what_shipped:
+    - migration 0071 — jobs.closed_at / closed_by / closed_reason, the BEFORE UPDATE trigger app.jobs_closing_stamp (entering closed stamps what the writer left out, leaving closed clears all three, staying closed is never re-dated), and close_jobs(ids, reason, withdraw) returning {closed, already_closed, withdrawn}
+    - the Job openings tab is now the sweep: row selection (the header box takes the whole filtered list), "Close N selected" opening CloseJobsDialog, the closing line under a closed row's status, per-row Delete reusing lib/hiringDelete.ts and the company page's rule
+    - app/src/lib/closeJobs.ts + tests (the selection sentences); hiringTabs carries applications total, companyId, status and the closing line
+  review: Skill code-review medium, one round, three findings all fixed — (1) the withdraw switch was offered from the in-play count alone while close_jobs also demands candidates.review in EVERY company of the call, so a jobs.edit-only grant lost the close as well; CloseTarget now carries mayWithdraw and the dialog names the company that takes the option away. (2) the delete rule read applications(count) under the viewer's own RLS, so somebody without candidates.view read zero for every job and was told nothing had ever been received; jobDeletable gained countVisible and both call sites (this panel and the company page, which had the same defect since a8df79c) pass it. (3) the stamp trigger was before update only, so a job inserted as closed kept a status its columns contradicted; it is before insert or update now.
+  verification: local-verify SMOKE TESTS PASSED (71 migrations); app vitest 553; vue-tsc clean; vite build clean. E2E close-openings.spec.ts is WRITTEN BUT NOT RUN — it needs 0071 on live.
+  BLOCKING_ON_MAINTAINER: apply 0071 BEFORE pushing / deploying main. The app reads jobs.closed_at and calls close_jobs; main deploys to Vercel, so a push ahead of the migration breaks Hiring → Job openings.
+  load_bearing_rulings:
+    - abandoning = close + withdraw, one action with a switch, pre-ticked when anybody is in play
+    - withdrawn, not rejected — nobody judged these people, the opening went away
+    - hired / rejected / already-withdrawn rows are never touched
+    - reopening clears the stamp and never un-withdraws anybody (the talent pool is the way back)
+    - a job already closed is counted as already_closed, so re-running a selection is harmless
+    - one refusal rolls the whole call back, and the message names the company and the job
+  follow_ups_from_056 (none blocking):
+    - the sub-status of a withdrawn row goes null (0069's default); a re-opened application would start from the stage's default again
+    - Job openings loads every job and pages the non-terminal applications; the per-job total now comes from PostgREST's embedded count instead, so the read did not grow
+    - closing does not touch job_channels — a job closed here can still read `live` on a channel until somebody closes it there
+    - no bulk reopen; reopening stays one job at a time on the job page
+
+# ---------------------------------------------------------------------------
+# SLICE 057 — CODE COMPLETE 2026-09-23, 0072 NOT YET APPLIED LIVE
+execution_057:
+  plan: plans/057-tasks.md
+  why: the maintainer's task.md line — "i want to add task to myself, connect some 1 to my task, and the higher profiles can assign tasks to me"
+  decisions_by_the_maintainer_2026_09_23:
+    - assigning: tasks.assign in the person's company, or the manager named on their employment. Nobody else.
+    - connecting: the colleague can WORK it — sees it, is told, either of them may tick it — while it stays the owner's to change or delete.
+    - visibility: the people on it and nobody else. Not HR, not a platform admin.
+  consequences_of_that_third_rule:
+    - reading goes through my_tasks() because a plain employee may read only their own row in people (0006), so a task would otherwise render as uuids
+    - app.may_connect_task opens ONE narrow door: anyone actively employed in a company where you are actively employed. It exposes a colleague's NAME to somebody who works beside them, through that function only — the directory still shows a plain employee nothing (0036 untouched)
+  what_shipped:
+    - migration 0072 — tasks + task_people, the helpers, select-only RLS, save_task / set_task_done / delete_task / my_tasks / task_candidates
+    - app/src/lib/tasks.ts (+ tests), components/tasks/TaskDialog.vue and MyTasksCard.vue
+    - the card is mounted on My workspace and Home; the old plan_tasks card on both is renamed "Checklist tasks", which is what it always was
+  review: Skill code-review medium, one round over 056 + 057 + the xlsx writer, five findings all fixed — see review_round_2026_09_23 below
+  verification: local-verify SMOKE TESTS PASSED (72 migrations); app vitest 569; server 265; vue-tsc clean; vite build clean. E2E app/e2e/tasks.spec.ts is WRITTEN BUT NOT RUN — it needs 0072 on live.
+  BLOCKING_ON_MAINTAINER: apply 0071 AND 0072 before pushing / deploying main. Home and My workspace call my_tasks / task_candidates on load.
+  follow_ups_from_057 (none blocking):
+    - no due-date reminder — a task falls overdue quietly; a daily sweep into notifications would be the next step
+    - no task list per person for HR by design; if the maintainer ever wants HR chasing, that is a new decision, not a missing feature
+    - task_candidates() lists every actively employed person the rules allow, unpaged — fine at 42, needs a search box at a few hundred
+    - a connected colleague cannot connect a third person (only the owner or the setter may), which is deliberate but untested in the UI
+
+# ---------------------------------------------------------------------------
+review_round_2026_09_23:
+  what: one code-review pass over the uncommitted 056 + 057 + xlsx work; five findings, all fixed and re-verified
+  findings:
+    - 0071's stamp trigger fired on INSERT too, so a job the Zoho import wrote as already closed was dated today and attributed to whoever ran the import — the exact invention the trigger exists to prevent. It now stamps only a job that MOVES into closed; a row that arrives closed keeps whatever stamp it was given (usually none) and the app names no author for it.
+    - CloseJobsDialog disabled its confirm whenever every picked opening was already closed, so candidates still in play on a long-closed opening — most of the imported backlog — could never be withdrawn. "Nothing to do" now also requires nobody left to withdraw, and the question says so.
+    - save_task re-checked may_connect_task for EVERY id on each save, so an owner could not save a title once somebody else had connected a colleague of theirs. Only newly added people are checked now; taking somebody off needs no permission.
+    - TaskDialog showed chips only for people the viewer may connect, so a colleague added by HR could never be unticked. The chips are now the union of connectable and whoever is already on the task.
+    - the xlsx writer did not deduplicate sheet names, and two that collide (directly, or after the 31-character truncation) make a workbook Excel refuses to open.
+
+# ---------------------------------------------------------------------------
+# SLICE 058 — CODE COMPLETE 2026-09-23. NO MIGRATION; needs the server running.
+execution_058:
+  plan: plans/058-leave-finance-export.md
+  why: task.md "export from ht leaves, to be moved in the leave in personal" — the maintainer then pointed at the source: "you can find also the repo in starter-web-app, its the same repo"
+  the_source: /Users/naum/Downloads/starter-web-app — server/financeReport.ts, server/routers.ts (leave.financeReport), shared/leaveRecordFilter.ts. THE REPORT'S SHAPE CAME FROM THERE, not from a guess.
+  what_it_is: two sheets. "Leave records" — Request ID, Employee, Company, Country, Start date, End date, Leave type, Working days, Status, Annual balance effect (a SENTENCE: "Deducts 5 annual leave days" / "Cancelled — 1 day returned" / "No annual leave deduction", read from the request's OWN deducts_balance snapshot so a later change to a leave type cannot rewrite history). "Balance summary" — Employee, Company, Country, Status, Annual allowance, Approved annual leave, Annual leave remaining, Carry-over remaining, Current-year entitlement remaining.
+  what_shipped:
+    - server/src/xlsx/{zip,workbook}.ts — a hand-rolled .xlsx writer over node:zlib, NO dependency added (the repo could only READ xlsx before, in popisXlsxCells.ts)
+    - shared/leaveReport.ts — the filter the leave desk and the export both apply, plus the row shaping. LeaveRequestsPanel's duplicate monthsCovered/fold is DELETED; there is one predicate now.
+    - server/src/leaveReport.ts + leaveReportRoutes.ts — POST /api/reports/leave-finance, reads AS THE CALLER (so the workbook holds exactly the leave RLS lets them see — tighter than Field Notebook's admin-only rule) and calls the same leave_balance() the Balances screen uses, so the two always agree.
+    - the button sits ABOVE the tabs on the leave desk, with a line saying it exports approved leave whatever tab is open.
+  decisions:
+    - no migration — everything it needs was already exposed
+    - a request's reference is legacy_id (Field Notebook's number) where the row was imported, else this app's uuid
+    - "Former" where Field Notebook says "Archived"
+    - one summary row per person AND company; a rehire is two employment periods and one balance, and a draft period is not an employment yet
+  verification: server 291 tests (26 report, 18 writer); app 567; builds and typechecks clean; local-verify still green. A generated workbook was opened with python openpyxl — two sheets, frozen headers, autofilter, dates as datetimes, half-days as floats, Cyrillic intact.
+  NOT_YET_DONE: never run against live data. It needs `cd server && npm run dev` plus the app, signed in as somebody with leave.view, and one click on Download report. No E2E — the spec would need the API server in Playwright's webServer, which no spec does today.
+  follow_ups_from_058 (none blocking):
+    - the summary's balance lookups run 8 at a time, one RPC per person and company; at 42 people that is ~6 round trips, and a few hundred people would want a single set-returning function instead
+    - Field Notebook's report is admin-only and this one is not; a plain employee with no grants who reaches the desk would export their own leave, which is true but pointless — the Requests tab already only appears for approvers
+    - the leave type column carries the label as it reads TODAY, while the deduction sentence uses the snapshot; a renamed type will show its new name against old rows
+
+# ---------------------------------------------------------------------------
+# The .xlsx writer (2026-09-23), built for the Field Notebook leave report
+xlsx_writer:
+  where: server/src/xlsx/zip.ts + workbook.ts (+ 18 tests)
+  why: the maintainer wants hr.hut4.com/manager's "Download report" on Personnel's leave desk, as .xlsx. Nothing in the repo could WRITE a spreadsheet — only popisXlsxCells.ts reads worksheet XML for the equipment import.
+  what: buildWorkbook(sheets) -> Buffer. No dependency added: the zip container is hand-written over node:zlib. Bold frozen header, autofilter, guessed widths, dates as real serials under an explicit yyyy-mm-dd format (the built-in date formats are locale-dependent). Verified by generating a file and opening it with python openpyxl — dates come back as datetimes, 0.5 as a float, Cyrillic intact.
+  RESOLVED 2026-09-23: the maintainer pointed at the source — /Users/naum/Downloads/starter-web-app is the same repo. The report is built in slice 058 from server/financeReport.ts, not from a guess.
 
 next:
   say_to_start: "next slice" — 052–055 are closed; what is left needs the maintainer: keys (Resend, Anthropic), setup (grant candidates.source to Holding HR, real start/birth dates, invite the 14 without accounts), go-live (plan 038 runbook), the MK payroll rules; small developable follow-ups sit under execution_052/054/055

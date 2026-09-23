@@ -166,6 +166,49 @@ being anonymous on both sides. Both tables carry a unique partial index on
 `(provider, provider_ref)`, so re-running the import finds its own rows and
 writes nothing twice.
 
+**Closing job openings (migration 0071)** — `jobs` gains `closed_at`,
+`closed_by` and `closed_reason`, kept in step with `status` by the BEFORE
+INSERT OR UPDATE trigger `app.jobs_closing_stamp()`: arriving at `closed` —
+inserted that way or updated into it — stamps whatever the writer did not
+supply, leaving `closed` clears all three, and a status that stays `closed` is
+never re-dated. Only the jobs already closed when 0071 ran carry a status with
+no stamp; the app names no author for those rather than inventing one. So the stamp and the status can never
+disagree, whether the job was closed by the job page's plain update or by the
+RPC. `close_jobs(p_job_ids uuid[], p_reason text, p_withdraw boolean)`
+(SECURITY DEFINER, `authenticated`) closes a selection and returns
+`{closed, already_closed, withdrawn}`: ids are deduped, `jobs.edit` in each
+job's company is required and `candidates.review` too when `p_withdraw` asks
+for the leftovers to go, a job already closed is counted and left alone, and
+one refusal rolls the whole call back. Withdrawing writes each application a
+`stage_change` event carrying the stage it really left, then moves it to
+`withdrawn` with the reason — never touching `hired`, `rejected` or
+already-`withdrawn` rows, which are answers somebody gave. Reopening a job
+clears its stamp but never un-withdraws anybody: those candidates were told,
+and the talent pool (0067) is how they come back.
+
+**Tasks that stand on their own (migration 0072)** — `tasks` (`person_id`
+whose list it sits on, `company_id` from their active employment for the
+notification's sake, `title`, `detail`, `due_date`, `status` `open`/`done`,
+`created_by`, `done_by`, `done_at`) and `task_people` (`task_id`,
+`person_id`, `added_by`) are the plain task `plan_tasks` never was: a
+checklist line belongs to a plan, this belongs to a person. A CHECK keeps
+`status = 'done'` and `done_at is not null` the same fact. Three rules, all in
+the database: `app.may_assign_task` (yourself always; anyone else only with
+`tasks.assign` where they work or as the manager on their employment),
+`app.may_connect_task` (anyone you may view, plus anyone actively employed in
+a company where you are — the one narrow widening of 0006, because a plain
+employee may otherwise see only themselves and so could never pick a
+colleague) and `app.on_task` (the owner, whoever set it, anyone connected),
+which is the whole of the select policy. There is **no client write policy**:
+`save_task` (insert or update; `with_ids` replaces the connected list when
+present and is left alone when absent; only newly added people are checked and
+told), `set_task_done` (anyone on the task, either way) and `delete_task` (the
+owner or the setter) are the only writers, and `my_tasks()` / `task_candidates()`
+the only readers the app uses — reading through a function because the names on
+a task cannot come from `people`, which a plain employee may read only their own
+row of. A task is visible to the people on it and to nobody else, platform
+admins included: it is a working tool, not a monitoring one.
+
 **0004 operations** — `task_templates`/`template_tasks` (copied into plans on
 assignment; editing templates never rewrites active plans), `plans`/`plan_tasks`
 (critical = pre-start readiness; blocked/skipped are distinct states with

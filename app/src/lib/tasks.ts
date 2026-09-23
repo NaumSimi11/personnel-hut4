@@ -147,3 +147,23 @@ export function friendlyTaskError(message: string): string {
   if (/jwt|not authenticated/i.test(message)) return 'Your session expired. Sign in again.'
   return message
 }
+
+/**
+ * The people you may connect, in the order that helps (task.md: "when we add
+ * task, the dialog list employees very bad"). Forty-two names in a 520px
+ * dialog is a wall, so there is a filter over them — and the ones already
+ * ticked come first and stay whatever is typed, because a filter that can
+ * hide a name you just chose turns "who is on this" into a guess.
+ */
+export function orderGuests<T extends TaskPerson>(
+  guests: readonly T[],
+  query: string,
+  selectedIds: readonly string[],
+): T[] {
+  const needle = query.trim().toLowerCase()
+  const chosen = new Set(selectedIds)
+  return [
+    ...guests.filter((g) => chosen.has(g.id)),
+    ...guests.filter((g) => !chosen.has(g.id) && (!needle || g.full_name.toLowerCase().includes(needle))),
+  ]
+}

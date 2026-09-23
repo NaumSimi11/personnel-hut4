@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   dueLabel,
+  orderGuests,
   dueTone,
   friendlyTaskError,
   openCount,
@@ -135,5 +136,38 @@ describe('friendlyTaskError', () => {
 
   it('translates the ones written for a machine', () => {
     expect(friendlyTaskError('new row violates row-level security policy')).toBe('That task is not yours to change.')
+  })
+})
+
+describe('choosing who else is on a task', () => {
+  const guests = [
+    { id: 'a', full_name: 'Adrijana Ristova' },
+    { id: 'b', full_name: 'Bojan Ivanovski' },
+    { id: 'c', full_name: 'Filip Babamov' },
+  ]
+
+  it('keeps everyone when nothing is typed', () => {
+    expect(orderGuests(guests, '', []).map((g) => g.id)).toEqual(['a', 'b', 'c'])
+  })
+
+  it('filters on the name, ignoring case', () => {
+    expect(orderGuests(guests, 'iva', []).map((g) => g.id)).toEqual(['b'])
+    expect(orderGuests(guests, '  BABAMOV ', []).map((g) => g.id)).toEqual(['c'])
+  })
+
+  it('puts the chosen first', () => {
+    expect(orderGuests(guests, '', ['c']).map((g) => g.id)).toEqual(['c', 'a', 'b'])
+  })
+
+  it('never hides somebody already ticked, whatever is typed', () => {
+    expect(orderGuests(guests, 'zzz', ['c']).map((g) => g.id)).toEqual(['c'])
+  })
+
+  it('does not list the chosen twice when they also match', () => {
+    expect(orderGuests(guests, 'bojan', ['b']).map((g) => g.id)).toEqual(['b'])
+  })
+
+  it('does not hand back the array it was given', () => {
+    expect(orderGuests(guests, '', [])).not.toBe(guests)
   })
 })

@@ -46,6 +46,38 @@ button:disabled { cursor: not-allowed; opacity: 0.5; }
 a { color: var(--green); text-underline-offset: 2px; }
 [role='button'], [tabindex='0'] { cursor: pointer; }
 
+/* Every control the app renders, not only the ones inside a .field.
+   A bare <input> or <select> — a filter beside a card title, a name being
+   corrected in place — otherwise falls back to the browser's own chrome,
+   which on Edge is a heavy dark outline that looks nothing like the rest of
+   the page. The :not() lives inside :where() so the exclusions cost no
+   specificity: these stay at plain element weight, which is the floor and
+   never more, so the .field rules below and every component's own styling
+   still win. Checkboxes, radios, files, ranges and colour pickers keep their
+   native shape, which is the point of them. */
+input:where(:not([type='checkbox'], [type='radio'], [type='file'], [type='range'], [type='color'])),
+select,
+textarea {
+  border: 1px solid var(--line-strong);
+  padding: 9px 12px;
+  background: #fcfdfb;
+  color: var(--ink);
+  font-size: 13px;
+  transition: border-color 0.18s var(--ease), box-shadow 0.18s var(--ease), background 0.18s var(--ease);
+}
+input:where(:not([type='checkbox'], [type='radio'], [type='file'], [type='range'], [type='color'])):hover,
+select:hover,
+textarea:hover { border-color: #b9cbbf; }
+input:where(:not([type='checkbox'], [type='radio'], [type='file'], [type='range'], [type='color'])):focus,
+select:focus,
+textarea:focus {
+  outline: none;
+  border-color: var(--green-bright);
+  box-shadow: var(--ring);
+  background: #fff;
+}
+textarea { font-family: inherit; line-height: 1.5; }
+
 /* One focus treatment for everything you can reach with the keyboard. */
 :where(button, a, input, select, textarea, summary, [tabindex], [role='button']):focus-visible {
   outline: 2px solid var(--green-bright);
@@ -102,6 +134,37 @@ small { line-height: 1.45; }
 .button.secondary { background: var(--surface); color: var(--ink); border-color: var(--line-strong); box-shadow: var(--shadow-sm); }
 .button.secondary:hover { background: var(--green-soft); border-color: #b9cbbf; color: var(--green-deep); }
 .small-btn { min-height: 32px; }
+
+/* Destructive actions, so red means the same thing everywhere: a solid one
+   where it is the main action of a dialog, a quiet outline where it sits in
+   a row beside ordinary buttons. */
+.button.danger { background: linear-gradient(135deg, #c04a4a, var(--red) 60%, #7e2c2c); border-color: transparent; }
+.button.secondary.danger { background: var(--surface); color: #a8332b; border-color: #e6c9c6; }
+.button.secondary.danger:hover { background: #fbeeee; color: #8c2b2b; border-color: #dfb4b0; }
+
+/* A button that reads as a link, for an action secondary to the ones beside
+   it. Nine components ask for this class and eight wrote it out themselves;
+   the two that did not rendered as the browser's own grey buttons, which is
+   how this came to light. */
+.linkish {
+  background: none;
+  border: 0;
+  padding: 0;
+  font: inherit;
+  font-size: 11px;
+  color: var(--muted);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+.linkish:hover:not(:disabled) { color: var(--green-deep); }
+.linkish.danger { color: var(--red); }
+.danger-text:not(:disabled) { color: var(--red); }
+
+.hint { font-size: 11px; color: var(--muted); line-height: 1.6; }
+.field-hint { display: block; font-size: 11px; color: var(--muted); }
+.inline-note { margin: 0; font-size: 11px; color: var(--amber); }
+.muted { color: var(--muted); font-weight: 400; }
 
 .card {
   background: var(--surface);

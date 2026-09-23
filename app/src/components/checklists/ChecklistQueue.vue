@@ -210,7 +210,7 @@ onMounted(load)
                 <button
                   v-if="clearVerdict(p).canClear"
                   type="button"
-                  class="button danger small-btn"
+                  class="button secondary danger small-btn"
                   :disabled="clearing === p.id"
                   :data-testid="`clear-plan-${p.id}`"
                   @click="clearPlan(p)"

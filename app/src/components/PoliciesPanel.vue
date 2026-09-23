@@ -405,7 +405,7 @@ watch(() => props.companyId, load)
             </button>
           </template>
         </div>
-        <div v-if="editing === p.id" class="wide-row edit-row" :data-testid="`edit-form-${p.id}`">
+        <div v-if="editing === p.id" class="wide-row pol-form" :data-testid="`edit-form-${p.id}`">
           <label>
             <span>Title</span>
             <input v-model="edit.title" type="text" maxlength="200" :data-testid="`edit-title-${p.id}`" />
@@ -414,14 +414,14 @@ watch(() => props.companyId, load)
             <span>Summary — the one line that goes in the welcome note</span>
             <input v-model="edit.summary" type="text" maxlength="500" :data-testid="`edit-summary-${p.id}`" />
           </label>
-          <label v-if="bodyEditable(p)">
+          <label v-if="bodyEditable(p)" class="wide">
             <span>Text</span>
             <textarea v-model="edit.body" rows="6" maxlength="20000" :data-testid="`edit-body-${p.id}`"></textarea>
           </label>
-          <p v-else class="hint">
+          <p v-else class="hint wide">
             This one is published, so its text is what people agreed to. Change it by publishing a new version below.
           </p>
-          <div class="edit-actions">
+          <div class="form-actions">
             <button class="button secondary small-btn" type="button" @click="editing = null">Cancel</button>
             <button class="button small-btn" type="button" :disabled="busy" :data-testid="`edit-save-${p.id}`" @click="saveEdit(p)">Save</button>
           </div>

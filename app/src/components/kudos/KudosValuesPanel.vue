@@ -135,6 +135,7 @@ async function toggle(v: KudosValue): Promise<void> {
 .small-btn { font-size: 11px; padding: 7px 11px; }
 .form { display: grid; grid-template-columns: 1fr 2fr; gap: 10px 14px; padding: 14px 24px; background: #fafbf8; border-top: 1px solid var(--line); }
 .form label { display: grid; gap: 4px; font-size: 11px; color: var(--muted); }
+.form label.wide { grid-column: 1 / -1; }
 .form .form-actions { grid-column: 1 / -1; display: flex; justify-content: flex-end; gap: 8px; }
 .form input { font: inherit; font-size: 12px; padding: 7px 9px; border: 1px solid var(--line); border-radius: 7px; background: #fff; }
 @media (max-width: 560px) { .form { grid-template-columns: 1fr; } }

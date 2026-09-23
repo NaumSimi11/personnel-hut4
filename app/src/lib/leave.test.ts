@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   balanceAfter,
+  filterBalanceRows,
   correctionSummary,
   workingDaysInRange,
   leaveProgressWorking,
@@ -145,5 +146,39 @@ describe('correctionSummary', () => {
     expect(correctionSummary(days(2), 4, true, types, 'Bojan')).toBe('2 working days — 2 returned to Bojan.')
     expect(correctionSummary([...days(2), ...days(1, 'sick').map((d) => ({ ...d, date: '2026-12-03' }))], 3, true, types, 'Bojan')).toBe('3 working days (1 sick) — 1 returned to Bojan.')
     expect(correctionSummary([], 4, true, types, 'Bojan')).toBe('Choose at least one working day.')
+  })
+})
+
+describe('searching the balances table', () => {
+  const rows = [
+    { full_name: 'Ana Petrova', company: { name: 'Snowball' } },
+    { full_name: 'Bojan Ristov', company: { name: 'Hut4' } },
+    { full_name: 'Ana Petrova', company: { name: 'Hut4' } },
+  ]
+
+  it('gives every row back when nothing is typed', () => {
+    expect(filterBalanceRows(rows, '')).toHaveLength(3)
+    expect(filterBalanceRows(rows, '   ')).toHaveLength(3)
+  })
+
+  it('does not hand back the array it was given', () => {
+    expect(filterBalanceRows(rows, '')).not.toBe(rows)
+  })
+
+  it('finds a person wherever they are employed', () => {
+    expect(filterBalanceRows(rows, 'ana')).toHaveLength(2)
+  })
+
+  it('finds a company, because that is the other question this table gets', () => {
+    expect(filterBalanceRows(rows, 'snowball').map((r) => r.full_name)).toEqual(['Ana Petrova'])
+  })
+
+  it('matches a person within one company when both are typed', () => {
+    expect(filterBalanceRows(rows, 'ana hut4')).toHaveLength(0)
+    expect(filterBalanceRows(rows, 'petrova hut4')).toHaveLength(1)
+  })
+
+  it('ignores case and surrounding space', () => {
+    expect(filterBalanceRows(rows, '  BOJAN  ')).toHaveLength(1)
   })
 })

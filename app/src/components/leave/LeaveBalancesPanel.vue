@@ -4,7 +4,7 @@ import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/stores/auth'
 import { useDialogStore } from '@/stores/dialogs'
 import { todayDb } from '@/lib/compensation'
-import { friendlyLeaveError } from '@/lib/leave'
+import { filterBalanceRows, friendlyLeaveError } from '@/lib/leave'
 import type { Balance } from '@/components/LeaveCard.vue'
 import { EMPLOYED_STATUSES } from '@/lib/leave'
 
@@ -24,6 +24,7 @@ const auth = useAuthStore()
 const dialogs = useDialogStore()
 const thisYear = Number(todayDb().slice(0, 4))
 const year = ref(thisYear)
+const query = ref('')
 const rows = ref<PersonRow[]>([])
 const loading = ref(true)
 const error = ref<string | null>(null)
@@ -33,7 +34,13 @@ const canAdjust = computed(() => props.companies.some((c) => auth.can(c.id, 'lea
 const many = computed(() => props.companies.length > 1)
 const canAdjustIn = (c: Company) => auth.can(c.id, 'leave.adjust')
 const years = computed(() => [thisYear - 1, thisYear, thisYear + 1])
-const missing = computed(() => rows.value.filter((r) => !r.balance?.exists))
+const shown = computed(() => filterBalanceRows(rows.value, query.value))
+/**
+ * Counted from what is on screen, not from everyone. Otherwise a search for
+ * one name leaves a button offering to create balances for forty people, and
+ * the number beside it is the only warning you get.
+ */
+const missing = computed(() => shown.value.filter((r) => !r.balance?.exists))
 
 async function load(): Promise<void> {
   loading.value = true
@@ -155,6 +162,14 @@ onMounted(load)
         <p>Entitlement + carry-over + adjustments − taken. Pending requests are held aside until decided.</p>
       </div>
       <div class="head-actions">
+        <input
+          v-model="query"
+          class="search"
+          type="search"
+          aria-label="Search balances"
+          :placeholder="many ? 'Name or company…' : 'Name…'"
+          data-testid="balance-search"
+        />
         <select v-model="year" aria-label="Year" class="year">
           <option v-for="y in years" :key="y" :value="y">{{ y }}</option>
         </select>
@@ -167,6 +182,7 @@ onMounted(load)
     <p v-if="notice" class="notice" role="status">{{ notice }}</p>
     <div v-if="loading" class="empty">Loading balances…</div>
     <div v-else-if="!rows.length" class="empty">Nobody is employed here.</div>
+    <div v-else-if="!shown.length" class="empty">Nobody here matches “{{ query.trim() }}”.</div>
     <div v-else class="table-wrap">
       <table>
         <thead>
@@ -175,7 +191,7 @@ onMounted(load)
           </tr>
         </thead>
         <tbody>
-          <tr v-for="r in rows" :key="r.person_id + r.company.id" :data-testid="`balance-row-${r.person_id}`">
+          <tr v-for="r in shown" :key="r.person_id + r.company.id" :data-testid="`balance-row-${r.person_id}`">
             <td><router-link :to="{ name: 'person', params: { personId: r.person_id } }">{{ r.full_name }}</router-link></td>
             <td v-if="many">{{ r.company.name }}</td>
             <template v-if="r.balance?.exists">
@@ -205,6 +221,7 @@ onMounted(load)
 
 <style scoped>
 .head-actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.search { font-size: 12px; padding: 8px 10px; min-width: 200px; flex: 1 1 200px; }
 .year { border: 1px solid #dce3d7; padding: 8px 10px; font-size: 12px; background: #fff; }
 .small-btn { padding: 7px 11px; font-size: 11px; }
 .in-card, .notice { margin: 14px 24px 0; }

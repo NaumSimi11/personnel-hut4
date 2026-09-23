@@ -274,3 +274,22 @@ export function correctionSummary(
     delta === 0 ? 'the balance does not move.' : delta > 0 ? `${delta} more taken from the balance.` : `${-delta} returned to ${firstName}.`
   return `${count}${mix} — ${move}`
 }
+
+/**
+ * The balances table, narrowed by what was typed (task.md: "here we ned a
+ * search"). One row per person per company, so a holding with five companies
+ * puts everyone employed anywhere on one screen — and the question being
+ * asked of it is almost always about one person.
+ *
+ * The company name is matched too, because "who in Snowball has no balance
+ * yet" is the other question this table gets, and the column is already
+ * there to read.
+ */
+export function filterBalanceRows<T extends { full_name: string; company: { name: string } }>(
+  rows: readonly T[],
+  query: string,
+): T[] {
+  const needle = query.trim().toLowerCase()
+  if (!needle) return [...rows]
+  return rows.filter((r) => `${r.full_name} ${r.company.name}`.toLowerCase().includes(needle))
+}

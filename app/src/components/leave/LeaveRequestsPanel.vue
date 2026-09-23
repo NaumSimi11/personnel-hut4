@@ -3,6 +3,14 @@ import { computed, onMounted, ref } from 'vue'
 import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/stores/auth'
 import { cancellationState, shortDate } from '@/lib/leave'
+import { todayDb } from '@/lib/compensation'
+import {
+  isRecordFilterActive,
+  matchesRecordFilter,
+  monthsCovered,
+  type FilterableRecord,
+  type RecordFilter,
+} from '@shared/leaveReport'
 import LeaveRequestsList, { type LeaveRequestRow } from '@/components/LeaveRequestsList.vue'
 import CorrectLeaveDialog, { type CorrectionTarget } from '@/components/leave/CorrectLeaveDialog.vue'
 
@@ -67,42 +75,82 @@ const tabs = computed(() => [
 ])
 const source = computed(() => ({ decide: decide.value, asks: asks.value, approved: approved.value, cancelled: cancelled.value })[tab.value])
 
-/** `YYYY-MM` keys the record touches, so a filter matches leave spanning a month boundary. */
-function monthsCovered(start: string, end: string): string[] {
-  const keys: string[] = []
-  let y = Number(start.slice(0, 4))
-  let m = Number(start.slice(5, 7))
-  const ey = Number(end.slice(0, 4))
-  const em = Number(end.slice(5, 7))
-  while ((y < ey || (y === ey && m <= em)) && keys.length < 36) {
-    keys.push(`${y}-${String(m).padStart(2, '0')}`)
-    m += 1
-    if (m > 12) {
-      m = 1
-      y += 1
-    }
-  }
-  return keys
-}
 const monthOptions = computed(() => {
   const keys = new Set<string>()
   for (const r of source.value) for (const k of monthsCovered(r.start_date, r.end_date)) keys.add(k)
   return [...keys].sort().reverse()
 })
-const fold = (s: string) => s.normalize('NFKD').replace(/[̀-ͯ]/g, '').toLowerCase()
-const shown = computed(() => {
-  const words = fold(query.value).split(/\s+/).filter(Boolean)
-  return source.value
-    .filter((r) => {
-      if (month.value !== 'all' && !monthsCovered(r.start_date, r.end_date).includes(month.value)) return false
-      if (company.value !== 'all' && r.company_id !== company.value) return false
-      if (!words.length) return true
-      const hay = fold(`${r.person?.full_name ?? ''} ${r.company?.name ?? ''} ${r.leave_type?.label ?? r.leave_type_key}`)
-      return words.every((w) => hay.includes(w))
+
+/** The screen's filter, in the shape the export shares with it. */
+const recordFilter = computed<RecordFilter>(() => ({ month: month.value, company: company.value, query: query.value }))
+/** One row, as the shared predicate reads it. */
+function filterable(r: Row): FilterableRecord {
+  return {
+    person_name: r.person?.full_name ?? '',
+    company_id: r.company_id,
+    company_name: r.company?.name ?? '',
+    // The label, or nothing — the server reads the same column through the
+    // same join, and matching the key here would let a search hit `annual`
+    // on rows the export would not.
+    leave_type: r.leave_type?.label ?? '',
+    start_date: r.start_date,
+    end_date: r.end_date,
+  }
+}
+// The predicate lives in shared/leaveReport.ts and is the same one the server
+// applies to build the workbook: the button exports what this list is
+// showing, and that only holds while there is one rule, not two.
+const shown = computed(() =>
+  source.value
+    .filter((r) => matchesRecordFilter(filterable(r), recordFilter.value))
+    .sort((a, b) => b.start_date.localeCompare(a.start_date)),
+)
+const filtered = computed(() => isRecordFilterActive(recordFilter.value))
+
+/**
+ * Download the finance workbook for what the toolbar is currently showing.
+ *
+ * The file is built on the server — an .xlsx is a zip, which the browser has
+ * no business assembling — and the server reads the leave AS THE CALLER, so
+ * the workbook holds exactly the rows this list may hold.
+ */
+const reportBusy = ref(false)
+async function downloadReport(): Promise<void> {
+  reportBusy.value = true
+  error.value = null
+  try {
+    const { data: session } = await supabase.auth.getSession()
+    const res = await fetch('/api/reports/leave-finance', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', authorization: `Bearer ${session.session?.access_token}` },
+      body: JSON.stringify({
+        ...recordFilter.value,
+        companyName: props.companies.find((c) => c.id === company.value)?.name ?? '',
+        today: todayDb(),
+      }),
     })
-    .sort((a, b) => b.start_date.localeCompare(a.start_date))
-})
-const filtered = computed(() => query.value !== '' || month.value !== 'all' || company.value !== 'all')
+    const body = await res.json().catch(() => ({}))
+    if (!res.ok) {
+      error.value = body.error ?? 'The report could not be built.'
+      return
+    }
+    const bytes = Uint8Array.from(atob(body.base64), (c) => c.charCodeAt(0))
+    const url = URL.createObjectURL(
+      new Blob([bytes], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }),
+    )
+    const link = document.createElement('a')
+    link.href = url
+    link.download = body.filename
+    link.click()
+    URL.revokeObjectURL(url)
+    notice.value = 'Report downloaded.'
+  } catch (err) {
+    console.error('Leave report failed:', err)
+    error.value = 'The report could not be built.'
+  } finally {
+    reportBusy.value = false
+  }
+}
 
 function canCorrect(r: Row): boolean {
   return r.status === 'approved' && auth.can(r.company_id, 'leave.approve') && (auth.isAdmin || r.person_id !== auth.personId)
@@ -163,6 +211,21 @@ defineExpose({ reload: load })
 
 <template>
   <div class="desk">
+    <div class="desk-head">
+      <p class="desk-note">
+        The finance export is every <b>approved</b> leave record you can see, with the balances behind it — narrowed by the
+        filters below, whichever tab is open.
+      </p>
+      <button
+        class="button secondary report-btn"
+        type="button"
+        :disabled="reportBusy"
+        data-testid="leave-report"
+        @click="downloadReport"
+      >
+        {{ reportBusy ? 'Building…' : 'Download report' }}
+      </button>
+    </div>
     <div class="tabs" role="tablist" aria-label="Manager desk">
       <button
         v-for="t in tabs"
@@ -201,6 +264,7 @@ defineExpose({ reload: load })
             <template v-if="filtered"><b>{{ shown.length }}</b> of {{ source.length }}</template>
             <template v-else><b>{{ source.length }}</b> {{ source.length === 1 ? 'record' : 'records' }}</template>
           </span>
+
         </div>
 
         <!-- Decisions and asks keep the action list: approve / reject / cancel / decline. -->
@@ -279,6 +343,9 @@ defineExpose({ reload: load })
 .search:focus-within { border-color: var(--green-bright); box-shadow: var(--ring); }
 .toolbar select { border: 1px solid var(--line-strong); padding: 9px 10px; font-size: 12px; background: #fff; border-radius: 9px; }
 .linkish { background: none; border: 0; color: var(--green); font-size: 12px; text-decoration: underline; text-underline-offset: 2px; padding: 0 4px; }
+.desk-head { display: flex; gap: 14px; align-items: center; justify-content: space-between; flex-wrap: wrap; margin-bottom: 14px; }
+.desk-note { margin: 0; font-size: 11px; color: var(--muted); line-height: 1.6; max-width: 62ch; }
+.report-btn { font-size: 11px; padding: 7px 11px; white-space: nowrap; }
 .records-count { margin-left: auto; font-size: 12px; color: var(--muted); }
 .records-count b { color: var(--ink); }
 td .person { text-decoration: none; color: var(--ink); }

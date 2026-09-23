@@ -7,6 +7,7 @@ import { registerNotificationRoutes } from './notificationRoutes.js'
 import { registerHandoverRoutes } from './handoverRoutes.js'
 import { registerDocumentRoutes } from './documentRoutes.js'
 import { registerContractRoutes } from './contractRoutes.js'
+import { registerLeaveReportRoutes } from './leaveReportRoutes.js'
 
 /**
  * The whole service as one Fastify instance: auth endpoints, careers
@@ -23,6 +24,7 @@ export async function createApp(options: { serveAppDir?: string }): Promise<Fast
   registerHandoverRoutes(app)
   registerDocumentRoutes(app)
   registerContractRoutes(app)
+  registerLeaveReportRoutes(app)
   await registerCareersRoutes(app)
   await registerAppServing(app, options.serveAppDir)
   return app

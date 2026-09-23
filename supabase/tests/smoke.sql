@@ -7979,4 +7979,79 @@ update public.people set user_id = null where id = '20000000-0000-0000-0000-0000
 delete from auth.users where id = '00000000-0000-0000-0000-000000000854';
 delete from public.people where id::text like '20000000-0000-0000-0000-00000000085%';
 
+-- ================================================================ 0085
+-- Clearing a closed checklist (plan 066), and the one key that would have
+-- stopped it: an onboarding that ever ordered a laptop could not be deleted,
+-- because the starter kit's IT request pointed at a line of it.
+insert into public.people (id, full_name) values
+  ('20000000-0000-0000-0000-000000000861', 'Left And Returned');
+insert into public.employment_periods (id, person_id, company_id, job_title, status, start_date) values
+  ('30000000-0000-0000-0000-000000000861', '20000000-0000-0000-0000-000000000861',
+   '10000000-0000-0000-0000-00000000000b', 'Engineer', 'active', '2024-01-01');
+insert into public.plans (id, kind, person_id, company_id, employment_period_id, start_date, status) values
+  ('f0000000-0000-0000-0000-000000000861', 'offboarding', '20000000-0000-0000-0000-000000000861',
+   '10000000-0000-0000-0000-00000000000b', '30000000-0000-0000-0000-000000000861', current_date, 'completed'),
+  ('f0000000-0000-0000-0000-000000000862', 'onboarding', '20000000-0000-0000-0000-000000000861',
+   '10000000-0000-0000-0000-00000000000b', '30000000-0000-0000-0000-000000000861', current_date, 'in_progress');
+insert into public.plan_tasks (id, plan_id, task_key, title, owner_role, phase_key) values
+  ('a0000000-0000-0000-0000-000000000861', 'f0000000-0000-0000-0000-000000000861',
+   'return_form', 'Equipment returned', 'it', 'last_day');
+-- The starter kit's request, pointing at that line.
+insert into public.it_requests (id, company_id, person_id, plan_task_id, kind, title)
+  values ('b0000000-0000-0000-0000-000000000861', '10000000-0000-0000-0000-00000000000b',
+          '20000000-0000-0000-0000-000000000861', 'a0000000-0000-0000-0000-000000000861',
+          'departure', 'Return the laptop');
+
+set app.test_uid = '00000000-0000-0000-0000-000000000005';  -- Bea, Company HR in B (tasks.assign)
+set role authenticated;
+do $$
+declare r jsonb;
+begin
+  -- A running checklist is somebody's open work, and says so.
+  begin
+    r := public.delete_plan('f0000000-0000-0000-0000-000000000862');
+    raise exception 'FAIL: a running checklist was cleared';
+  exception when others then
+    assert sqlerrm like 'This checklist is still running%', 'still running: ' || sqlerrm;
+  end;
+
+  -- The closed one goes, laptop request and all.
+  r := public.delete_plan('f0000000-0000-0000-0000-000000000861');
+  assert (r->>'deleted')::boolean and r->>'person' = 'Left And Returned' and (r->>'lines')::int = 1,
+    'the closed checklist clears, and says what went: ' || r::text;
+  assert not exists (select 1 from public.plans where id = 'f0000000-0000-0000-0000-000000000861'),
+    'the plan is gone';
+  assert not exists (select 1 from public.plan_tasks where plan_id = 'f0000000-0000-0000-0000-000000000861'),
+    'its lines with it — they are the checklist';
+
+  -- ...and the IT request survives, pointing at nothing, because "set up a
+  -- laptop" is work somebody is doing and not a note on a checklist.
+  assert exists (select 1 from public.it_requests
+                  where id = 'b0000000-0000-0000-0000-000000000861' and plan_task_id is null),
+    'the IT request outlives the checklist that asked for it';
+end $$;
+reset role;
+set app.test_uid = '';
+
+-- Omar holds nothing: the capability is the gate.
+set app.test_uid = '00000000-0000-0000-0000-000000000003';
+set role authenticated;
+do $$
+declare r jsonb;
+begin
+  begin
+    r := public.delete_plan('f0000000-0000-0000-0000-000000000862');
+    raise exception 'FAIL: an employee with no grants cleared a checklist';
+  exception when insufficient_privilege then
+    assert sqlerrm like 'Clearing a checklist needs "Assign onboarding tasks"%', 'the gate: ' || sqlerrm;
+  end;
+end $$;
+reset role;
+set app.test_uid = '';
+
+delete from public.it_requests where id = 'b0000000-0000-0000-0000-000000000861';
+delete from public.plans where person_id = '20000000-0000-0000-0000-000000000861';
+delete from public.employment_periods where id = '30000000-0000-0000-0000-000000000861';
+delete from public.people where id = '20000000-0000-0000-0000-000000000861';
+
 select 'SMOKE TESTS PASSED' as result;

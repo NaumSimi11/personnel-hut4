@@ -159,3 +159,35 @@ export function planMeta(plan: PlanSummary, kind: ChecklistKind): string {
   parts.push(`${plan.closed}/${plan.total} done`)
   return parts.join(' · ')
 }
+
+/**
+ * Clearing a closed checklist away (plan 066).
+ *
+ * task.md, on the ordinary shape of a life here: "employe, offboard, close,
+ * open, rehire, remove from closed". Somebody leaves and comes back, and the
+ * offboarding that closed behind them stays in the Closed section describing
+ * a departure their return has undone. On a queue HR reads every week, that
+ * is noise — so it goes.
+ *
+ * A checklist still running does not: it is somebody's open work, and the way
+ * to stop it is to complete the plan or cancel the departure, both of which
+ * say what happened. `delete_plan` (0085) refuses it too; this is the same
+ * rule read ahead of the click, so the button explains itself rather than
+ * waiting to refuse.
+ */
+export type ClearVerdict = { canClear: boolean; reason: string | null }
+
+export function planClearable(plan: { status: string }, permitted: boolean): ClearVerdict {
+  if (!permitted) return { canClear: false, reason: 'Clearing a checklist needs "Assign onboarding tasks" in this company.' }
+  if (plan.status === 'in_progress') {
+    return { canClear: false, reason: 'This checklist is still running. Complete it, or cancel the departure, first.' }
+  }
+  return { canClear: true, reason: null }
+}
+
+/** What the confirm step says, so the wording lives with the rule. */
+export function clearConfirmation(name: string, kind: ChecklistKind, lines: number): string {
+  const what = kind === 'offboarding' ? 'offboarding' : 'onboarding'
+  const n = lines === 1 ? '1 line' : `${lines} lines`
+  return `Clears ${name}'s ${what} and its ${n} out of the queue. Documents, handovers and IT requests it produced are kept. This cannot be undone.`
+}

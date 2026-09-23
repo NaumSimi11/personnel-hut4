@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { OWNER_ROLES, PHASES_FOR, emptyTemplateLine, filterPlans, groupByPhase, lineInput, messageForChecklist, moved, ownerLabel, planMeta, progress, type ChecklistTask, whenLabel } from './checklists'
+import { OWNER_ROLES, PHASES_FOR, clearConfirmation, emptyTemplateLine, filterPlans, groupByPhase, lineInput, messageForChecklist, moved, ownerLabel, planClearable, planMeta, progress, type ChecklistTask, whenLabel } from './checklists'
 
 const t = (over: Partial<ChecklistTask>): ChecklistTask => ({
   id: 'x',
@@ -135,5 +135,31 @@ describe('planMeta', () => {
   it('adds the end of employment only when it differs from the last day', () => {
     expect(planMeta({ ...base, endDate: '2026-09-30' }, 'offboarding')).toContain('employment ends 2026-09-30')
     expect(planMeta({ ...base, endDate: '2026-09-17' }, 'offboarding')).not.toContain('employment ends')
+  })
+})
+
+describe('clearing a closed checklist', () => {
+  it('refuses without the grant, whatever the status', () => {
+    expect(planClearable({ status: 'completed' }, false)).toEqual({
+      canClear: false,
+      reason: 'Clearing a checklist needs "Assign onboarding tasks" in this company.',
+    })
+  })
+
+  it('refuses one that is still running, and says what to do instead', () => {
+    const v = planClearable({ status: 'in_progress' }, true)
+    expect(v.canClear).toBe(false)
+    expect(v.reason).toMatch(/Complete it, or cancel the departure/)
+  })
+
+  it('allows a completed or cancelled one', () => {
+    expect(planClearable({ status: 'completed' }, true)).toEqual({ canClear: true, reason: null })
+    expect(planClearable({ status: 'cancelled' }, true)).toEqual({ canClear: true, reason: null })
+  })
+
+  it('says what goes and what is kept, in the right words for the kind', () => {
+    expect(clearConfirmation('Ina', 'offboarding', 11)).toContain("Ina's offboarding and its 11 lines")
+    expect(clearConfirmation('Ina', 'onboarding', 1)).toContain('its 1 line out of the queue')
+    expect(clearConfirmation('Ina', 'onboarding', 3)).toMatch(/Documents, handovers and IT requests it produced are kept/)
   })
 })

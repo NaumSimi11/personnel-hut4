@@ -3,9 +3,12 @@ import { computed, onMounted, ref } from 'vue'
 import { supabase } from '@/lib/supabase'
 import CompanyFilter from '@/components/CompanyFilter.vue'
 import ChecklistTasks from '@/components/checklists/ChecklistTasks.vue'
-import { OWNER_ROLES, filterPlans, planMeta, progress, type ChecklistKind, type ChecklistTask, type Phase } from '@/lib/checklists'
+import { OWNER_ROLES, clearConfirmation, filterPlans, planClearable, planMeta, progress, type ChecklistKind, type ChecklistTask, type Phase } from '@/lib/checklists'
 import { queueSummary, queueSummaryLine } from '@/lib/queueSummary'
 import { todayDb } from '@/lib/compensation'
+import { friendlyHardDeleteError } from '@/lib/hardDelete'
+import { useAuthStore } from '@/stores/auth'
+import { useDialogStore } from '@/stores/dialogs'
 
 /**
  * The Onboarding / Offboarding queue (plan 047): every checklist of one
@@ -26,6 +29,8 @@ type PlanRow = {
   plan_tasks: ChecklistTask[]
 }
 
+const auth = useAuthStore()
+const dialogs = useDialogStore()
 const plans = ref<PlanRow[]>([])
 const phases = ref<Phase[]>([])
 const companies = ref<{ id: string; name: string }[]>([])
@@ -34,8 +39,13 @@ const ownerFilter = ref('')
 const open = ref<Set<string>>(new Set())
 const loading = ref(true)
 const error = ref<string | null>(null)
+// A refusal from Clear belongs next to the Closed list, not in place of the
+// whole queue — `error` above empties the page.
+const clearError = ref<string | null>(null)
+const clearing = ref<string | null>(null)
 
 const isOff = computed(() => props.kind === 'offboarding')
+const kindWord = computed(() => (isOff.value ? 'offboarding' : 'onboarding'))
 const filtered = computed(() => filterPlans(plans.value, { companyId: companyFilter.value, ownerRole: ownerFilter.value }))
 const inProgress = computed(() => filtered.value.filter((p) => p.status === 'in_progress'))
 // What the whole queue adds up to, so the top of the page says something
@@ -64,6 +74,35 @@ function meta(p: PlanRow): string {
     },
     props.kind,
   )
+}
+
+/**
+ * Clearing a closed checklist out of the queue (plan 066): the rehire whose
+ * old offboarding still sits here describing a departure that was undone.
+ * `delete_plan` decides; this is the same rule read ahead of the click.
+ */
+function clearVerdict(p: PlanRow) {
+  return planClearable(p, auth.can(p.company_id, 'tasks.assign'))
+}
+
+async function clearPlan(p: PlanRow): Promise<void> {
+  const name = p.person?.full_name ?? 'this person'
+  const ok = await dialogs.confirmAction({
+    title: `Clear ${name}'s ${kindWord.value}?`,
+    hint: clearConfirmation(name, props.kind, p.plan_tasks.length),
+    confirmLabel: 'Clear checklist',
+    danger: true,
+  })
+  if (!ok) return
+  clearError.value = null
+  clearing.value = p.id
+  const { error: err } = await supabase.rpc('delete_plan', { p_plan_id: p.id })
+  clearing.value = null
+  if (err) {
+    clearError.value = friendlyHardDeleteError(err.message)
+    return
+  }
+  await load()
 }
 
 function toggleOpen(id: string): void {
@@ -158,6 +197,7 @@ onMounted(load)
             </div>
           </summary>
           <div>
+            <p v-if="clearError" class="error-note" role="alert">{{ clearError }}</p>
             <div v-for="p in closed" :key="p.id" class="plan-row">
               <div class="row-text">
                 <router-link v-if="p.person" class="person-link" :to="{ name: 'person', params: { personId: p.person.id } }"><strong>{{ p.person.full_name }}</strong></router-link>
@@ -167,6 +207,16 @@ onMounted(load)
               <span class="badge" :class="badgeFor(p).cls">{{ badgeFor(p).text }}</span>
               <div class="row-actions">
                 <router-link class="button secondary small-btn" :to="{ name: isOff ? 'offboarding-plan' : 'onboarding-plan', params: { planId: p.id } }">Open</router-link>
+                <button
+                  v-if="clearVerdict(p).canClear"
+                  type="button"
+                  class="button danger small-btn"
+                  :disabled="clearing === p.id"
+                  :data-testid="`clear-plan-${p.id}`"
+                  @click="clearPlan(p)"
+                >
+                  {{ clearing === p.id ? 'Clearing…' : 'Clear' }}
+                </button>
               </div>
             </div>
           </div>

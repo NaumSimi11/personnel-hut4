@@ -5389,8 +5389,9 @@ export type Database = {
       delete_candidate: { Args: { p_candidate_id: string }; Returns: Json }
       delete_policy: { Args: { p_policy_id: string }; Returns: Json }
       delete_person: { Args: { p_person_id: string }; Returns: Json }
+      delete_plan: { Args: { p_plan_id: string }; Returns: Json }
       delete_task: { Args: { p_task_id: string }; Returns: Json }
-      delete_job_application: { Args: { p_application_id: string }; Returns: Json }
+      delete_job_application: { Args: { p_application_id: string; p_force?: boolean }; Returns: Json }
       detach_candidate_from_job: { Args: { p_application_id: string }; Returns: Json }
       decide_compensation: {
         Args: { p_decision: string; p_note?: string; p_record_id: string }

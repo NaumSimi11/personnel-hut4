@@ -14,6 +14,7 @@ import { todayDb } from '@/lib/compensation'
 import ChecklistTasks from '@/components/checklists/ChecklistTasks.vue'
 import HandoverCard from '@/components/handover/HandoverCard.vue'
 import StarterKitCard from '@/components/equipment/StarterKitCard.vue'
+import AccessCard from '@/components/access/AccessCard.vue'
 import WelcomeNoteCard from '@/components/welcome/WelcomeNoteCard.vue'
 import { deliverNotifications } from '@/lib/notificationsApi'
 
@@ -289,6 +290,16 @@ onMounted(async () => {
         @changed="loadTasks"
       />
 
+      <AccessCard
+        :id="`plan-access`"
+        v-if="plan.person"
+        class="handover"
+        :person-id="plan.person.id"
+        :company-id="plan.company_id"
+        :kind="plan.kind"
+        @changed="loadTasks"
+      />
+
       <HandoverCard
         :id="`plan-handover`"
         v-if="plan.person && auth.can(plan.company_id, 'tasks.view')"
@@ -318,7 +329,7 @@ onMounted(async () => {
 
 <style scoped>
 /* The sticky nav would otherwise cover the heading it just jumped to. */
-#plan-checklist, #plan-welcome, #plan-kit, #plan-handover { scroll-margin-top: 64px; }
+#plan-checklist, #plan-welcome, #plan-kit, #plan-access, #plan-handover { scroll-margin-top: 64px; }
 .section-nav { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 14px; position: sticky; top: 0; z-index: 2; padding: 8px 0; background: var(--paper, #f6f8f3); }
 .section-link { font-size: 12px; font-weight: 600; color: var(--ink); background: #fff; border: 1px solid #e3e7de; border-radius: 999px; padding: 6px 14px; cursor: pointer; }
 .section-link:hover { background: #f2f5ee; }

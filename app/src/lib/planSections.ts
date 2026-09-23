@@ -13,7 +13,7 @@ import type { ChecklistKind } from './checklists'
  * *because* a checklist line is unfilled, so hiding one to read the other
  * would cost more than the scrolling does.
  */
-export type PlanSectionId = 'checklist' | 'welcome' | 'kit' | 'handover'
+export type PlanSectionId = 'checklist' | 'welcome' | 'kit' | 'access' | 'handover'
 
 export type PlanSection = {
   readonly id: PlanSectionId
@@ -36,6 +36,17 @@ export function planSections(plan: PlanVisibility): PlanSection[] {
   }
   if (joining && plan.hasPerson && plan.canViewIt) {
     sections.push({ id: 'kit', label: 'Starter kit' })
+  }
+  // Access shows on both kinds (plan 061): on the way out it is the list of
+  // what is still open, which is the question the last day asks.
+  //
+  // `tasks.view`, like the handover, because that is who can open this page at
+  // all — `plans` admits the person themselves or a tasks.view holder (0006).
+  // The database lets a person's manager keep their access list, but a manager
+  // holding nothing else cannot reach this page to do it; making that real
+  // needs the plans policy widened, which is a decision of its own.
+  if (plan.hasPerson && plan.canViewTasks) {
+    sections.push({ id: 'access', label: joining ? 'Access' : 'Access to shut down' })
   }
   if (plan.hasPerson && plan.canViewTasks) {
     sections.push({ id: 'handover', label: 'Handover' })

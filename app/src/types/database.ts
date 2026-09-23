@@ -9,6 +9,30 @@ export type Json =
 export type Database = {
   public: {
     Tables: {
+      access_systems: {
+        Row: {
+          archived_at: string | null
+          key: string
+          label: string
+          note: string | null
+          sort_order: number
+        }
+        Insert: {
+          archived_at?: string | null
+          key: string
+          label: string
+          note?: string | null
+          sort_order?: number
+        }
+        Update: {
+          archived_at?: string | null
+          key?: string
+          label?: string
+          note?: string | null
+          sort_order?: number
+        }
+        Relationships: []
+      }
       access_grants: {
         Row: {
           company_id: string
@@ -4011,6 +4035,93 @@ export type Database = {
           },
         ]
       }
+      person_access: {
+        Row: {
+          account: string | null
+          company_id: string
+          created_at: string
+          granted_at: string
+          granted_by: string | null
+          id: string
+          note: string | null
+          person_id: string
+          revoked_at: string | null
+          revoked_by: string | null
+          revoked_note: string | null
+          status: string
+          system_key: string
+          updated_at: string
+        }
+        Insert: {
+          account?: string | null
+          company_id: string
+          created_at?: string
+          granted_at?: string
+          granted_by?: string | null
+          id?: string
+          note?: string | null
+          person_id: string
+          revoked_at?: string | null
+          revoked_by?: string | null
+          revoked_note?: string | null
+          status?: string
+          system_key: string
+          updated_at?: string
+        }
+        Update: {
+          account?: string | null
+          company_id?: string
+          created_at?: string
+          granted_at?: string
+          granted_by?: string | null
+          id?: string
+          note?: string | null
+          person_id?: string
+          revoked_at?: string | null
+          revoked_by?: string | null
+          revoked_note?: string | null
+          status?: string
+          system_key?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "person_access_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "person_access_granted_by_fkey"
+            columns: ["granted_by"]
+            isOneToOne: false
+            referencedRelation: "people"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "person_access_person_id_fkey"
+            columns: ["person_id"]
+            isOneToOne: false
+            referencedRelation: "people"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "person_access_revoked_by_fkey"
+            columns: ["revoked_by"]
+            isOneToOne: false
+            referencedRelation: "people"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "person_access_system_key_fkey"
+            columns: ["system_key"]
+            isOneToOne: false
+            referencedRelation: "access_systems"
+            referencedColumns: ["key"]
+          },
+        ]
+      }
       people: {
         Row: {
           archived_at: string | null
@@ -5338,6 +5449,7 @@ export type Database = {
         Args: { p_commit?: boolean; p_company_id: string; p_rows: Json }
         Returns: Json
       }
+      grant_access: { Args: { p: Json }; Returns: Json }
       import_zoho_history: {
         Args: { p_commit?: boolean; p_payload: Json }
         Returns: Json
@@ -5371,6 +5483,10 @@ export type Database = {
       mark_handover_sent: { Args: { p_id: string }; Returns: Json }
       mark_notifications_read: { Args: { p_ids?: string[] }; Returns: number }
       mark_payroll_exported: { Args: { p_period_id: string }; Returns: Json }
+      my_access_rights: {
+        Args: { p_company_id: string; p_person_id: string }
+        Returns: Json
+      }
       my_tasks: { Args: Record<PropertyKey, never>; Returns: Json }
       payroll_settings: { Args: { p_company_id: string }; Returns: Json }
       person_can_sign: { Args: { p_person_id: string }; Returns: boolean }
@@ -5424,6 +5540,7 @@ export type Database = {
         Returns: Json
       }
       remove_handover_recipient: { Args: { p_id: string }; Returns: Json }
+      revoke_access: { Args: { p_id: string; p_note?: string }; Returns: Json }
       remove_payroll_item: { Args: { p_id: string }; Returns: Json }
       reopen_payroll_period: { Args: { p_period_id: string }; Returns: Json }
       reorder_template_tasks: {

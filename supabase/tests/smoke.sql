@@ -7174,4 +7174,266 @@ delete from public.candidates where id::text like '80000000-0000-0000-0000-00000
 delete from public.activity_log where entity_type = 'applications'
   and entity_id like '90000000-0000-0000-0000-00000000074%';
 
+-- ================================================================ 0075
+-- Who has access to what (plan 061): the list behind the two checklist lines
+-- that have asked about it since 0040, the manager's right to keep it, and
+-- the two ticks — one of which must NOT fire for somebody who never had
+-- anything, or the checklist lies to whoever reads it.
+--
+-- Fixtures of its own, for the reason the 0072 block needed them: every rule
+-- here turns on an ACTIVE employment, and the shared people are former by
+-- now. Axel manages Ayla and holds no capability anywhere, which is the point
+-- — Alex was given it.assign in Company A by the 0027 block, so testing the
+-- manager path through him would have proved nothing.
+insert into auth.users (id, email) values
+  ('00000000-0000-0000-0000-000000000751', 'axel@a.test'),
+  ('00000000-0000-0000-0000-000000000752', 'ayla@a.test');
+insert into public.people (id, user_id, full_name, work_email) values
+  ('20000000-0000-0000-0000-000000000751', '00000000-0000-0000-0000-000000000751', 'Axel Access', 'axel@a.test'),
+  ('20000000-0000-0000-0000-000000000752', '00000000-0000-0000-0000-000000000752', 'Ayla Access', 'ayla@a.test');
+insert into public.employment_periods (id, person_id, company_id, job_title, status, start_date, manager_id) values
+  ('30000000-0000-0000-0000-000000000751', '20000000-0000-0000-0000-000000000751',
+   '10000000-0000-0000-0000-00000000000a', 'Team lead', 'active', '2024-01-01', null),
+  ('30000000-0000-0000-0000-000000000752', '20000000-0000-0000-0000-000000000752',
+   '10000000-0000-0000-0000-00000000000a', 'Engineer', 'active', '2024-01-01',
+   '20000000-0000-0000-0000-000000000751');   -- Axel manages Ayla
+
+-- 0. Before anything is granted: the offboarding line must NOT tick for
+--    somebody who never had anything recorded. "Removed" would be a lie, and
+--    a checklist that lies is worse than one that waits.
+do $$
+declare v_off uuid;
+begin
+  insert into public.plans (kind, person_id, company_id, employment_period_id, start_date)
+    values ('offboarding', '20000000-0000-0000-0000-000000000751', '10000000-0000-0000-0000-00000000000a',
+            '30000000-0000-0000-0000-000000000751', current_date)
+    returning id into v_off;
+  insert into public.plan_tasks (plan_id, task_key, title, owner_role, phase_key)
+    values (v_off, 'access_removed', 'Accounts and access removed', 'it', 'last_day');
+  perform app.tick_access_removed('20000000-0000-0000-0000-000000000751');
+  assert (select status from public.plan_tasks where plan_id = v_off and task_key = 'access_removed') = 'open',
+    'nothing was ever recorded, so nothing has been "removed" — a person answers this one';
+end $$;
+
+-- 1. A manager with no capability anywhere keeps the list for their own person.
+set app.test_uid = '00000000-0000-0000-0000-000000000751';  -- Axel, Ayla's manager
+set role authenticated;
+do $$
+declare r jsonb; v_id uuid;
+begin
+  assert (select count(*) from public.access_systems where archived_at is null) >= 8,
+    'the starting list is seeded';
+
+  r := public.grant_access(('{"person_id":"20000000-0000-0000-0000-000000000752",'
+    || '"company_id":"10000000-0000-0000-0000-00000000000a","system_key":"email",'
+    || '"account":"ayla@a.test","note":"Standard mailbox."}')::jsonb);
+  assert r->>'system' = 'Email and calendar', 'the record names the system: ' || r::text;
+  v_id := (r->>'id')::uuid;
+  assert (select status = 'granted' and granted_by = '20000000-0000-0000-0000-000000000751'
+            and revoked_at is null from public.person_access where id = v_id),
+    'granted, stamped, and not revoked';
+
+  -- The same system twice is one grant, not two.
+  begin
+    r := public.grant_access(('{"person_id":"20000000-0000-0000-0000-000000000752",'
+      || '"company_id":"10000000-0000-0000-0000-00000000000a","system_key":"email"}')::jsonb);
+    raise exception 'FAIL: the same access was recorded twice';
+  exception when others then
+    assert sqlerrm like 'Email and calendar is already recorded%', 'one live grant per system: ' || sqlerrm;
+  end;
+
+  -- A system nobody has heard of is refused before anything is written.
+  begin
+    r := public.grant_access(('{"person_id":"20000000-0000-0000-0000-000000000752",'
+      || '"company_id":"10000000-0000-0000-0000-00000000000a","system_key":"not_a_system"}')::jsonb);
+    raise exception 'FAIL: an unknown system was accepted';
+  exception when others then
+    assert sqlerrm like 'Pick a system from the list%', 'unknown system: ' || sqlerrm;
+  end;
+
+  -- ...and only for their own person. Alex is employed in the same company
+  -- and is nobody Axel manages.
+  begin
+    r := public.grant_access(('{"person_id":"20000000-0000-0000-0000-000000000001",'
+      || '"company_id":"10000000-0000-0000-0000-00000000000a","system_key":"vpn"}')::jsonb);
+    raise exception 'FAIL: a manager recorded access for somebody who is not theirs';
+  exception when insufficient_privilege then
+    assert sqlerrm like 'Recording access needs "Assign requests"%', 'not his to manage: ' || sqlerrm;
+  end;
+end $$;
+reset role;
+set app.test_uid = '';
+
+-- 2. IT reaches everybody in the company: Alex holds it.assign in A (0027).
+set app.test_uid = '00000000-0000-0000-0000-000000000001';  -- Alex
+set role authenticated;
+do $$
+declare r jsonb;
+begin
+  r := public.grant_access(('{"person_id":"20000000-0000-0000-0000-000000000751",'
+    || '"company_id":"10000000-0000-0000-0000-00000000000a","system_key":"vpn"}')::jsonb);
+  assert r->>'system' = 'VPN and network', 'it.assign records for anyone in the company: ' || r::text;
+end $$;
+reset role;
+set app.test_uid = '';
+
+-- 3. The person sees their own list and cannot write to it — otherwise
+--    anybody could record that they had been given the finance system.
+set app.test_uid = '00000000-0000-0000-0000-000000000752';  -- Ayla
+set role authenticated;
+do $$
+declare r jsonb;
+begin
+  assert (select count(*) from public.person_access
+           where person_id = '20000000-0000-0000-0000-000000000752') = 1,
+    'she can see what she has been given';
+  begin
+    r := public.grant_access(('{"person_id":"20000000-0000-0000-0000-000000000752",'
+      || '"company_id":"10000000-0000-0000-0000-00000000000a","system_key":"finance_tools"}')::jsonb);
+    raise exception 'FAIL: somebody recorded access for themselves';
+  exception when insufficient_privilege then
+    assert sqlerrm like 'Recording access needs%', 'reading is not writing: ' || sqlerrm;
+  end;
+  -- Nor is she shown what her own manager holds.
+  assert (select count(*) from public.person_access
+           where person_id = '20000000-0000-0000-0000-000000000751') = 0,
+    'a colleague is not shown what somebody else holds';
+end $$;
+reset role;
+set app.test_uid = '';
+
+-- 4. The onboarding line answers itself once anything is granted.
+do $$
+declare v_on uuid;
+begin
+  insert into public.plans (kind, person_id, company_id, employment_period_id, start_date)
+    values ('onboarding', '20000000-0000-0000-0000-000000000752', '10000000-0000-0000-0000-00000000000a',
+            '30000000-0000-0000-0000-000000000752', current_date)
+    returning id into v_on;
+  insert into public.plan_tasks (plan_id, task_key, title, owner_role, phase_key)
+    values (v_on, 'system_access', 'System access granted', 'it', 'before_start');
+  perform app.tick_system_access('20000000-0000-0000-0000-000000000752');
+  assert (select status from public.plan_tasks where plan_id = v_on and task_key = 'system_access') = 'done',
+    'the onboarding line answers itself once something is granted';
+end $$;
+
+-- 5. The offboarding line waits for the last one, then answers.
+do $$
+declare v_off uuid; v_id uuid;
+begin
+  insert into public.plans (kind, person_id, company_id, employment_period_id, start_date)
+    values ('offboarding', '20000000-0000-0000-0000-000000000752', '10000000-0000-0000-0000-00000000000a',
+            '30000000-0000-0000-0000-000000000752', current_date)
+    returning id into v_off;
+  insert into public.plan_tasks (plan_id, task_key, title, owner_role, phase_key)
+    values (v_off, 'access_removed', 'Accounts and access removed', 'it', 'last_day');
+  perform app.tick_access_removed('20000000-0000-0000-0000-000000000752');
+  assert (select status from public.plan_tasks where plan_id = v_off and task_key = 'access_removed') = 'open',
+    'while she still holds something, the line stays open';
+
+  select id into v_id from public.person_access
+   where person_id = '20000000-0000-0000-0000-000000000752' and status = 'granted';
+  set app.test_uid = '00000000-0000-0000-0000-000000000751';  -- her manager
+  perform public.revoke_access(v_id, 'Left the company.');
+  set app.test_uid = '';
+  assert (select status = 'revoked' and revoked_at is not null
+            and revoked_by = '20000000-0000-0000-0000-000000000751'
+            from public.person_access where id = v_id),
+    'revoking stamps who and when, and keeps the row';
+  assert (select status from public.plan_tasks where plan_id = v_off and task_key = 'access_removed') = 'done',
+    'and the last one going answers the line';
+
+  -- A second revoke is a no-op that says so.
+  set app.test_uid = '00000000-0000-0000-0000-000000000751';
+  assert (public.revoke_access(v_id)->>'already')::boolean, 'a second revoke changes nothing';
+  -- ...and the system can be given again: the unique rule is on live rows only.
+  perform public.grant_access(('{"person_id":"20000000-0000-0000-0000-000000000752",'
+    || '"company_id":"10000000-0000-0000-0000-00000000000a","system_key":"email"}')::jsonb);
+  set app.test_uid = '';
+  assert (select count(*) from public.person_access
+           where person_id = '20000000-0000-0000-0000-000000000752' and system_key = 'email') = 2,
+    'had it, lost it, got it again — two rows, one live';
+end $$;
+
+-- 6. The corrections in 0076, each of which was a way of lying to somebody.
+--    Ash works in Company B and carries an access row in Company A — which is
+--    ordinary after a transfer, and impossible to build with two employments
+--    because `no_overlapping_employment` forbids them.
+insert into auth.users (id, email) values
+  ('00000000-0000-0000-0000-000000000753', 'ash@b.test');
+insert into public.people (id, user_id, full_name, work_email) values
+  ('20000000-0000-0000-0000-000000000753', '00000000-0000-0000-0000-000000000753', 'Ash Access', 'ash@b.test');
+insert into public.employment_periods (id, person_id, company_id, job_title, status, start_date) values
+  ('30000000-0000-0000-0000-000000000753', '20000000-0000-0000-0000-000000000753',
+   '10000000-0000-0000-0000-00000000000b', 'Engineer', 'active', '2024-01-01');
+
+do $$
+declare v_plan uuid; v_id uuid; v_rights jsonb;
+begin
+  set app.test_uid = '00000000-0000-0000-0000-000000000004';  -- Ada, admin, reaches both
+  perform public.grant_access(('{"person_id":"20000000-0000-0000-0000-000000000753",'
+    || '"company_id":"10000000-0000-0000-0000-00000000000a","system_key":"chat"}')::jsonb);
+  set app.test_uid = '';
+  select id into v_id from public.person_access
+   where person_id = '20000000-0000-0000-0000-000000000753';
+
+  -- An account in ANOTHER company must not tick this company's onboarding line.
+  insert into public.plans (kind, person_id, company_id, employment_period_id, start_date)
+    values ('onboarding', '20000000-0000-0000-0000-000000000753', '10000000-0000-0000-0000-00000000000b',
+            '30000000-0000-0000-0000-000000000753', current_date)
+    returning id into v_plan;
+  insert into public.plan_tasks (plan_id, task_key, title, owner_role, phase_key)
+    values (v_plan, 'system_access', 'System access granted', 'it', 'before_start');
+  perform app.tick_system_access('20000000-0000-0000-0000-000000000753');
+  assert (select status from public.plan_tasks where plan_id = v_plan and task_key = 'system_access') = 'open',
+    'an account at another company does not answer this company''s line';
+
+  -- ...and a revoked one there must not tick this company's offboarding line,
+  -- which is the lie 0075 set out to prevent and then told anyway.
+  set app.test_uid = '00000000-0000-0000-0000-000000000004';
+  perform public.revoke_access(v_id, 'Left the Company A side.');
+  set app.test_uid = '';
+  insert into public.plans (kind, person_id, company_id, employment_period_id, start_date)
+    values ('offboarding', '20000000-0000-0000-0000-000000000753', '10000000-0000-0000-0000-00000000000b',
+            '30000000-0000-0000-0000-000000000753', current_date)
+    returning id into v_plan;
+  insert into public.plan_tasks (plan_id, task_key, title, owner_role, phase_key)
+    values (v_plan, 'access_removed', 'Accounts and access removed', 'it', 'last_day');
+  perform app.tick_access_removed('20000000-0000-0000-0000-000000000753');
+  assert (select status from public.plan_tasks where plan_id = v_plan and task_key = 'access_removed') = 'open',
+    'nothing was ever recorded in THIS company, so nothing here has been removed';
+
+  -- The two notes are two facts and keep their own columns.
+  assert (select note is null and revoked_note = 'Left the Company A side.'
+            from public.person_access where id = v_id),
+    'the reason for shutting it down does not overwrite how it was given';
+end $$;
+
+-- What the card asks before it draws a button.
+set app.test_uid = '00000000-0000-0000-0000-000000000751';  -- Axel: Ayla's manager, no capability anywhere
+set role authenticated;
+do $$
+declare v_rights jsonb;
+begin
+  v_rights := public.my_access_rights('20000000-0000-0000-0000-000000000752',
+                                      '10000000-0000-0000-0000-00000000000a');
+  assert (v_rights->>'may_view')::boolean and (v_rights->>'may_manage')::boolean,
+    'her manager may both see and keep the list, holding nothing else: ' || v_rights::text;
+  v_rights := public.my_access_rights('20000000-0000-0000-0000-000000000001',
+                                      '10000000-0000-0000-0000-00000000000a');
+  assert not (v_rights->>'may_manage')::boolean,
+    'and not for somebody who is not his: ' || v_rights::text;
+end $$;
+reset role;
+set app.test_uid = '';
+
+-- Tail: this block's fixtures go.
+delete from public.plan_tasks pt using public.plans p
+  where pt.plan_id = p.id and p.person_id::text like '20000000-0000-0000-0000-00000000075%';
+delete from public.plans where person_id::text like '20000000-0000-0000-0000-00000000075%';
+delete from public.person_access where person_id::text like '20000000-0000-0000-0000-00000000075%';
+delete from public.employment_periods where id::text like '30000000-0000-0000-0000-00000000075%';
+delete from public.people where id::text like '20000000-0000-0000-0000-00000000075%';
+delete from auth.users where id::text like '00000000-0000-0000-0000-00000000075%';
+
 select 'SMOKE TESTS PASSED' as result;

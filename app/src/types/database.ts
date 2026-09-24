@@ -2963,6 +2963,7 @@ export type Database = {
           description: string | null
           description_revision: number
           hiring_request_id: string | null
+          opened_at: string | null
           id: string
           scorecard_criteria: Json
           screening_questions: Json
@@ -2980,6 +2981,7 @@ export type Database = {
           description?: string | null
           description_revision?: number
           hiring_request_id?: string | null
+          opened_at?: string | null
           id?: string
           scorecard_criteria?: Json
           screening_questions?: Json
@@ -2997,6 +2999,7 @@ export type Database = {
           description?: string | null
           description_revision?: number
           hiring_request_id?: string | null
+          opened_at?: string | null
           id?: string
           scorecard_criteria?: Json
           screening_questions?: Json
@@ -5544,6 +5547,10 @@ export type Database = {
         Returns: Json
       }
       record_kudos: { Args: { p: Json }; Returns: Json }
+      recruitment_insights: {
+        Args: { p_company_id: string; p_from: string; p_to: string }
+        Returns: Json
+      }
       recruitment_report: {
         Args: { p_company_id: string; p_from: string; p_to: string }
         Returns: Json

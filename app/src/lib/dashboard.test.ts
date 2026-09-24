@@ -76,9 +76,19 @@ describe('dashboard', () => {
       app({ id: '3', job_id: 'j2' }),
     ])
     expect(rows).toEqual([
-      { id: 'j1', title: 'Designer', company: 'Synami', headcount: 2, applicants: 1 },
-      { id: 'j3', title: 'Ready', company: 'Praedium', headcount: 1, applicants: 0 },
+      { id: 'j1', title: 'Designer', company: 'Synami', headcount: 2, applicants: 1, daysOpen: null },
+      { id: 'j3', title: 'Ready', company: 'Praedium', headcount: 1, applicants: 0, daysOpen: null },
     ])
+  })
+
+  it('open positions carry how long they have been open, oldest first, the never-opened last', () => {
+    const jobs: JobLite[] = [
+      { id: 'young', title: 'Young', status: 'open', company: null, request: null, opened_at: '2026-09-20T09:00:00Z' },
+      { id: 'ready', title: 'Ready', status: 'ready', company: null, request: null, opened_at: null },
+      { id: 'old', title: 'Old', status: 'open', company: null, request: null, opened_at: '2026-06-01T09:00:00Z' },
+    ]
+    const rows = openPositions(jobs, [], '2026-09-24')
+    expect(rows.map((r) => [r.id, r.daysOpen])).toEqual([['old', 115], ['young', 4], ['ready', null]])
   })
 
   it('recent applicants are the newest first, capped', () => {

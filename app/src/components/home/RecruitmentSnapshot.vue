@@ -12,6 +12,9 @@ import {
 import { todayDb } from '@/lib/compensation'
 import { shortDate } from '@/lib/leave'
 import { NOT_RESPONDING_DAYS } from '@/lib/outreach'
+import type { InterviewLite } from '@/lib/hiringBoard'
+import HiringBoard from '@/components/home/HiringBoard.vue'
+import UpcomingInterviews from '@/components/home/UpcomingInterviews.vue'
 
 /**
  * The prototype's "Applicant pipeline" and "Recruitment snapshot" (plan
@@ -21,15 +24,24 @@ import { NOT_RESPONDING_DAYS } from '@/lib/outreach'
  * 054) counts who is not responding — judged from the candidate's last
  * activity (see outreachRowOf), so Home may under-count; the report's
  * attention tile is the authoritative number. Absent at zero.
+ *
+ * Plan 067 brought the Zoho Recruit home's best parts: the per-job hiring
+ * board across the top, how long each open position has been open, and the
+ * week's interviews.
  */
 const props = defineProps<{
   applications: ApplicationLite[]
   jobs: JobLite[]
+  /** The next seven days' interviews; loaded only for a viewer who sees candidates. */
+  interviews?: InterviewLite[]
   /** Candidates are behind candidates.view, the roles behind jobs.view — the page passes what the viewer holds. */
   showPipeline: boolean
   showOpenings: boolean
   loading?: boolean
 }>()
+
+/** Past this, an opening reads as aging: a quarter without filling it. */
+const AGING_DAYS = 90
 
 const counts = computed(() => pipelineCounts(props.applications))
 const max = computed(() => Math.max(1, ...counts.value.map((c) => c.count)))
@@ -52,6 +64,8 @@ function badgeClass(stage: string): string {
   <section class="recruitment" aria-labelledby="recruitment-heading" data-testid="recruitment-snapshot">
     <div class="section-label"><span id="recruitment-heading">Recruitment</span> <small>What the pipeline holds and who just applied.</small></div>
     <div class="grid">
+      <HiringBoard v-if="showPipeline" :applications="applications" :jobs="jobs" :loading="loading" />
+
       <div v-if="showPipeline" class="card pipeline-card">
         <div class="card-head">
           <div>
@@ -77,7 +91,7 @@ function badgeClass(stage: string): string {
         <div class="card-head">
           <div>
             <h2>Open positions</h2>
-            <p>Live roles and how many candidates are in play.</p>
+            <p>Live roles, longest open first, and how many candidates are in play.</p>
           </div>
           <router-link class="button secondary small-btn" :to="{ name: 'hiring', query: { tab: 'openings' } }">All openings</router-link>
         </div>
@@ -86,12 +100,14 @@ function badgeClass(stage: string): string {
         <ul v-else class="list">
           <li v-for="p in positions" :key="p.id">
             <router-link class="row" :to="{ name: 'job', params: { jobId: p.id } }">
-              <span class="row-text"><b>{{ p.title }}</b><small>{{ p.company }} · {{ p.headcount }} needed</small></span>
+              <span class="row-text"><b>{{ p.title }}</b><small>{{ p.company }} · {{ p.headcount }} needed<template v-if="p.daysOpen !== null"> · <span :class="{ aging: p.daysOpen >= AGING_DAYS }">open {{ p.daysOpen }} day{{ p.daysOpen === 1 ? '' : 's' }}</span></template></small></span>
               <span class="row-side">{{ p.applicants }} applicant{{ p.applicants === 1 ? '' : 's' }}</span>
             </router-link>
           </li>
         </ul>
       </div>
+
+      <UpcomingInterviews v-if="showPipeline" :interviews="interviews ?? []" :loading="loading" />
 
       <div v-if="showPipeline" class="card">
         <div class="card-head">
@@ -138,5 +154,6 @@ function badgeClass(stage: string): string {
 .row-text b { font-size: 13px; font-weight: 600; }
 .row-text small { font-size: 11px; color: var(--muted); }
 .row-side { font-size: 12px; color: var(--muted); white-space: nowrap; }
+.aging { color: var(--amber); font-weight: 600; }
 @media (prefers-reduced-motion: reduce) { .bar { transition: none; } }
 </style>

@@ -96,6 +96,13 @@ test.beforeAll(async () => {
     .single()
   if (!application) throw new Error('Could not seed the application')
   applicationId = application.id
+  // Tomorrow's interview, for the upcoming-interviews card (plan 067); it goes with the application.
+  await db.from('interviews').insert({
+    application_id: applicationId,
+    company_id: companyId,
+    kind: 'technical',
+    scheduled_at: new Date(Date.now() + 86_400_000).toISOString(),
+  })
 
   // A plain employee: an account, an employment, no grants anywhere.
   const { data: admin } = await db.from('people').select('id').ilike('work_email', ADMIN_EMAIL).single()
@@ -138,7 +145,18 @@ test('Home: tiles, pipeline, open positions, celebrate; kudos posted and removed
   const recruitment = page.getByTestId('recruitment-snapshot')
   await expect(recruitment.getByText('Applicant pipeline')).toBeVisible()
   await expect(recruitment.locator(`a[href="/hiring/jobs/${jobId}"]`)).toContainText('1 needed')
-  await expect(recruitment.locator(`a[href="/hiring/applications/${applicationId}"]`)).toContainText('Screening')
+  // The upcoming interview links to the same application, so scope to the applicants card.
+  const recent = recruitment.locator('.card', { has: page.getByRole('heading', { name: 'Recent applicants' }) })
+  await expect(recent.locator(`a[href="/hiring/applications/${applicationId}"]`)).toContainText('Screening')
+
+  // The hiring board (plan 067): one row for the seeded job, its one candidate
+  // drawn as the furthest stage, the row opening the job's applicants.
+  const boardRow = recruitment.getByTestId(`board-row-${jobId}`)
+  await expect(boardRow).toContainText(JOB_TITLE)
+  await expect(boardRow).toContainText('not live yet')
+  await expect(boardRow.locator('.arrow')).toHaveText('1')
+  await expect(boardRow).toHaveAttribute('href', `/hiring/jobs/${jobId}?tab=applications`)
+  await expect(recruitment.getByTestId('upcoming-interviews').locator('li', { hasText: CANDIDATE })).toContainText('Tomorrow')
 
   const celebrate = page.getByTestId('celebrate')
   await expect(celebrate.locator('li.row', { hasText: NEWCOMER })).toContainText('Started')

@@ -127,6 +127,12 @@ test('reports page: KPIs, funnel, sources, attention, CSV export', async ({ page
   // Attention: unassigned counts the three non-terminal applications without an owner.
   await expect(page.locator('.attention', { hasText: 'Unassigned' }).locator('.kpi-value')).toHaveText('3')
 
+  // Hiring speed (plan 067): the hire took 20 days, and the job opened today.
+  const timing = page.getByTestId('recruitment-timing')
+  await expect(timing.locator('.hire-row', { hasText: 'E2E Report Candidate 5' }).locator('[data-col="days"]')).toHaveText('20')
+  await expect(timing.locator('.fill-row', { hasText: JOB_TITLE })).toContainText('Open 0 days')
+  await expect(timing.locator('.feed-row', { hasText: 'E2E Report Candidate 5' })).toContainText('from Offer to Hired')
+
   // CSV export of the funnel.
   const [download] = await Promise.all([
     page.waitForEvent('download'),

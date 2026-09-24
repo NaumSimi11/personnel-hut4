@@ -8054,4 +8054,167 @@ delete from public.plans where person_id = '20000000-0000-0000-0000-000000000861
 delete from public.employment_periods where id = '30000000-0000-0000-0000-000000000861';
 delete from public.people where id = '20000000-0000-0000-0000-000000000861';
 
+-- ================================================================ 0086
+-- Recruitment insights (plan 067): the day a job opened, and the time
+-- figures built on it. Company B, where Bea holds Company HR.
+insert into public.hiring_requests (id, company_id, title, headcount, target_start_date, status) values
+  ('60000000-0000-0000-0000-000000000861', '10000000-0000-0000-0000-00000000000b', 'Late Role', 1, current_date - 5, 'approved');
+insert into public.jobs (id, company_id, title, status) values
+  ('70000000-0000-0000-0000-000000000861', '10000000-0000-0000-0000-00000000000b', 'Draft Then Open', 'draft');
+insert into public.jobs (id, company_id, hiring_request_id, title, status, created_at) values
+  ('70000000-0000-0000-0000-000000000862', '10000000-0000-0000-0000-00000000000b',
+   '60000000-0000-0000-0000-000000000861', 'Late Role', 'open', now() - interval '40 days'),
+  ('70000000-0000-0000-0000-000000000863', '10000000-0000-0000-0000-00000000000b',
+   null, 'Filled Role', 'filled', now() - interval '30 days');
+insert into public.candidates (id, full_name, email) values
+  ('80000000-0000-0000-0000-000000000861', 'Hana Hired', 'hana@example.test'),
+  ('80000000-0000-0000-0000-000000000862', 'Dino Declined', 'dino@example.test'),
+  ('80000000-0000-0000-0000-000000000863', 'Omi Offered', 'omi@example.test');
+insert into public.applications (id, job_id, company_id, candidate_id, stage_key, received_at) values
+  ('90000000-0000-0000-0000-000000000861', '70000000-0000-0000-0000-000000000863',
+   '10000000-0000-0000-0000-00000000000b', '80000000-0000-0000-0000-000000000861', 'offer', now() - interval '20 days'),
+  ('90000000-0000-0000-0000-000000000862', '70000000-0000-0000-0000-000000000862',
+   '10000000-0000-0000-0000-00000000000b', '80000000-0000-0000-0000-000000000862', 'offer', now() - interval '9 days'),
+  ('90000000-0000-0000-0000-000000000863', '70000000-0000-0000-0000-000000000862',
+   '10000000-0000-0000-0000-00000000000b', '80000000-0000-0000-0000-000000000863', 'offer', now() - interval '9 days');
+insert into public.application_events (application_id, kind, from_stage_key, to_stage_key, actor_id, created_at) values
+  ('90000000-0000-0000-0000-000000000861', 'stage_change', 'offer', 'hired',
+   '20000000-0000-0000-0000-000000000005', now() - interval '2 days');
+-- Dino was hired into Late Role's earlier life, before it opened: that
+-- does not fill this opening.
+insert into public.application_events (application_id, kind, from_stage_key, to_stage_key, created_at) values
+  ('90000000-0000-0000-0000-000000000862', 'stage_change', 'offer', 'hired', now() - interval '50 days');
+-- Offers go through their own state machine; the figures only need the end states.
+set session_replication_role = replica;
+insert into public.offers (application_id, company_id, status, created_at) values
+  ('90000000-0000-0000-0000-000000000861', '10000000-0000-0000-0000-00000000000b', 'accepted', now() - interval '3 days'),
+  ('90000000-0000-0000-0000-000000000862', '10000000-0000-0000-0000-00000000000b', 'declined', now() - interval '3 days'),
+  ('90000000-0000-0000-0000-000000000863', '10000000-0000-0000-0000-00000000000b', 'extended', now() - interval '3 days');
+set session_replication_role = origin;
+
+do $$
+declare v timestamptz;
+begin
+  assert (select opened_at from public.jobs where id = '70000000-0000-0000-0000-000000000861') is null,
+    'a draft has not opened';
+  assert (select opened_at::date from public.jobs where id = '70000000-0000-0000-0000-000000000862') = current_date - 40,
+    'a job born open is dated by its creation';
+  update public.jobs set status = 'open' where id = '70000000-0000-0000-0000-000000000861';
+  v := (select opened_at from public.jobs where id = '70000000-0000-0000-0000-000000000861');
+  assert v is not null and v > now() - interval '1 minute', 'going live stamps the day';
+  update public.jobs set status = 'on_hold', opened_at = now() - interval '900 days'
+    where id = '70000000-0000-0000-0000-000000000861';
+  update public.jobs set status = 'open', opened_at = null where id = '70000000-0000-0000-0000-000000000861';
+  assert (select opened_at from public.jobs where id = '70000000-0000-0000-0000-000000000861') = v,
+    'the opening date can be neither forged nor cleared, and reopening keeps it';
+end $$;
+
+set app.test_uid = '00000000-0000-0000-0000-000000000005';  -- Bea: jobs.view + candidates.view in B
+set role authenticated;
+do $$
+declare r jsonb; late jsonb; filled jsonb;
+begin
+  r := public.recruitment_insights('10000000-0000-0000-0000-00000000000b', current_date - 30, current_date);
+  assert (r->>'can_see_candidates')::boolean, 'Bea sees candidates';
+  select f into late from jsonb_array_elements(r->'fill') f where f->>'job_id' = '70000000-0000-0000-0000-000000000862';
+  assert (late->>'days')::int = 40, 'open 40 days: ' || coalesce(late::text, 'missing');
+  assert (late->>'late_days')::int = 5, 'five days past the target start';
+  assert late->>'filled_on' is null, 'still short of its headcount';
+  select f into filled from jsonb_array_elements(r->'fill') f where f->>'job_id' = '70000000-0000-0000-0000-000000000863';
+  assert (filled->>'filled_on')::date = current_date - 2, 'filled by the hire';
+  assert (filled->>'days')::int = 28, 'filled in 28 days: ' || coalesce(filled::text, 'missing');
+  assert (filled->>'late_days')::int = 0, 'no target, never late';
+  assert (select count(*) from jsonb_array_elements(r->'hires') h
+          where h->>'candidate' = 'Hana Hired' and (h->>'days')::int = 18) = 1, 'eighteen days applied → hired';
+  assert (r->'offers'->>'accepted')::int = 1 and (r->'offers'->>'declined')::int = 1
+     and (r->'offers'->>'extended')::int = 1, 'offers by outcome';
+  assert (select count(*) from jsonb_array_elements(r->'activity') a
+          where a->>'candidate' = 'Hana Hired' and a->>'to_stage' = 'hired' and a->>'actor' = 'Bea HR') = 1,
+    'the stage change is in the feed';
+  -- A range that ends before the hire leaves the filled job and the hire out.
+  r := public.recruitment_insights('10000000-0000-0000-0000-00000000000b', current_date - 30, current_date - 3);
+  assert not exists (select 1 from jsonb_array_elements(r->'fill') f where f->>'job_id' = '70000000-0000-0000-0000-000000000863'),
+    'filled outside the range';
+  assert jsonb_array_length(r->'hires') = 0, 'no hire in that range';
+  begin
+    perform public.recruitment_insights('10000000-0000-0000-0000-00000000000b', current_date, current_date - 1);
+    raise exception 'FAIL: an inverted range was accepted';
+  exception when raise_exception then
+    assert sqlerrm = 'The end date is before the start date.', sqlerrm;
+  end;
+end $$;
+reset role;
+
+-- Vic, holding jobs.view alone in B, sees the openings, not the people.
+insert into auth.users (id, email) values ('00000000-0000-0000-0000-000000000861', 'vic@b.test');
+insert into public.people (id, user_id, full_name, work_email) values
+  ('20000000-0000-0000-0000-000000000866', '00000000-0000-0000-0000-000000000861', 'Vic Viewer', 'vic@b.test');
+insert into public.access_grants (id, person_id, company_id) values
+  ('40000000-0000-0000-0000-000000000861', '20000000-0000-0000-0000-000000000866', '10000000-0000-0000-0000-00000000000b');
+insert into public.grant_capabilities (grant_id, capability_key) values
+  ('40000000-0000-0000-0000-000000000861', 'jobs.view');
+set app.test_uid = '00000000-0000-0000-0000-000000000861';
+set role authenticated;
+do $$
+declare r jsonb;
+begin
+  r := public.recruitment_insights('10000000-0000-0000-0000-00000000000b', current_date - 30, current_date);
+  assert not (r->>'can_see_candidates')::boolean, 'jobs.view alone is not candidates.view';
+  assert jsonb_array_length(r->'hires') = 0 and jsonb_array_length(r->'activity') = 0, 'no names, no feed';
+  assert exists (select 1 from jsonb_array_elements(r->'fill') f where f->>'job_id' = '70000000-0000-0000-0000-000000000862'),
+    'the openings are still there';
+end $$;
+reset role;
+set app.test_uid = '';
+delete from public.grant_capabilities where grant_id = '40000000-0000-0000-0000-000000000861';
+delete from public.access_grants where id = '40000000-0000-0000-0000-000000000861';
+delete from public.people where id = '20000000-0000-0000-0000-000000000866';
+delete from auth.users where id = '00000000-0000-0000-0000-000000000861';
+
+-- An opening still marked open whose headcount is met is filled, not open:
+-- it appears only when the filling hire is in the range.
+insert into public.application_events (application_id, kind, from_stage_key, to_stage_key, created_at) values
+  ('90000000-0000-0000-0000-000000000863', 'stage_change', 'offer', 'hired', now() - interval '1 day');
+set app.test_uid = '00000000-0000-0000-0000-000000000005';
+set role authenticated;
+do $$
+declare r jsonb; late jsonb;
+begin
+  r := public.recruitment_insights('10000000-0000-0000-0000-00000000000b', current_date - 30, current_date);
+  select f into late from jsonb_array_elements(r->'fill') f where f->>'job_id' = '70000000-0000-0000-0000-000000000862';
+  assert (late->>'filled_on')::date = current_date - 1 and (late->>'days')::int = 39,
+    'filled by the hire after it opened: ' || coalesce(late::text, 'missing');
+  r := public.recruitment_insights('10000000-0000-0000-0000-00000000000b', current_date - 30, current_date - 3);
+  assert not exists (select 1 from jsonb_array_elements(r->'fill') f where f->>'job_id' = '70000000-0000-0000-0000-000000000862'),
+    'filled after the range, so not in it — and not shown as still open';
+end $$;
+reset role;
+set app.test_uid = '';
+
+-- Omar (no grants) is refused Company B's figures.
+set app.test_uid = '00000000-0000-0000-0000-000000000003';
+set role authenticated;
+do $$
+begin
+  begin
+    perform public.recruitment_insights('10000000-0000-0000-0000-00000000000b', current_date - 30, current_date);
+    raise exception 'FAIL: an employee with no grants read recruitment insights';
+  exception when insufficient_privilege then null;
+  end;
+end $$;
+reset role;
+set app.test_uid = '';
+
+delete from public.offers where application_id in ('90000000-0000-0000-0000-000000000861',
+  '90000000-0000-0000-0000-000000000862', '90000000-0000-0000-0000-000000000863');
+delete from public.application_events where application_id in ('90000000-0000-0000-0000-000000000861',
+  '90000000-0000-0000-0000-000000000862', '90000000-0000-0000-0000-000000000863');
+delete from public.applications where id in ('90000000-0000-0000-0000-000000000861',
+  '90000000-0000-0000-0000-000000000862', '90000000-0000-0000-0000-000000000863');
+delete from public.candidates where id in ('80000000-0000-0000-0000-000000000861',
+  '80000000-0000-0000-0000-000000000862', '80000000-0000-0000-0000-000000000863');
+delete from public.jobs where id in ('70000000-0000-0000-0000-000000000861', '70000000-0000-0000-0000-000000000862',
+                                     '70000000-0000-0000-0000-000000000863');
+delete from public.hiring_requests where id = '60000000-0000-0000-0000-000000000861';
+
 select 'SMOKE TESTS PASSED' as result;

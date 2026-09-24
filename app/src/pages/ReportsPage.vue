@@ -2,6 +2,7 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import { supabase } from '@/lib/supabase'
 import CompanyFilter from '@/components/CompanyFilter.vue'
+import RecruitmentTiming from '@/components/reports/RecruitmentTiming.vue'
 import { useAuthStore } from '@/stores/auth'
 import {
   STAGE_ORDER,
@@ -17,6 +18,8 @@ import {
  * database counts (recruitment_report, migration 0015) and this page lays
  * the numbers out: KPIs, the per-job funnel, where candidates came from, and
  * what needs attention. Counts only — no candidate names leave the server.
+ * Below them, the hiring speed (plan 067) has its own RPC and names hires
+ * only to a viewer who holds candidates.view.
  */
 
 type CompanyOption = { id: string; name: string }
@@ -253,6 +256,8 @@ watch([companyId, () => range.value.from, () => range.value.to], load)
             </div>
           </div>
         </div>
+
+        <RecruitmentTiming :company-id="companyId" :from="range.from" :to="range.to" />
       </div>
     </template>
   </div>

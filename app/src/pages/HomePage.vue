@@ -34,6 +34,7 @@ import {
   type DashboardSnapshot,
   type JobLite,
 } from '@/lib/dashboard'
+import type { InterviewLite } from '@/lib/hiringBoard'
 import DashboardStats from '@/components/home/DashboardStats.vue'
 import MyTasksCard from '@/components/tasks/MyTasksCard.vue'
 import RecruitmentSnapshot from '@/components/home/RecruitmentSnapshot.vue'
@@ -97,6 +98,7 @@ const metrics = ref({
 const snapshot = ref<DashboardSnapshot>(EMPTY_SNAPSHOT)
 const applications = ref<ApplicationLite[]>([])
 const jobs = ref<JobLite[]>([])
+const interviews = ref<InterviewLite[]>([])
 const away = ref<AwayRow[]>([])
 
 const queueRows = ref<QueueRow[]>([])
@@ -245,6 +247,25 @@ function loadPipelineApplications(): Promise<{ data: ApplicationLite[]; error: {
   )
 }
 
+/** Scheduled interviews in the next seven days, for a viewer who sees candidates anywhere; RLS keeps each to its company. */
+function loadUpcomingInterviews(): PromiseLike<{ data: unknown[] | null; error: { message: string } | null }> {
+  if (!auth.canAnywhere('candidates.view')) return Promise.resolve({ data: [], error: null })
+  const now = new Date()
+  const weekOut = new Date(now.getTime() + 7 * 86_400_000)
+  return supabase
+    .from('interviews')
+    .select(
+      `id, kind, scheduled_at,
+       application:applications(id, candidate:candidates(full_name), job:jobs(title, company:companies(name))),
+       panel:interview_panel(person:people!interview_panel_person_id_fkey(full_name))`,
+    )
+    .eq('status', 'scheduled')
+    .gte('scheduled_at', now.toISOString())
+    .lt('scheduled_at', weekOut.toISOString())
+    .order('scheduled_at')
+    .limit(50)
+}
+
 async function loadSnapshot(): Promise<{ error: { message: string } | null }> {
   const { data, error: err } = await supabase.rpc('dashboard_snapshot', { p_days: 30 })
   if (err) return { error: err }
@@ -268,6 +289,7 @@ async function load(): Promise<void> {
     laterRes,
     snapshotRes,
     candidateAssignments,
+    interviewsRes,
   ] = await Promise.all([
     // The pipeline of live roles (plan 052): the imported history sits on
     // closed jobs. Live jobs still carry more than PostgREST's 1,000 rows, so
@@ -275,7 +297,8 @@ async function load(): Promise<void> {
     // list and the "not responding" line all count every row. The sub-status
     // and the candidate's last activity feed that line (see outreachRowOf).
     loadPipelineApplications(),
-    supabase.from('jobs').select('id, title, status, company:companies(name), request:hiring_requests!jobs_hiring_request_id_fkey(headcount)').in('status', ['ready', 'open']),
+    // On hold too, so the hiring board can date those rows; openPositions keeps to ready and open.
+    supabase.from('jobs').select('id, title, status, opened_at, company:companies(name), request:hiring_requests!jobs_hiring_request_id_fkey(headcount)').in('status', ['ready', 'open', 'on_hold']),
     supabase
       .from('hiring_requests')
       .select('*', { count: 'exact', head: true })
@@ -312,6 +335,7 @@ async function load(): Promise<void> {
     loadSnapshot(),
     auth.personId ? supabase.from('applications').select('id, company_id, stage_key, next_action, next_action_due, candidate:candidates(full_name), job:jobs(title)')
       .eq('owner_id', auth.personId).in('stage_key', ['new', 'screening', 'interview', 'offer']).order('next_action_due', { ascending: true }) : Promise.resolve({ data: [], error: null }),
+    loadUpcomingInterviews(),
   ])
   const [compRes, docReviewRes, myReqRes, policyRes, ackRes, itRes, payrollRes, leaveRes, managerRes] = laterRes
 
@@ -332,6 +356,7 @@ async function load(): Promise<void> {
   logIfError('onboarding gaps queue', onboardingGapsRes.error)
   logIfError('my tasks', myTasksRes.error)
   logIfError('candidate assignments', candidateAssignments.error)
+  logIfError('upcoming interviews', interviewsRes.error)
   logIfError('compensation queue', compRes.error)
   logIfError('document reviews queue', docReviewRes.error)
   logIfError('my document requests', myReqRes.error)
@@ -348,6 +373,7 @@ async function load(): Promise<void> {
   }
   applications.value = applicationsRes.data
   jobs.value = (jobsRes.data ?? []) as unknown as JobLite[]
+  interviews.value = (interviewsRes.data ?? []) as unknown as InterviewLite[]
   away.value = awayToday((leaveRes.data ?? []) as unknown as Parameters<typeof awayToday>[0], todayDb())
 
   queueRows.value = [
@@ -419,6 +445,7 @@ onMounted(load)
       v-if="sections.recruitment"
       :applications="applications"
       :jobs="jobs"
+      :interviews="interviews"
       :show-pipeline="sections.pipeline"
       :show-openings="sections.openings"
       :loading="loading"

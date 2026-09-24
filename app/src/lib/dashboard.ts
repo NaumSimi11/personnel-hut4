@@ -1,4 +1,5 @@
-import { formatAmount } from '@/lib/compensation'
+import { formatAmount, todayDb } from '@/lib/compensation'
+import { daysSince } from '@/lib/hiringBoard'
 import { notResponding, type OutreachRow } from '@/lib/outreach'
 
 /**
@@ -27,6 +28,8 @@ export type JobLite = {
   status: string
   company: { name: string } | null
   request: { headcount: number } | null
+  /** When the job first went live (0086); null for one that never has. */
+  opened_at?: string | null
 }
 
 export type LeaveLite = {
@@ -187,12 +190,17 @@ export function applicantsInProgress(apps: ReadonlyArray<ApplicationLite>): numb
   return apps.filter((a) => !CLOSED_STAGES.has(a.stage_key)).length
 }
 
-export type OpenPosition = { id: string; title: string; company: string; headcount: number; applicants: number }
+export type OpenPosition = { id: string; title: string; company: string; headcount: number; applicants: number; daysOpen: number | null }
 
 const HIRING_JOB_STATUSES = new Set(['ready', 'open'])
 
-/** Roles being hired (ready or open) with their live applicant count; headcount comes from the hiring request (1 when the job was prepared without one). */
-export function openPositions(jobs: ReadonlyArray<JobLite>, apps: ReadonlyArray<ApplicationLite>): OpenPosition[] {
+/**
+ * Roles being hired (ready or open) with their live applicant count;
+ * headcount comes from the hiring request (1 when the job was prepared
+ * without one). Oldest opening first — the one waiting longest is the one to
+ * look at — and a job that has not gone live yet last.
+ */
+export function openPositions(jobs: ReadonlyArray<JobLite>, apps: ReadonlyArray<ApplicationLite>, today = todayDb()): OpenPosition[] {
   return jobs
     .filter((j) => HIRING_JOB_STATUSES.has(j.status))
     .map((j) => ({
@@ -201,7 +209,9 @@ export function openPositions(jobs: ReadonlyArray<JobLite>, apps: ReadonlyArray<
       company: j.company?.name ?? '—',
       headcount: j.request?.headcount ?? 1,
       applicants: apps.filter((a) => a.job_id === j.id && !CLOSED_STAGES.has(a.stage_key)).length,
+      daysOpen: daysSince(j.opened_at, today),
     }))
+    .sort((a, b) => (b.daysOpen ?? -1) - (a.daysOpen ?? -1))
 }
 
 export type RecentApplicant = { id: string; name: string; position: string; company: string; stage: string; received_at: string }

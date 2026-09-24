@@ -11,7 +11,7 @@ describe('renderNotificationEmail', () => {
     expect(mail.html).toContain('Ana &lt;Ilievska&gt;')
     expect(mail.html).toContain('&quot;Ski &amp; sun&quot;')
     expect(mail.html).toContain('href="https://people.hut4.com/leave?tab=requests"')
-    expect(mail.html).toContain('Open in Personnel')
+    expect(mail.html).toContain('Open in PeopleOS')
   })
   it('keeps the paragraphs and lines of a multi-line body', () => {
     const mail = renderNotificationEmail({ title: 'Welcome', body: 'Dear Wel,\n\nWelcome.\nSee you soon,\nHR', link: null, kind: 'welcome.note' }, null)

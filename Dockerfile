@@ -1,4 +1,4 @@
-# Personnel — one image: the auth/careers service serves the built Vue app.
+# PeopleOS — one image: the auth/careers service serves the built Vue app.
 # Build args carry the two browser-safe values Vite bakes into the bundle;
 # every secret is a runtime environment variable (see docs/deployment.md).
 FROM node:22-alpine AS build

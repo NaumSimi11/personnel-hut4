@@ -1,4 +1,4 @@
-# Personnel — Vue 3 app
+# PeopleOS — Vue 3 app
 
 The production app for the Hut4 holding HR system. Vue 3 (Composition API) +
 TypeScript + Pinia + Vue Router + supabase-js, built with Vite. Data and

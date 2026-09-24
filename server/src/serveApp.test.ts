@@ -6,8 +6,8 @@ import { describe, expect, it } from 'vitest'
 import { registerAppServing } from './serveApp.js'
 
 function appDir(): string {
-  const dir = mkdtempSync(join(tmpdir(), 'personnel-app-'))
-  writeFileSync(join(dir, 'index.html'), '<!doctype html><title>Personnel</title>')
+  const dir = mkdtempSync(join(tmpdir(), 'peopleos-app-'))
+  writeFileSync(join(dir, 'index.html'), '<!doctype html><title>PeopleOS</title>')
   mkdirSync(join(dir, 'assets'))
   writeFileSync(join(dir, 'assets', 'app.js'), 'console.log(1)')
   return dir
@@ -21,7 +21,7 @@ describe('registerAppServing', () => {
     expect((await app.inject('/assets/app.js')).body).toBe('console.log(1)')
     const spa = await app.inject('/leave?tab=requests')
     expect(spa.statusCode).toBe(200)
-    expect(spa.body).toContain('<title>Personnel</title>')
+    expect(spa.body).toContain('<title>PeopleOS</title>')
     expect((await app.inject('/api/health')).json()).toEqual({ ok: true })
     expect((await app.inject('/api/nothing')).statusCode).toBe(404)
   })

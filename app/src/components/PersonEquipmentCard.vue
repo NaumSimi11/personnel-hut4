@@ -408,7 +408,7 @@ watch(() => `${props.personId}|${props.companies.map((c) => c.id).join(',')}`, (
         </div>
       </div>
 
-      <p v-if="notice" class="inline-note">{{ notice }}</p>
+      <p v-if="notice" class="card-notice" role="status">{{ notice }}</p>
 
       <!-- Signing belongs in the middle of the screen, not folded into a row
            halfway down a card: you are putting your name to something, and the
@@ -462,8 +462,10 @@ watch(() => `${props.personId}|${props.companies.map((c) => c.id).join(',')}`, (
 .equipment-row.settled { opacity: 0.75; }
 .pending { color: #8a6d1f !important; }
 .equipment-row { display: flex; align-items: center; gap: 13px; padding: 13px 24px; border-top: 1px solid #edf0eb; }
+.row-text { flex: 1; min-width: 0; }
 .row-text strong { display: block; font-size: 12px; font-weight: 550; }
 .row-text small { display: block; font-size: 11px; color: var(--muted); margin-top: 4px; }
+.card-notice { margin: 0; padding: 11px 24px; border-top: 1px solid #edf0eb; background: var(--green-soft); color: var(--green-deep); font-size: 12px; }
 .muted { font-weight: 400; color: var(--muted); }
 .error { margin: 14px 24px 0; padding: 10px 14px; border-radius: 9px; background: #fbeaea; color: var(--red); font-size: 12px; }
 </style>

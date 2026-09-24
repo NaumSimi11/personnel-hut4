@@ -41,7 +41,7 @@ async function submit() {
   <div class="login-wrap">
     <div class="card login-card">
       <div class="card-body">
-        <div class="eyebrow">Personnel · Hut4</div>
+        <div class="eyebrow">PeopleOS · Hut4</div>
         <h1>Sign in to your workspace.</h1>
         <p class="sub">One workspace for the whole holding. Access is granted per company.</p>
         <form novalidate @submit.prevent="submit">

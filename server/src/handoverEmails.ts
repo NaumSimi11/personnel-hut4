@@ -32,7 +32,7 @@ export function renderHandoverEmail(send: HandoverSendLike): { subject: string; 
     subject,
     html: [
       `<p><strong>${escapeHtml(subject)}</strong></p>`,
-      `<p>For ${escapeHtml(send.recipient_label)}, from Personnel.</p>`,
+      `<p>For ${escapeHtml(send.recipient_label)}, from PeopleOS.</p>`,
       `<table cellpadding="6" style="border-collapse:collapse;font-size:14px">${rows}</table>`,
       `<p style="color:#6b7a72;font-size:12px">You receive this because you are on the handover list for this event. Reply to HR if something is missing.</p>`,
     ].join('\n'),

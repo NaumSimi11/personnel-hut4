@@ -28,17 +28,17 @@ export function buildAccessEmail(input: AccessEmailInput): {
   const appUrl = env('APP_BASE_URL')?.replace(/\/+$/, '')
   const intro =
     input.kind === 'invite'
-      ? 'An account has been created for you in Personnel, the Hut4 HR workspace.'
-      : 'Your Personnel password has been reset by an administrator.'
+      ? 'An account has been created for you in PeopleOS, the Hut4 HR workspace.'
+      : 'Your PeopleOS password has been reset by an administrator.'
   return {
     subject:
-      input.kind === 'invite' ? 'Your Personnel account' : 'Your new Personnel password',
+      input.kind === 'invite' ? 'Your PeopleOS account' : 'Your new PeopleOS password',
     html: [
       `<p>Hi ${escapeHtml(input.name)},</p>`,
       `<p>${intro}</p>`,
       `<p>Sign in with this temporary password — you will be asked to choose your own on first sign-in:</p>`,
       `<p style="font-size:18px;font-family:monospace;background:#f4f6f0;padding:12px 16px;border-radius:8px">${escapeHtml(input.tempPassword)}</p>`,
-      appUrl ? `<p><a href="${escapeHtml(appUrl)}/login">Open Personnel</a></p>` : '',
+      appUrl ? `<p><a href="${escapeHtml(appUrl)}/login">Open PeopleOS</a></p>` : '',
       `<p>The temporary password stops working the moment you replace it.</p>`,
     ].join('\n'),
   }

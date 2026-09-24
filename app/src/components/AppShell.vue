@@ -25,7 +25,7 @@ async function signOut() {
     <aside class="sidebar">
       <div class="brand">
         <span class="brand-mark">p.</span>
-        <span>Personnel<small>Hut4 workspace</small></span>
+        <span>PeopleOS<small>Hut4 workspace</small></span>
       </div>
       <nav aria-label="Workspace">
         <router-link :to="{ name: 'overview' }">Overview</router-link>

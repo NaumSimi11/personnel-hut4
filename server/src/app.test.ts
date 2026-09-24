@@ -6,11 +6,11 @@ import { createApp } from './app.js'
 
 describe('createApp', () => {
   it('has the API routes and the SPA fallback when a dist folder is given', async () => {
-    const dir = mkdtempSync(join(tmpdir(), 'personnel-dist-'))
-    writeFileSync(join(dir, 'index.html'), '<title>Personnel</title>')
+    const dir = mkdtempSync(join(tmpdir(), 'peopleos-dist-'))
+    writeFileSync(join(dir, 'index.html'), '<title>PeopleOS</title>')
     const app = await createApp({ serveAppDir: dir })
     expect((await app.inject({ url: '/api/health' })).json()).toEqual({ ok: true })
-    expect((await app.inject('/people/x')).body).toContain('<title>Personnel</title>')
+    expect((await app.inject('/people/x')).body).toContain('<title>PeopleOS</title>')
   })
 
   it('answers only the API without one', async () => {

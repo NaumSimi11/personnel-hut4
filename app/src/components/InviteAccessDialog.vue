@@ -100,7 +100,7 @@ function close(): void {
 
     <!-- Step 1: the form / confirmation. -->
     <form v-else class="body" novalidate @submit.prevent="submit">
-      <div class="eyebrow">{{ mode === 'invite' ? 'Invite to Personnel' : 'Reset access' }}</div>
+      <div class="eyebrow">{{ mode === 'invite' ? 'Invite to PeopleOS' : 'Reset access' }}</div>
       <h2 id="invite-title">
         {{ mode === 'invite' ? 'Create an account by invitation.' : `New temporary password for ${resetTarget?.name}?` }}
       </h2>

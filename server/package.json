@@ -1,5 +1,5 @@
 {
-  "name": "personnel-auth-service",
+  "name": "peopleos-auth-service",
   "private": true,
   "type": "module",
   "scripts": {

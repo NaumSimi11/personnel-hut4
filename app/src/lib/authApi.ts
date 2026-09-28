@@ -32,6 +32,11 @@ export function resetAccess(personId: string): Promise<AccessCredential & { emai
   return call('/api/auth/reset-access', { personId })
 }
 
+/** Take a sign-in away for good; the first half of deleting a person (plan 067). */
+export function removeAccess(personId: string): Promise<{ removed: boolean }> {
+  return call('/api/auth/remove-access', { personId })
+}
+
 export function changePassword(input: {
   currentPassword: string
   newPassword: string

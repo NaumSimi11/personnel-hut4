@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { generateTempPassword, isAllowedEmail, parseAllowedDomains, planInvite } from './account.js'
+import { generateTempPassword, isAllowedEmail, parseAllowedDomains, planAccountRemoval, planInvite } from './account.js'
 import { meetsPasswordPolicy } from '../../shared/passwordPolicy.js'
 
 describe('parseAllowedDomains', () => {
@@ -53,5 +53,21 @@ describe('planInvite', () => {
       action: 'refuse',
       reason: 'has_account',
     })
+  })
+})
+
+describe('planAccountRemoval', () => {
+  const caller = { personId: 'admin-1' }
+  it('deletes the account when the target has one and is somebody else', () => {
+    expect(planAccountRemoval(caller, { id: 'p-2', user_id: 'auth-2' })).toEqual({ action: 'delete', userId: 'auth-2' })
+  })
+  it('has nothing to do for a record with no sign-in', () => {
+    expect(planAccountRemoval(caller, { id: 'p-2', user_id: null })).toEqual({ action: 'nothing' })
+  })
+  it('refuses to remove the caller\'s own sign-in', () => {
+    expect(planAccountRemoval(caller, { id: 'admin-1', user_id: 'auth-1' })).toEqual({ action: 'refuse', reason: 'self' })
+  })
+  it('refuses a person that no longer exists', () => {
+    expect(planAccountRemoval(caller, null)).toEqual({ action: 'refuse', reason: 'missing' })
   })
 })

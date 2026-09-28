@@ -131,7 +131,7 @@ export async function findAccountByEmail(email: string): Promise<{ id: string } 
   return null
 }
 
-/** Delete an auth account entirely — used only by test cleanup endpoints/tools. */
+/** Delete an auth account entirely: test cleanup, and the first half of deleting a person (plan 067). */
 export async function deleteAccount(supabaseUserId: string): Promise<void> {
   const { error } = await adminClient().auth.admin.deleteUser(supabaseUserId)
   if (error) throw new Error(`Supabase account deletion failed: ${error.message}`)

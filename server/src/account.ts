@@ -55,3 +55,24 @@ export function planInvite(existing: { id: string; user_id: string | null } | nu
   if (existing.user_id) return { action: 'refuse', reason: 'has_account' }
   return { action: 'attach', personId: existing.id }
 }
+
+export type AccountRemovalPlan =
+  | { action: 'delete'; userId: string }
+  | { action: 'nothing' }
+  | { action: 'refuse'; reason: 'self' | 'missing' }
+
+/**
+ * Taking a sign-in away for good (plan 067). This is the first half of
+ * deleting a person outright: the auth account goes, `people.user_id` is set
+ * null by its key, and the database rule in `delete_person` then no longer
+ * sees a sign-in. An admin never does this to themselves.
+ */
+export function planAccountRemoval(
+  caller: { personId: string | null },
+  target: { id: string; user_id: string | null } | null,
+): AccountRemovalPlan {
+  if (!target) return { action: 'refuse', reason: 'missing' }
+  if (caller.personId !== null && target.id === caller.personId) return { action: 'refuse', reason: 'self' }
+  if (!target.user_id) return { action: 'nothing' }
+  return { action: 'delete', userId: target.user_id }
+}

@@ -4,8 +4,17 @@ import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/stores/auth'
 import { departureState } from '@/lib/departure'
 import { DIRECTORY_FILTERS, currentPeriod, matchesFilter, type DirectoryFilter } from '@/lib/employmentChanges'
-import { personRemovable, removalConfirmation } from '@/lib/personRemoval'
+import {
+  deletionNeedsForce,
+  deletionSummary,
+  personDeletable,
+  personRemovable,
+  removalConfirmation,
+  type DeletionCost,
+} from '@/lib/personRemoval'
 import { friendlyHardDeleteError } from '@/lib/hardDelete'
+import { DOCUMENT_BUCKET } from '@/lib/documents'
+import { removeAccess } from '@/lib/authApi'
 import { useDialogStore } from '@/stores/dialogs'
 import InviteAccessDialog from '@/components/InviteAccessDialog.vue'
 import AddEmployeeDialog from '@/components/AddEmployeeDialog.vue'
@@ -113,6 +122,10 @@ function removalVerdict(p: DirectoryRow) {
   return personRemovable({ employed: currentEmployment(p) !== null, isSelf: p.id === auth.personId }, auth.isAdmin)
 }
 
+function deletionVerdict(p: DirectoryRow) {
+  return personDeletable({ isSelf: p.id === auth.personId }, auth.isAdmin)
+}
+
 async function setArchived(p: DirectoryRow, archived: boolean): Promise<void> {
   error.value = null
   removing.value = true
@@ -132,31 +145,51 @@ async function setArchived(p: DirectoryRow, archived: boolean): Promise<void> {
 }
 
 /**
- * Delete, for a row that was never anybody: a name typed twice, a test
- * record, an import against the wrong file (plan 065).
- *
- * The database is the rule and needs no mirror here — 93 of the 98 keys
- * pointing at `people` block a delete, so anyone with an employment, a kudos
- * or a line of activity is refused with a sentence saying which. The button
- * offers it to admins and lets that refusal do the teaching, rather than
- * fetching a dozen counts to guess the same answer.
+ * Delete outright (plans 065 and 067). A record that was never anybody goes
+ * as it always did. Since 0087 a person WITH history can go too: the
+ * confirmation says what that takes before the click, and `p_force` says
+ * "yes, I mean it". Their sign-in comes off first, through the server, since
+ * SQL cannot reach auth; if the delete then refuses, they are intact and
+ * merely signed out, which Reset access undoes.
  */
 async function deletePerson(p: DirectoryRow): Promise<void> {
+  error.value = null
+  const costRes = await supabase.rpc('person_delete_cost', { p_person_id: p.id })
+  if (costRes.error) {
+    error.value = friendlyHardDeleteError(costRes.error.message)
+    return
+  }
+  const cost = costRes.data as DeletionCost
+  const force = deletionNeedsForce(cost)
   const ok = await dialogs.confirmAction({
     title: `Delete ${p.full_name}?`,
-    hint: 'For a record that was a mistake. Anyone with real history is refused, and should be removed from the directory instead. This cannot be undone.',
-    confirmLabel: 'Delete person',
+    hint: force
+      ? `This takes ${deletionSummary(cost)} with them. Anything they did for someone else stays and forgets who. This cannot be undone.`
+      : 'For a record that was a mistake. Nothing else is on record for them. This cannot be undone.',
+    confirmLabel: force ? 'Delete them and everything on them' : 'Delete person',
     danger: true,
   })
   if (!ok) return
-  error.value = null
   removing.value = true
-  const { error: err } = await supabase.rpc('delete_person', { p_person_id: p.id })
+  try {
+    if (cost.has_sign_in) await removeAccess(p.id)
+  } catch (e) {
+    removing.value = false
+    error.value = e instanceof Error ? e.message : 'Could not remove their access.'
+    return
+  }
+  const { data, error: err } = await supabase.rpc('delete_person', { p_person_id: p.id, p_force: force })
   removing.value = false
   confirmingRemoval.value = null
   if (err) {
     error.value = friendlyHardDeleteError(err.message)
     return
+  }
+  // The documents' objects outlive their rows; only the app can reach Storage.
+  const paths = ((data ?? {}) as { storage_paths?: string[] }).storage_paths ?? []
+  if (paths.length) {
+    const { error: fileErr } = await supabase.storage.from(DOCUMENT_BUCKET).remove(paths)
+    if (fileErr) console.error('Documents not removed from storage:', fileErr.message)
   }
   await load()
 }
@@ -311,17 +344,6 @@ onMounted(load)
                     {{ removing ? 'Restoring…' : 'Restore' }}
                   </button>
                   <button
-                    v-if="p.archived_at && auth.isAdmin"
-                    class="button secondary small-link danger-text"
-                    type="button"
-                    :disabled="removing"
-                    title="Deletes the record outright. Refused for anyone with any history."
-                    :data-testid="`delete-person-${p.id}`"
-                    @click="deletePerson(p)"
-                  >
-                    Delete
-                  </button>
-                  <button
                     v-else-if="auth.isAdmin"
                     class="button secondary small-link"
                     type="button"
@@ -331,6 +353,17 @@ onMounted(load)
                     @click="confirmingRemoval = p.id"
                   >
                     Remove
+                  </button>
+                  <button
+                    v-if="auth.isAdmin && confirmingRemoval !== p.id"
+                    class="button secondary small-link danger-text"
+                    type="button"
+                    :disabled="removing || !deletionVerdict(p).canDelete"
+                    :title="deletionVerdict(p).reason ?? 'Deletes the record and everything on it. Cannot be undone.'"
+                    :data-testid="`delete-person-${p.id}`"
+                    @click="deletePerson(p)"
+                  >
+                    Delete
                   </button>
                 </div>
               </td>

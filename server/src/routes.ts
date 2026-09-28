@@ -1,11 +1,12 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
 import { z } from 'zod'
 import { meetsPasswordPolicy, PASSWORD_POLICY_SUMMARY } from '../../shared/passwordPolicy.js'
-import { generateTempPassword, isAllowedEmail, parseAllowedDomains, planInvite } from './account.js'
+import { generateTempPassword, isAllowedEmail, parseAllowedDomains, planAccountRemoval, planInvite } from './account.js'
 import { sendAccessEmail } from './emails.js'
 import { env } from './env.js'
 import {
   createInvitedAccount,
+  deleteAccount,
   findAccountByEmail,
   identityFromToken,
   resetToTempPassword,
@@ -78,6 +79,7 @@ const inviteInput = z.object({
 })
 
 const resetInput = z.object({ personId: z.string().uuid() })
+const removeAccessInput = resetInput
 
 const changePasswordInput = z.object({
   currentPassword: z.string().min(1).max(200),
@@ -209,6 +211,41 @@ export function registerRoutes(app: FastifyInstance): void {
       kind: 'reset',
     })
     return { tempPassword, emailSent, email: target.work_email }
+  })
+
+  /**
+   * Take a sign-in away for good (plan 067). The first half of deleting a
+   * person: the auth account goes here, under the secret key, and the
+   * database's `delete_person` then sees no sign-in and may take the rest.
+   * Idempotent: a person with no account is already in the state asked for.
+   */
+  app.post('/api/auth/remove-access', async (req, reply) => {
+    const caller = await resolveCaller(req)
+    if (!caller) return fail(reply, 401, 'Sign in to continue.')
+    if (!caller.isAdmin) return fail(reply, 403, 'Only platform admins can remove access.')
+    const parsed = removeAccessInput.safeParse(req.body)
+    if (!parsed.success) return fail(reply, 400, 'Invalid input.')
+
+    const db = serviceDb()
+    const { data: target, error: lookupErr } = await db
+      .from('people')
+      .select('id, user_id')
+      .eq('id', parsed.data.personId)
+      .maybeSingle()
+    if (lookupErr) return fail(reply, 500, `Could not look the person up: ${lookupErr.message}`)
+    const plan = planAccountRemoval(caller, target)
+    if (plan.action === 'refuse') {
+      return plan.reason === 'self'
+        ? fail(reply, 400, 'You cannot remove your own access.')
+        : fail(reply, 404, 'Person not found.')
+    }
+    if (plan.action === 'nothing') return { removed: false }
+    try {
+      await deleteAccount(plan.userId)
+    } catch (error) {
+      return fail(reply, 500, error instanceof Error ? error.message : 'Account removal failed.')
+    }
+    return { removed: true }
   })
 
   app.post('/api/auth/change-password', async (req, reply) => {

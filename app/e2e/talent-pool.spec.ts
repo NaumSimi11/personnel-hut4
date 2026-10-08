@@ -216,8 +216,10 @@ test('add to pool → CV on the record → add to job → found in the pool → 
   await page.getByTestId('source-from-pool').click()
   const pick = page.getByTestId('pick-from-pool')
   await expect(pick).toBeVisible()
-  await expect(pick).toContainText('Type a name, email, LinkedIn address, title or skill.')
+  // It opens on the pool itself, most recently active first; typing narrows it.
+  await expect(pick.getByTestId('pool-summary')).toContainText('most recently active first')
   await pick.getByTestId('pool-search').fill(PERSON_NAME)
+  await expect(pick.getByTestId('pool-summary')).toContainText(`“${PERSON_NAME}”`)
   const pickRow = pick.getByTestId(`pool-pick-row-${candidateId}`)
   await expect(pickRow).toBeVisible()
   await expect(pickRow).toContainText(PERSON_NAME)

@@ -1,15 +1,18 @@
 <script setup lang="ts">
-import { onBeforeUnmount, ref } from 'vue'
+import { computed, onBeforeUnmount, ref } from 'vue'
 import { supabase } from '@/lib/supabase'
 import { useDialogStore } from '@/stores/dialogs'
 import { todayDb } from '@/lib/compensation'
 import { friendlyRecruitmentError } from '@/lib/jobWorkspace'
 import { SOURCE_FALLBACK_LABEL, contactBadge, contactState, longDate, type PoolRow } from '@/lib/candidatePool'
+import { pickPayload, pickSummary } from '@/lib/poolPicker'
 
 /**
- * Source from the talent pool — job → candidates (plan 052). A search over
- * search_candidates (pool holders only; the RPC refuses everyone else with
- * its own sentence), one "Add to this job" per row through
+ * Source from the talent pool — job → candidates (plan 052). Opens on the
+ * pool itself, most recently active first, a page at a time, and typing
+ * narrows it (HR, 2026-10-08: "open a window with list, where we can do
+ * search"). All through search_candidates (pool holders only; the RPC
+ * refuses everyone else with its own sentence), one "Add to this job" per row through
  * add_candidate_to_job, the dialog staying open so several can be added.
  * The contact rule is judged by the database; this only asks before
  * overriding a wait, and never offers the button to a flagged or archived
@@ -18,17 +21,23 @@ import { SOURCE_FALLBACK_LABEL, contactBadge, contactState, longDate, type PoolR
 const props = defineProps<{ jobId: string; companyId: string; jobTitle: string; inPipeline: string[] }>()
 const emit = defineEmits<{ created: [] }>()
 
-const MIN_QUERY = 2
 const DEBOUNCE_MS = 250
-const PICK_LIMIT = 20
 const PICK_SOURCE = 'head_hunt'
+
+type SearchResult = { total: number; rows: PoolRow[] }
 
 const dialogs = useDialogStore()
 const dialog = ref<HTMLDialogElement | null>(null)
 const q = ref('')
 const rows = ref<PoolRow[]>([])
-const searched = ref(false)
+const total = ref(0)
+const page = ref(0)
+const loaded = ref(false)
 const loading = ref(false)
+const loadingMore = ref(false)
+// The term the shown rows answer (null: the whole pool), so a keystroke that
+// does not change it — a third letter's typo fixed — does not refetch.
+let shownTerm: string | null | undefined
 const error = ref<string | null>(null)
 const addedIds = ref<string[]>([])
 const busyId = ref<string | null>(null)
@@ -36,14 +45,21 @@ const today = todayDb()
 let timer: ReturnType<typeof setTimeout> | null = null
 let searchSeq = 0
 
+const hasMore = computed(() => rows.value.length < total.value)
+const summary = computed(() => pickSummary(total.value, rows.value.length, q.value))
+
 function open(): void {
   q.value = ''
   rows.value = []
-  searched.value = false
+  total.value = 0
+  page.value = 0
+  loaded.value = false
+  shownTerm = undefined
   error.value = null
   addedIds.value = []
   busyId.value = null
   dialog.value?.showModal()
+  void load(false)
 }
 defineExpose({ open })
 
@@ -54,34 +70,38 @@ function onClose(): void {
 
 function onInput(): void {
   if (timer) clearTimeout(timer)
-  timer = setTimeout(() => void search(), DEBOUNCE_MS)
+  timer = setTimeout(() => {
+    if (pickPayload(q.value, 0).q !== shownTerm) void load(false)
+  }, DEBOUNCE_MS)
 }
 
 onBeforeUnmount(() => {
   if (timer) clearTimeout(timer)
 })
 
-async function search(): Promise<void> {
+/** The first page for the current term, or (`more`) the next page appended to it. */
+async function load(more: boolean): Promise<void> {
   const seq = (searchSeq += 1)
-  const term = q.value.trim()
-  if (term.length < MIN_QUERY) {
-    rows.value = []
-    searched.value = false
-    loading.value = false
-    return
-  }
-  loading.value = true
+  const nextPage = more ? page.value + 1 : 0
+  const payload = pickPayload(q.value, nextPage)
+  if (more) loadingMore.value = true
+  else loading.value = true
   error.value = null
-  const { data, error: err } = await supabase.rpc('search_candidates', { p: { q: term, limit: PICK_LIMIT } })
+  const { data, error: err } = await supabase.rpc('search_candidates', { p: payload })
   if (seq !== searchSeq) return
   loading.value = false
-  searched.value = true
+  loadingMore.value = false
   if (err) {
     error.value = friendlyRecruitmentError(err.message)
-    rows.value = []
+    if (!more) rows.value = []
     return
   }
-  rows.value = ((data as { rows: PoolRow[] } | null)?.rows ?? []) as PoolRow[]
+  const result = (data ?? { total: 0, rows: [] }) as unknown as SearchResult
+  rows.value = more ? [...rows.value, ...result.rows] : result.rows
+  total.value = result.total
+  page.value = nextPage
+  shownTerm = payload.q
+  loaded.value = true
 }
 
 function isAdded(c: PoolRow): boolean {
@@ -154,10 +174,12 @@ async function pick(c: PoolRow): Promise<void> {
         />
       </div>
       <p v-if="error" class="error-note" role="alert">{{ error }}</p>
-      <div v-if="loading" class="empty">Searching…</div>
-      <div v-else-if="!searched" class="empty">Type a name, email, LinkedIn address, title or skill.</div>
-      <div v-else-if="!rows.length" class="empty">Nobody in the pool matches.</div>
-      <ul v-else class="list">
+      <div v-if="loading" class="empty">{{ loaded ? 'Searching…' : 'Loading the talent pool…' }}</div>
+      <div v-else-if="loaded && !rows.length" class="empty">
+        {{ pickPayload(q, 0).q ? 'Nobody in the pool matches.' : 'The talent pool is empty.' }}
+      </div>
+      <p v-if="loaded && rows.length && !loading" class="summary" data-testid="pool-summary">{{ summary }}</p>
+      <ul v-if="rows.length && !loading" class="list">
         <li v-for="c in rows" :key="c.id" class="pick-row" :data-testid="`pool-pick-row-${c.id}`">
           <div class="text">
             <b>{{ c.full_name }}</b>
@@ -182,6 +204,11 @@ async function pick(c: PoolRow): Promise<void> {
             {{ busyId === c.id ? 'Adding…' : 'Add to this job' }}
           </button>
         </li>
+        <li v-if="hasMore" class="more">
+          <button class="button secondary small-btn" type="button" :disabled="loadingMore" data-testid="pool-more" @click="load(true)">
+            {{ loadingMore ? 'Loading…' : 'Show more' }}
+          </button>
+        </li>
       </ul>
       <div class="actions">
         <button class="button secondary" type="button" @click="dialog?.close()">Close</button>
@@ -203,5 +230,7 @@ h2 { font-size: 19px; margin: 10px 0 14px; }
 .badges { display: flex; gap: 6px; flex-wrap: wrap; }
 .small-btn { font-size: 11px; padding: 7px 11px; }
 .empty { padding: 28px 12px; }
+.summary { margin: 0 0 8px; font-size: 11px; color: var(--muted); }
+.more { display: flex; justify-content: center; padding: 12px 4px; }
 .actions { display: flex; justify-content: flex-end; margin-top: 16px; }
 </style>

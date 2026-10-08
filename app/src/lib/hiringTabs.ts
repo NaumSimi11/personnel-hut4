@@ -2,6 +2,7 @@ import { outreachRowOf, stageLabel } from '@/lib/dashboard'
 import { todayDb } from '@/lib/compensation'
 import { shortDate } from '@/lib/leave'
 import { notResponding } from '@/lib/outreach'
+import { jobHeadcount } from '@/lib/headcount'
 
 /**
  * The Hiring page's list tabs (plan 044): Job openings and Applicants, flat
@@ -27,6 +28,8 @@ export type OpeningJobLite = {
   company_id: string
   company: { name: string } | null
   request: { headcount: number; manager: { full_name: string } | null } | null
+  /** Zoho's headcount lives here for the imported jobs (plan 070). */
+  custom?: Record<string, unknown> | null
   /** Plan 056: the closing stamp, null on every job that is not closed. */
   closed_at?: string | null
   closed_reason?: string | null
@@ -92,7 +95,7 @@ export function openingRows(
         status: j.status,
         statusLabel: JOB_STATUS_LABEL[j.status] ?? j.status,
         statusTone: jobStatusTone(j.status),
-        headcount: j.request?.headcount ?? 1,
+        headcount: jobHeadcount(j),
         inPlay: own.filter((a) => !CLOSED_STAGES.has(a.stage_key)).length,
         hired: own.filter((a) => a.stage_key === 'hired').length,
         manager: j.request?.manager?.full_name ?? null,

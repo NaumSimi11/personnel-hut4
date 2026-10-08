@@ -127,7 +127,8 @@ test('prepare job → describe → publish channels → promote → applications
   expect((afterSave?.screening_questions as { options?: string[] }[])[2]?.options).toEqual(['Morning', 'Flexible'])
 
   await page.getByRole('tab', { name: 'Overview' }).click()
-  await page.getByRole('button', { name: 'Mark ready' }).click()
+  await page.getByTestId('job-status-picker').selectOption('ready')
+  await page.getByTestId('job-status-apply').click()
   await expect(page.locator('.page-head .badge')).toHaveText('ready')
   await expect(page.locator('.step.current')).toContainText('Job ready')
 

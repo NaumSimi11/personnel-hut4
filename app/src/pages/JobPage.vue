@@ -28,7 +28,9 @@ import {
   currentStep,
   friendlyRecruitmentError,
   isPublished,
-  jobStatusActions,
+  filledNote,
+  jobHeadcount,
+  jobStatusOptions,
   salvageQuestions,
   screeningQuestionsInput,
   type ChannelLite,
@@ -64,6 +66,7 @@ type Job = {
   scorecard_criteria: unknown
   status: string
   company_id: string
+  custom: Record<string, unknown> | null
   company: { name: string; short_code: string } | null
   request: {
     title: string
@@ -229,11 +232,17 @@ const step = computed(() =>
   }),
 )
 
-const statusActions = computed(() =>
+// The status picker (every other status, back or on) and what a filled job
+// still has in play (plan 070: the job fills itself; the rest wait for HR).
+const statusOptions = computed(() =>
   job.value
-    ? jobStatusActions({ status: job.value.status, hasDescription: (job.value.description ?? '').trim().length > 0 })
+    ? jobStatusOptions({ status: job.value.status, hasDescription: (job.value.description ?? '').trim().length > 0 })
     : [],
 )
+const statusChoice = ref('')
+const headcount = computed(() => (job.value ? jobHeadcount(job.value) : 1))
+const atOfferCount = computed(() => applications.value.filter((a) => a.stage_key === 'offer').length)
+const withdrawBusy = ref(false)
 
 const stageCounts = computed(() => {
   const counts: Record<string, number> = {}
@@ -264,7 +273,7 @@ async function loadJob(): Promise<void> {
   const { data, error: err } = await supabase
     .from('jobs')
     .select(
-      `id, title, description, description_revision, screening_questions, scorecard_criteria, status, company_id,
+      `id, title, description, description_revision, screening_questions, scorecard_criteria, status, company_id, custom,
        company:companies(name, short_code),
        request:hiring_requests(title, headcount, target_start_date,
          hiring_manager:people!hiring_requests_hiring_manager_id_fkey(full_name))`,
@@ -426,6 +435,40 @@ async function saveDescription(): Promise<void> {
   }
   questionsDraft.value = parsed.data
   descSaved.value = true
+}
+
+async function applyStatus(): Promise<void> {
+  const to = statusChoice.value
+  if (!to) return
+  await setStatus(to)
+  if (!statusError.value) statusChoice.value = ''
+}
+
+/**
+ * Everyone still in play on a filled job, withdrawn at once as "Job closed"
+ * (withdraw_in_play, 0090). Asked first, naming how many and how many of
+ * them have an offer out.
+ */
+async function withdrawRest(): Promise<void> {
+  if (!job.value) return
+  const n = activeCount.value
+  const offers = atOfferCount.value
+  const ok = await dialogs.confirmAction({
+    title: `Withdraw the ${n} ${n === 1 ? 'candidate' : 'candidates'} still in play?`,
+    hint: `They move to Withdrawn · Job closed, with the reason "Position filled."${offers ? ` ${offers} of them ${offers === 1 ? 'has' : 'have'} an offer out.` : ''} The hires stay as they are.`,
+    confirmLabel: 'Withdraw them',
+    danger: true,
+  })
+  if (!ok) return
+  actionError.value = null
+  withdrawBusy.value = true
+  const { error: err } = await supabase.rpc('withdraw_in_play', { p_job_id: job.value.id })
+  withdrawBusy.value = false
+  if (err) {
+    actionError.value = friendlyCandidatesError(err.message)
+    return
+  }
+  await loadApplications()
 }
 
 async function setStatus(to: string): Promise<void> {
@@ -686,7 +729,7 @@ onMounted(async () => {
           </div>
           <div class="card metric-tile">
             <span class="metric-label">Hired</span>
-            <span class="metric-value">{{ hiredCount }} / {{ job.request?.headcount ?? 1 }}</span>
+            <span class="metric-value">{{ hiredCount }} / {{ headcount }}</span>
           </div>
         </div>
 
@@ -697,15 +740,18 @@ onMounted(async () => {
               <p>A job opens when its listing goes live; it can pause or close without losing candidates.</p>
             </div>
             <div v-if="canEdit" class="row-actions">
+              <select v-model="statusChoice" class="status-picker" :disabled="statusBusy" aria-label="Change status" data-testid="job-status-picker">
+                <option value="">Change status…</option>
+                <option v-for="o in statusOptions" :key="o.to" :value="o.to" :disabled="o.disabled">{{ o.label }}</option>
+              </select>
               <button
-                v-for="a in statusActions"
-                :key="a.to"
                 class="button secondary small-btn"
                 type="button"
-                :disabled="statusBusy"
-                @click="setStatus(a.to)"
+                :disabled="statusBusy || !statusChoice"
+                data-testid="job-status-apply"
+                @click="applyStatus"
               >
-                {{ a.label }}
+                {{ statusBusy ? 'Saving…' : 'Apply' }}
               </button>
               <button
                 class="button secondary small-btn danger-text"
@@ -722,6 +768,19 @@ onMounted(async () => {
             </div>
           </div>
           <p v-if="statusError" class="error-note" role="alert" style="margin: 16px 24px">{{ statusError }}</p>
+          <div v-if="job.status === 'filled'" class="filled-note" data-testid="job-filled-note">
+            <span>{{ filledNote(activeCount) }}</span>
+            <button
+              v-if="canReview && activeCount > 0"
+              class="button secondary small-btn"
+              type="button"
+              :disabled="withdrawBusy"
+              data-testid="job-withdraw-rest"
+              @click="withdrawRest"
+            >
+              {{ withdrawBusy ? 'Withdrawing…' : 'Withdraw the rest' }}
+            </button>
+          </div>
           <dl class="detail-grid">
             <div>
               <dt>Description</dt>
@@ -747,7 +806,8 @@ onMounted(async () => {
                 <template v-else-if="step === 'job'">Publish the listing under Channels.</template>
                 <template v-else-if="step === 'publish'">Candidates will appear under Applications.</template>
                 <template v-else-if="step === 'applications'">Move candidates through screening and interview to an offer.</template>
-                <template v-else>Hired — close the job once the headcount is met.</template>
+                <template v-else-if="job.status === 'filled'">Filled — withdraw the candidates still in play when you are ready.</template>
+                <template v-else>Hired — the job fills itself once the headcount is met.</template>
               </dd>
             </div>
           </dl>
@@ -1052,6 +1112,8 @@ onMounted(async () => {
 .metric-label { font-size: 11px; color: var(--muted); font-weight: 550; }
 .metric-value { font-size: 26px; font-weight: 750; letter-spacing: -0.02em; }
 .detail-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 18px 20px; padding: 20px 24px 23px; margin: 0; }
+.status-picker { border: 1px solid var(--line); background: #fff; padding: 7px 10px; font-size: 12px; color: var(--ink); max-width: 100%; }
+.filled-note { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin: 16px 24px 0; padding: 10px 14px; border-radius: 9px; background: #eef3f8; font-size: 12px; }
 .detail-grid dt { font-size: 11px; color: var(--muted); margin-bottom: 6px; }
 .detail-grid dd { margin: 0; font-size: 12px; line-height: 1.6; }
 @media (max-width: 560px) { .detail-grid { grid-template-columns: 1fr; } }

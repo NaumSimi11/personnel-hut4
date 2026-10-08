@@ -64,9 +64,12 @@ insert into public.hiring_requests (id, company_id, title, status) values
   ('60000000-0000-0000-0000-00000000000b','10000000-0000-0000-0000-00000000000b','Account Manager','submitted');
 
 -- A Company A job with one candidate/application, a restricted departure
--- reason for Omar, and a configured workflow owner (audit coverage).
-insert into public.jobs (id, company_id, title, status) values
-  ('70000000-0000-0000-0000-000000000001','10000000-0000-0000-0000-00000000000a','Operations Coordinator','open');
+-- reason for Omar, and a configured workflow owner (audit coverage). It wants
+-- two hires, so the one confirmed below leaves it open (0090 fills a job at
+-- its headcount) and the report blocks still see an open role.
+insert into public.jobs (id, company_id, title, status, custom) values
+  ('70000000-0000-0000-0000-000000000001','10000000-0000-0000-0000-00000000000a','Operations Coordinator','open',
+   '{"zoho": {"headcount": "2"}}');
 insert into public.candidates (id, full_name, email) values
   ('80000000-0000-0000-0000-000000000001','Cathy Candidate','cathy@example.test');
 insert into public.applications (id, job_id, company_id, candidate_id) values
@@ -8702,5 +8705,111 @@ delete from public.jobs where id = '70000000-0000-0000-0000-0000000008b1';
 delete from public.application_sub_statuses where key = 'zz_history';
 update public.application_sub_statuses set archived_at = null
  where key in ('interview_other_stakeholders', 'unqualified', 'interview_task');
+
+-- ================================================================ 0090
+-- A job fills itself (plan 070): headcount from the request, else Zoho's,
+-- else one; the hire that meets it fills a ready/open/on-hold job and the
+-- one before it does not; an imported hire fills nothing; a closed job stays
+-- closed; withdraw_in_play clears the rest and leaves the job filled.
+insert into public.hiring_requests (id, company_id, title, status, headcount) values
+  ('60000000-0000-0000-0000-0000000008c1', '10000000-0000-0000-0000-00000000000b', 'Fill Request B', 'approved', 3);
+insert into public.jobs (id, company_id, title, status, custom, hiring_request_id) values
+  ('70000000-0000-0000-0000-0000000008c1', '10000000-0000-0000-0000-00000000000b', 'Fill Two B', 'open', '{"zoho": {"headcount": "2"}}', null),
+  ('70000000-0000-0000-0000-0000000008c2', '10000000-0000-0000-0000-00000000000b', 'Fill One B', 'open', '{}', null),
+  ('70000000-0000-0000-0000-0000000008c3', '10000000-0000-0000-0000-00000000000b', 'Fill Held B', 'on_hold', '{}', null),
+  ('70000000-0000-0000-0000-0000000008c4', '10000000-0000-0000-0000-00000000000b', 'Fill Closed B', 'closed', '{}', null),
+  ('70000000-0000-0000-0000-0000000008c5', '10000000-0000-0000-0000-00000000000b', 'Fill Imported B', 'open', '{}', null),
+  ('70000000-0000-0000-0000-0000000008c6', '10000000-0000-0000-0000-00000000000b', 'Fill Requested B', 'open',
+   '{"zoho": {"headcount": "1"}}', '60000000-0000-0000-0000-0000000008c1');
+insert into public.candidates (id, full_name)
+select ('80000000-0000-0000-0000-0000000008c' || n)::uuid, 'Fill ' || n from unnest(array['1','2','3','4','5','6','7','8','9']) n;
+insert into public.applications (id, job_id, company_id, candidate_id, stage_key) values
+  ('90000000-0000-0000-0000-0000000008c1', '70000000-0000-0000-0000-0000000008c1', '10000000-0000-0000-0000-00000000000b', '80000000-0000-0000-0000-0000000008c1', 'offer'),
+  ('90000000-0000-0000-0000-0000000008c2', '70000000-0000-0000-0000-0000000008c1', '10000000-0000-0000-0000-00000000000b', '80000000-0000-0000-0000-0000000008c2', 'offer'),
+  ('90000000-0000-0000-0000-0000000008c3', '70000000-0000-0000-0000-0000000008c2', '10000000-0000-0000-0000-00000000000b', '80000000-0000-0000-0000-0000000008c3', 'offer'),
+  ('90000000-0000-0000-0000-0000000008c4', '70000000-0000-0000-0000-0000000008c2', '10000000-0000-0000-0000-00000000000b', '80000000-0000-0000-0000-0000000008c4', 'new'),
+  ('90000000-0000-0000-0000-0000000008c5', '70000000-0000-0000-0000-0000000008c2', '10000000-0000-0000-0000-00000000000b', '80000000-0000-0000-0000-0000000008c5', 'offer'),
+  ('90000000-0000-0000-0000-0000000008c6', '70000000-0000-0000-0000-0000000008c3', '10000000-0000-0000-0000-00000000000b', '80000000-0000-0000-0000-0000000008c6', 'offer'),
+  ('90000000-0000-0000-0000-0000000008c7', '70000000-0000-0000-0000-0000000008c4', '10000000-0000-0000-0000-00000000000b', '80000000-0000-0000-0000-0000000008c7', 'offer'),
+  ('90000000-0000-0000-0000-0000000008c8', '70000000-0000-0000-0000-0000000008c5', '10000000-0000-0000-0000-00000000000b', '80000000-0000-0000-0000-0000000008c8', 'hired'),
+  ('90000000-0000-0000-0000-0000000008c9', '70000000-0000-0000-0000-0000000008c6', '10000000-0000-0000-0000-00000000000b', '80000000-0000-0000-0000-0000000008c9', 'offer');
+
+do $$
+begin
+  -- 1. Headcount: the request, else Zoho's, else one.
+  assert app.job_headcount('70000000-0000-0000-0000-0000000008c1') = 2, 'Zoho said two';
+  assert app.job_headcount('70000000-0000-0000-0000-0000000008c2') = 1, 'nothing said, so one';
+  assert app.job_headcount('70000000-0000-0000-0000-0000000008c6') = 3, 'the hiring request wins over Zoho';
+
+  -- 2. An imported hire fills nothing: it was inserted at hired, never moved there.
+  assert (select status from public.jobs where id = '70000000-0000-0000-0000-0000000008c5') = 'open',
+    'an imported hire leaves its job open';
+
+  -- 3. The hire that meets the headcount fills the job; the one before does not.
+  update public.applications set stage_key = 'hired' where id = '90000000-0000-0000-0000-0000000008c1';
+  assert (select status from public.jobs where id = '70000000-0000-0000-0000-0000000008c1') = 'open',
+    'one of two hired: still open';
+  update public.applications set stage_key = 'hired' where id = '90000000-0000-0000-0000-0000000008c2';
+  assert (select status from public.jobs where id = '70000000-0000-0000-0000-0000000008c1') = 'filled',
+    'two of two: filled';
+  update public.applications set stage_key = 'hired' where id = '90000000-0000-0000-0000-0000000008c3';
+  assert (select status from public.jobs where id = '70000000-0000-0000-0000-0000000008c2') = 'filled',
+    'one of one: filled';
+  assert (select stage_key from public.applications where id = '90000000-0000-0000-0000-0000000008c4') = 'new'
+     and (select stage_key from public.applications where id = '90000000-0000-0000-0000-0000000008c5') = 'offer',
+    'the other candidates are left exactly where they were';
+  update public.applications set stage_key = 'hired' where id = '90000000-0000-0000-0000-0000000008c6';
+  assert (select status from public.jobs where id = '70000000-0000-0000-0000-0000000008c3') = 'filled',
+    'a job on hold fills too';
+  update public.applications set stage_key = 'hired' where id = '90000000-0000-0000-0000-0000000008c7';
+  assert (select status from public.jobs where id = '70000000-0000-0000-0000-0000000008c4') = 'closed',
+    'a closed job is never reopened as filled';
+  update public.applications set stage_key = 'hired' where id = '90000000-0000-0000-0000-0000000008c9';
+  assert (select status from public.jobs where id = '70000000-0000-0000-0000-0000000008c6') = 'open',
+    'one of the request''s three: still open';
+end $$;
+
+-- 4. Withdraw the rest, as Bea (Company HR in B).
+set app.test_uid = '00000000-0000-0000-0000-000000000005';
+set role authenticated;
+do $$
+declare r jsonb;
+begin
+  r := public.withdraw_in_play('70000000-0000-0000-0000-0000000008c2', null);
+  assert r = '{"withdrawn": 2}'::jsonb, 'the two still in play: ' || r::text;
+  assert (select count(*) from public.applications
+           where job_id = '70000000-0000-0000-0000-0000000008c2' and stage_key = 'withdrawn'
+             and withdrawn_reason = 'Position filled.' and sub_status_key = 'job_closed') = 2,
+    'withdrawn at Job closed, the reason defaulting to Position filled';
+  assert (select stage_key from public.applications where id = '90000000-0000-0000-0000-0000000008c3') = 'hired',
+    'the hire is untouched';
+  assert (select from_stage_key from public.application_events
+           where application_id = '90000000-0000-0000-0000-0000000008c5' and kind = 'stage_change'
+             and to_stage_key = 'withdrawn' and actor_id = '20000000-0000-0000-0000-000000000005') = 'offer',
+    'each event carries the stage really left, attributed to Bea';
+  assert (select status from public.jobs where id = '70000000-0000-0000-0000-0000000008c2') = 'filled',
+    'the job stays filled';
+  r := public.withdraw_in_play('70000000-0000-0000-0000-0000000008c2', '  Role went to an internal move. ');
+  assert r = '{"withdrawn": 0}'::jsonb, 'nobody left the second time: ' || r::text;
+end $$;
+reset role;
+set app.test_uid = '00000000-0000-0000-0000-000000000003';
+set role authenticated;
+do $$
+begin
+  begin
+    perform public.withdraw_in_play('70000000-0000-0000-0000-0000000008c1', null);
+    raise exception 'FAIL: an employee with no grants withdrew a job''s candidates';
+  exception when insufficient_privilege then null;
+  end;
+end $$;
+reset role;
+set app.test_uid = '';
+
+delete from public.application_events where application_id::text like '90000000-0000-0000-0000-0000000008c_';
+delete from public.applications where id::text like '90000000-0000-0000-0000-0000000008c_';
+delete from public.candidates where id::text like '80000000-0000-0000-0000-0000000008c_';
+delete from public.jobs where id::text like '70000000-0000-0000-0000-0000000008c_';
+delete from public.hiring_requests where id = '60000000-0000-0000-0000-0000000008c1';
 
 select 'SMOKE TESTS PASSED' as result;

@@ -2,8 +2,10 @@ import { describe, expect, it } from 'vitest'
 import {
   JOB_STEPS,
   currentStep,
+  filledNote,
   friendlyRecruitmentError,
-  jobStatusActions,
+  jobHeadcount,
+  jobStatusOptions,
   promotionActions,
   salvageQuestions,
   screeningQuestionsInput,
@@ -47,31 +49,52 @@ describe('currentStep', () => {
   })
 })
 
-describe('jobStatusActions', () => {
-  it('offers Mark ready only when a description exists', () => {
-    expect(jobStatusActions({ status: 'draft', hasDescription: false })).toEqual([])
-    expect(jobStatusActions({ status: 'draft', hasDescription: true })).toEqual([
-      { to: 'ready', label: 'Mark ready' },
+describe('jobStatusOptions', () => {
+  it('offers every other status, so a job can move back or on', () => {
+    expect(jobStatusOptions({ status: 'open', hasDescription: true }).map((o) => o.to)).toEqual([
+      'draft',
+      'ready',
+      'on_hold',
+      'filled',
+      'closed',
     ])
+    expect(jobStatusOptions({ status: 'filled', hasDescription: true }).map((o) => o.to)).toContain('open')
   })
 
-  it('lets a ready job open without a channel, and an open job pause or close', () => {
-    expect(jobStatusActions({ status: 'ready', hasDescription: true })).toEqual([
-      { to: 'open', label: 'Open job' },
-    ])
-    expect(jobStatusActions({ status: 'open', hasDescription: true })).toEqual([
-      { to: 'on_hold', label: 'Put on hold' },
-      { to: 'closed', label: 'Close job' },
-    ])
+  it('names each one the way the lists do', () => {
+    expect(jobStatusOptions({ status: 'closed', hasDescription: true }).find((o) => o.to === 'on_hold')?.label).toBe('On hold')
   })
 
-  it('lets a paused or closed job reopen; a filled job only closes', () => {
-    expect(jobStatusActions({ status: 'on_hold', hasDescription: true })).toEqual([
-      { to: 'open', label: 'Reopen' },
-      { to: 'closed', label: 'Close job' },
-    ])
-    expect(jobStatusActions({ status: 'closed', hasDescription: true })).toEqual([{ to: 'open', label: 'Reopen' }])
-    expect(jobStatusActions({ status: 'filled', hasDescription: true })).toEqual([{ to: 'closed', label: 'Close job' }])
+  it('keeps Ready out of reach until there is a description', () => {
+    const ready = jobStatusOptions({ status: 'draft', hasDescription: false }).find((o) => o.to === 'ready')
+    expect(ready?.disabled).toBe(true)
+    expect(ready?.label).toBe('Ready (write the description first)')
+    expect(jobStatusOptions({ status: 'draft', hasDescription: true }).find((o) => o.to === 'ready')?.disabled).toBe(false)
+  })
+})
+
+describe('jobHeadcount', () => {
+  it('takes the hiring request first', () => {
+    expect(jobHeadcount({ request: { headcount: 3 }, custom: { zoho: { headcount: '1' } } })).toBe(3)
+  })
+
+  it('then the number Zoho kept', () => {
+    expect(jobHeadcount({ request: null, custom: { zoho: { headcount: '2' } } })).toBe(2)
+    expect(jobHeadcount({ request: null, custom: { zoho: { headcount: 4 } } })).toBe(4)
+  })
+
+  it('then one, for anything missing or not a positive number', () => {
+    expect(jobHeadcount({ request: null, custom: null })).toBe(1)
+    expect(jobHeadcount({ request: null, custom: { zoho: { headcount: 'many' } } })).toBe(1)
+    expect(jobHeadcount({ request: null, custom: { zoho: { headcount: '0' } } })).toBe(1)
+  })
+})
+
+describe('filledNote', () => {
+  it('says nobody is left, or how many are', () => {
+    expect(filledNote(0)).toBe('Filled. Nobody else is still in play.')
+    expect(filledNote(1)).toBe('Filled. 1 candidate is still in play.')
+    expect(filledNote(72)).toBe('Filled. 72 candidates are still in play.')
   })
 })
 

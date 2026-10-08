@@ -5740,6 +5740,10 @@ export type Database = {
       }
       upsert_template_task: { Args: { p: Json }; Returns: Json }
       welcome_note_data: { Args: { p_queue_id: string }; Returns: Json }
+      withdraw_in_play: {
+        Args: { p_job_id: string; p_reason?: string }
+        Returns: Json
+      }
       welcome_note_text: { Args: { p_plan_id: string }; Returns: Json }
     }
     Enums: {

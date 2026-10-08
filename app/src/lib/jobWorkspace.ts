@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { JOB_STATUS_LABEL } from '@/lib/hiringTabs'
 
 /**
  * Pure logic for the job workspace (plan 017): the five-step journey, the
@@ -48,31 +49,32 @@ export function stepIndex(step: StepId): number {
 
 // ------------------------------------------------------------ job lifecycle
 
-export type JobStatusAction = { to: string; label: string }
+/** The order the status picker lists them in: the job's life, start to end. */
+const JOB_STATUS_ORDER = ['draft', 'ready', 'open', 'on_hold', 'filled', 'closed'] as const
 
-export function jobStatusActions(input: { status: string; hasDescription: boolean }): JobStatusAction[] {
-  switch (input.status) {
-    case 'draft':
-      return input.hasDescription ? [{ to: 'ready', label: 'Mark ready' }] : []
-    case 'ready':
-      return [{ to: 'open', label: 'Open job' }]
-    case 'open':
-      return [
-        { to: 'on_hold', label: 'Put on hold' },
-        { to: 'closed', label: 'Close job' },
-      ]
-    case 'on_hold':
-      return [
-        { to: 'open', label: 'Reopen' },
-        { to: 'closed', label: 'Close job' },
-      ]
-    case 'closed':
-      return [{ to: 'open', label: 'Reopen' }]
-    case 'filled':
-      return [{ to: 'closed', label: 'Close job' }]
-    default:
-      return []
-  }
+export type JobStatusOption = { to: string; label: string; disabled: boolean }
+
+/**
+ * The job page's status picker (2026-10-08, HR: "move back to whatever, or
+ * next"): every status but the current one, so a job can step back as well
+ * as on — a filled job reopened for a second hire, a closed one revived.
+ * Ready alone waits for a description, as it always has. The database's
+ * stamps (opened_at, closed_at/by) follow whatever is picked.
+ */
+export function jobStatusOptions(input: { status: string; hasDescription: boolean }): JobStatusOption[] {
+  return JOB_STATUS_ORDER.filter((s) => s !== input.status).map((s) => {
+    const waits = s === 'ready' && !input.hasDescription
+    const label = JOB_STATUS_LABEL[s] ?? s
+    return { to: s, label: waits ? `${label} (write the description first)` : label, disabled: waits }
+  })
+}
+
+export { jobHeadcount } from '@/lib/headcount'
+
+/** The line on a filled job: who is still waiting for an answer. */
+export function filledNote(inPlay: number): string {
+  if (inPlay === 0) return 'Filled. Nobody else is still in play.'
+  return `Filled. ${inPlay} ${inPlay === 1 ? 'candidate is' : 'candidates are'} still in play.`
 }
 
 // ------------------------------------------------------ screening questions

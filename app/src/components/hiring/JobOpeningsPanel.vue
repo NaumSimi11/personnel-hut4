@@ -190,7 +190,7 @@ async function load(): Promise<void> {
     supabase
       .from('jobs')
       .select(
-        `id, title, status, company_id, created_at, closed_at, closed_reason,
+        `id, title, status, company_id, created_at, closed_at, closed_reason, custom,
          company:companies(name), closed_by_person:people!jobs_closed_by_fkey(full_name),
          request:hiring_requests!jobs_hiring_request_id_fkey(headcount, manager:people!hiring_requests_hiring_manager_id_fkey(full_name)),
          applications(count)`,

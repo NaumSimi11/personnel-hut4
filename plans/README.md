@@ -107,6 +107,7 @@ round; merging it into `main` is the maintainer's decision.
 | 069 | Removing a hiring status — Remove on the Labels page asks how many applications carry the status, moves them to another status of the stage (or leaves them), and deletes a status nothing ever used, retiring the rest so old timelines read. The move writes each timeline line without counting as candidate activity or flooding the audit trail (migration 0089). | DONE (applied live 2026-10-08) |
 | 070 | A job fills itself — the hire that meets the headcount (the request's, else Zoho's, else one) moves the job to Filled; the other candidates stay until HR clicks "Withdraw the rest"; the job's status buttons become a picker that moves back or on (migration 0090). | DONE (applied live 2026-10-08) |
 | 071 | Tidying my notifications — archive, restore and delete your own, picked or all read / all archived, counted past the hundred shown; and the task dialog's "With" becomes an autocomplete with chips (migration 0091). | DONE (applied live 2026-10-08) |
+| 072 | Free equipment for anyone in the holding — the starter kit offers every available asset whoever owns it (only an asset somebody holds is left out), searchable with the line's kind first; it stays on its owner's books (migration 0092). | DONE (applied live 2026-10-08) |
 
 Round-03 executors branch from `main` as `feature/NNN-<slug>`; the reviewer
 runs the full E2E suite serially and merges after review.

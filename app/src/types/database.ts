@@ -5397,6 +5397,7 @@ export type Database = {
       delete_notifications: { Args: { p_ids?: string[]; p_where?: string }; Returns: number }
       delete_policy: { Args: { p_policy_id: string }; Returns: Json }
       delete_person: { Args: { p_person_id: string; p_force?: boolean }; Returns: Json }
+      kit_asset_options: { Args: { p_request_id: string }; Returns: Json }
       person_delete_cost: { Args: { p_person_id: string }; Returns: Json }
       delete_plan: { Args: { p_plan_id: string }; Returns: Json }
       delete_task: { Args: { p_task_id: string }; Returns: Json }

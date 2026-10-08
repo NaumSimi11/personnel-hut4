@@ -8884,4 +8884,99 @@ begin
 end $$;
 delete from public.notifications where dedupe_key like 'smoke0091:%';
 
+-- ================================================================ 0092
+-- Free equipment goes to anyone in the holding (plan 072): an available
+-- asset of any company is offered to a starter kit and issued through it on
+-- the kit's own capability; it stays on its owner's books; the direct doors
+-- still ask for the capability where the asset is; reserved and assigned
+-- assets are never offered.
+insert into public.assets (id, company_id, asset_tag, type_key, model) values
+  ('a0000000-0000-0000-0000-000000000921', '10000000-0000-0000-0000-00000000000a', 'X-0092-1', 'laptop', 'A''s free laptop'),
+  ('a0000000-0000-0000-0000-000000000922', '10000000-0000-0000-0000-00000000000a', 'X-0092-2', 'monitor', 'A''s free monitor');
+insert into public.assets (id, company_id, asset_tag, type_key, model) values
+  ('a0000000-0000-0000-0000-000000000923', '10000000-0000-0000-0000-00000000000a', 'X-0092-3', 'laptop', 'A''s laptop, held');
+-- Held by somebody: reserved for Bea, which is the relation that keeps it out of every kit.
+select app.reserve_asset_for('a0000000-0000-0000-0000-000000000923', '20000000-0000-0000-0000-000000000005', 'Held');
+
+-- Bea (HR in Company B, given IT there for this block only) builds a hire's kit in B.
+insert into public.grant_capabilities (grant_id, capability_key) values
+  ('40000000-0000-0000-0000-000000000003', 'it.view'),
+  ('40000000-0000-0000-0000-000000000003', 'it.assign'),
+  ('40000000-0000-0000-0000-000000000003', 'it.complete')
+on conflict do nothing;
+set app.test_uid = '00000000-0000-0000-0000-000000000005';
+set role authenticated;
+do $$
+declare r jsonb; v_person uuid; v_req uuid; v_opts jsonb;
+begin
+  r := public.create_employee(jsonb_build_object('full_name', 'Kit Across', 'work_email', 'kit-across@b.test',
+    'company_id', '10000000-0000-0000-0000-00000000000b', 'job_title', 'Clerk', 'start_date', current_date + 3));
+  v_person := (r->>'person_id')::uuid;
+  select id into v_req from public.it_requests where person_id = v_person and kind = 'onboarding';
+  perform set_config('app.smoke_0092_req', v_req::text, false);
+  perform set_config('app.smoke_0092_person', v_person::text, false);
+
+  v_opts := public.kit_asset_options(v_req);
+  assert exists (select 1 from jsonb_array_elements(v_opts) o
+                  where o->>'asset_tag' = 'X-0092-1' and o->>'company_name' = 'Company A' and o->>'type_label' = 'Laptop'),
+    'Company A''s free laptop is offered to a Company B hire';
+  assert not exists (select 1 from jsonb_array_elements(v_opts) o where o->>'asset_tag' = 'X-0092-3'),
+    'an asset somebody holds is never offered';
+
+  -- Issued on the kit's own capability; Bea cannot even read A's assets, so the checks run below.
+  r := public.issue_kit_item(v_req, 2, 'a0000000-0000-0000-0000-000000000921');
+  assert not exists (select 1 from jsonb_array_elements(public.kit_asset_options(v_req)) o where o->>'asset_tag' = 'X-0092-1'),
+    'and no longer offered';
+
+  -- The direct door still wants it.assign where the asset is.
+  begin
+    perform public.reserve_asset('a0000000-0000-0000-0000-000000000922', v_person, null);
+    raise exception 'FAIL: reserved Company A''s asset without it.assign in Company A';
+  exception when insufficient_privilege then null;
+  end;
+end $$;
+reset role;
+
+set app.test_uid = '';
+do $$
+begin
+  assert (select status from public.assets where id = 'a0000000-0000-0000-0000-000000000921') = 'assigned',
+    'issued through the kit, on the kit''s own capability';
+  assert (select company_id from public.assets where id = 'a0000000-0000-0000-0000-000000000921') = '10000000-0000-0000-0000-00000000000a',
+    'it stays on Company A''s books';
+  assert exists (select 1 from public.asset_assignments where asset_id = 'a0000000-0000-0000-0000-000000000921'
+                   and person_id = current_setting('app.smoke_0092_person')::uuid and issued_at is not null and returned_at is null),
+    'held by the hire';
+end $$;
+
+-- Ada (admin) may: and the person needs only be employed somewhere, not at A.
+set app.test_uid = '00000000-0000-0000-0000-000000000004';
+set role authenticated;
+do $$
+declare r jsonb;
+begin
+  r := public.reserve_asset('a0000000-0000-0000-0000-000000000922', current_setting('app.smoke_0092_person')::uuid, 'Across');
+  assert (select status from public.assets where id = 'a0000000-0000-0000-0000-000000000922') = 'reserved',
+    'a Company A asset reserved for a Company B hire';
+  perform public.issue_asset((r->>'assignment_id')::uuid);
+  assert (select status from public.assets where id = 'a0000000-0000-0000-0000-000000000922') = 'assigned', 'and issued';
+end $$;
+reset role;
+
+-- Omar (no grants) sees no list.
+set app.test_uid = '00000000-0000-0000-0000-000000000003';
+set role authenticated;
+do $$
+begin
+  begin
+    perform public.kit_asset_options(current_setting('app.smoke_0092_req')::uuid);
+    raise exception 'FAIL: an employee with no grants read the holding''s free equipment';
+  exception when insufficient_privilege then null;
+  end;
+end $$;
+reset role;
+set app.test_uid = '';
+delete from public.grant_capabilities where grant_id = '40000000-0000-0000-0000-000000000003'
+   and capability_key in ('it.view', 'it.assign', 'it.complete');
+
 select 'SMOKE TESTS PASSED' as result;

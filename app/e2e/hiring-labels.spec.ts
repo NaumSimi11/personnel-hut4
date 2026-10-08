@@ -10,9 +10,9 @@ import { expect, test } from '@playwright/test'
  * The empty-label refusal is asserted in the browser only; it never reaches
  * the database, so no row is touched by that half.
  *
- * Plan 068: an admin also adds a status at a stage that had none of its own
- * name, retires it and restores it. The added row is removed through the
- * service client before and after, since the app itself only ever retires.
+ * Plan 068/069: an admin also adds a status at a stage, then removes it —
+ * nobody used it, so the dialog says so and it is deleted. The service
+ * client removes the row before and after in case a run stops halfway.
  */
 
 const ADMIN_EMAIL = process.env.TEST_USER_EMAIL ?? ''
@@ -80,7 +80,7 @@ async function removeAdded(): Promise<void> {
   if (error) throw new Error(`Could not remove the E2E status: ${error.message}`)
 }
 
-test('an admin adds a status at a stage, retires it and restores it', async ({ page }) => {
+test('an admin adds a status at a stage, and removes it again', async ({ page }) => {
   test.skip(!ADMIN_EMAIL || !ADMIN_PASSWORD, 'Set TEST_USER_EMAIL / TEST_USER_PASSWORD')
   await removeAdded()
 
@@ -109,13 +109,15 @@ test('an admin adds a status at a stage, retires it and restores it', async ({ p
     const added = page.getByTestId('label-row-e2e_waiting_on_references')
     await expect(added.locator('input')).toHaveValue(ADDED_LABEL)
 
-    await page.getByTestId('label-retire-e2e_waiting_on_references').click()
-    await expect(panel).toContainText(`Retired “${ADDED_LABEL}”.`)
+    await page.getByTestId('label-remove-e2e_waiting_on_references').click()
+    const dialog = page.getByTestId('remove-status-dialog')
+    await expect(dialog.getByTestId('remove-status-summary')).toHaveText(`Nobody has used “${ADDED_LABEL}”. It will be deleted.`)
+    await dialog.getByTestId('remove-status-confirm').click()
+    await expect(panel).toContainText(`Deleted “${ADDED_LABEL}”.`)
     await expect(page.getByTestId('label-row-e2e_waiting_on_references')).toHaveCount(0)
-    await stage.locator('summary').click()
-    await page.getByTestId('label-restore-e2e_waiting_on_references').click()
-    await expect(panel).toContainText(`Restored “${ADDED_LABEL}”.`)
-    await expect(page.getByTestId('label-row-e2e_waiting_on_references')).toBeVisible()
+
+    // The four statuses the rules name offer no Remove at all.
+    await expect(page.getByTestId('label-remove-applied')).toHaveCount(0)
   } finally {
     await removeAdded()
   }

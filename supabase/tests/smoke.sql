@@ -8531,4 +8531,176 @@ delete from public.jobs where id in ('70000000-0000-0000-0000-0000000008a1', '70
                                      '70000000-0000-0000-0000-0000000008a3', '70000000-0000-0000-0000-0000000008a4');
 delete from public.application_sub_statuses where key in ('offer_negotiating', 'offer_negotiating_4', 'interview_negotiating');
 
+-- ================================================================ 0089
+-- Removing a status (plan 069): admin-only usage and remove; the rule keys
+-- refused; a move lands on a live status of the same stage, writes the
+-- timeline line without touching the candidate's activity or flooding the
+-- audit trail; never used is deleted, used is retired; null move_to leaves
+-- the applications where they are.
+insert into public.jobs (id, company_id, title, status) values
+  ('70000000-0000-0000-0000-0000000008b1', '10000000-0000-0000-0000-00000000000b', 'Remove Role B', 'open');
+insert into public.candidates (id, full_name) values
+  ('80000000-0000-0000-0000-0000000008b1', 'Remove One'),
+  ('80000000-0000-0000-0000-0000000008b2', 'Remove Two'),
+  ('80000000-0000-0000-0000-0000000008b3', 'Remove Three'),
+  ('80000000-0000-0000-0000-0000000008b4', 'Remove Four');
+insert into public.applications (id, job_id, company_id, candidate_id, stage_key, sub_status_key, rejected_reason) values
+  ('90000000-0000-0000-0000-0000000008b1', '70000000-0000-0000-0000-0000000008b1', '10000000-0000-0000-0000-00000000000b',
+   '80000000-0000-0000-0000-0000000008b1', 'interview', 'interview_other_stakeholders', null),
+  ('90000000-0000-0000-0000-0000000008b2', '70000000-0000-0000-0000-0000000008b1', '10000000-0000-0000-0000-00000000000b',
+   '80000000-0000-0000-0000-0000000008b2', 'rejected', 'unqualified', 'Unqualified'),
+  ('90000000-0000-0000-0000-0000000008b3', '70000000-0000-0000-0000-0000000008b1', '10000000-0000-0000-0000-00000000000b',
+   '80000000-0000-0000-0000-0000000008b3', 'rejected', 'unqualified', 'Our own words here.'),
+  ('90000000-0000-0000-0000-0000000008b4', '70000000-0000-0000-0000-0000000008b1', '10000000-0000-0000-0000-00000000000b',
+   '80000000-0000-0000-0000-0000000008b4', 'interview', 'interview_task', null);
+insert into public.application_sub_statuses (key, stage_key, label, sort_order) values
+  ('zz_never', 'offer', 'Never used', 90),
+  ('zz_history', 'offer', 'Only in history', 91);
+insert into public.application_events (application_id, kind, from_sub_status_key, to_sub_status_key) values
+  ('90000000-0000-0000-0000-0000000008b4', 'status_change', 'zz_history', 'interview_task');
+
+-- 1. Bea (Company HR, not an admin) is refused both doors.
+set app.test_uid = '00000000-0000-0000-0000-000000000005';
+set role authenticated;
+do $$
+begin
+  begin
+    perform public.sub_status_usage('interview_task');
+    raise exception 'FAIL: a company HR read status usage';
+  exception when insufficient_privilege then null;
+  end;
+  begin
+    perform public.remove_sub_status('interview_task', null);
+    raise exception 'FAIL: a company HR removed a holding-wide status';
+  exception when insufficient_privilege then null;
+  end;
+end $$;
+reset role;
+set app.test_uid = '';
+
+-- 2. Ada (admin).
+set app.test_uid = '00000000-0000-0000-0000-000000000004';
+set role authenticated;
+do $$
+declare r jsonb;
+begin
+  r := public.sub_status_usage('interview_other_stakeholders');
+  assert r = '{"applications": 1, "history": 0}'::jsonb, 'one application, no history yet: ' || r::text;
+  assert public.sub_status_usage('zz_history') = '{"applications": 0, "history": 1}'::jsonb, 'history only';
+
+  -- The refusals.
+  begin
+    perform public.remove_sub_status('applied', null);
+    raise exception 'FAIL: removed a status the rules name';
+  exception when invalid_parameter_value then
+    if sqlerrm not like '%"Applied" is used by the pipeline''s own rules — rename it instead.%' then raise; end if;
+  end;
+  begin
+    perform public.remove_sub_status('interview_other_stakeholders', 'offer_made');
+    raise exception 'FAIL: moved Interview applications onto an Offer status';
+  exception when invalid_parameter_value then
+    if sqlerrm not like '%Pick another live status of the same stage%' then raise; end if;
+  end;
+  begin
+    perform public.remove_sub_status('interview_other_stakeholders', 'interview_other_stakeholders');
+    raise exception 'FAIL: moved a status onto itself';
+  exception when invalid_parameter_value then null;
+  end;
+  begin
+    perform public.remove_sub_status('nothing_here', null);
+    raise exception 'FAIL: removed a status that is not there';
+  exception when invalid_parameter_value then
+    if sqlerrm not like '%That status no longer exists.%' then raise; end if;
+  end;
+  assert (select archived_at is null from public.application_sub_statuses where key = 'interview_other_stakeholders')
+     and (select sub_status_key from public.applications where id = '90000000-0000-0000-0000-0000000008b1') = 'interview_other_stakeholders',
+    'a refused call changed nothing';
+end $$;
+
+-- 3. The move: timeline line, no activity, one audit row, retired after.
+do $$
+declare r jsonb; v_activity timestamptz; v_audit int;
+begin
+  select last_activity_at into v_activity from public.candidates where id = '80000000-0000-0000-0000-0000000008b1';
+  select count(*) into v_audit from public.activity_log where entity_id = '90000000-0000-0000-0000-0000000008b1';
+  r := public.remove_sub_status('interview_other_stakeholders', 'interview_other_stakeholder');
+  assert r = '{"moved": 1, "outcome": "retired"}'::jsonb, 'one moved, and retired because history now names it: ' || r::text;
+  assert (select sub_status_key from public.applications where id = '90000000-0000-0000-0000-0000000008b1') = 'interview_other_stakeholder',
+    'Interview 4 → Interview 3';
+  assert exists (select 1 from public.application_events where application_id = '90000000-0000-0000-0000-0000000008b1'
+                   and kind = 'status_change' and from_sub_status_key = 'interview_other_stakeholders'
+                   and to_sub_status_key = 'interview_other_stakeholder'
+                   and body = 'Status "Interview 4 – Other stakeholders" removed.'
+                   and actor_id = '20000000-0000-0000-0000-000000000004'),
+    'the application''s timeline says why, attributed to Ada';
+  assert (select last_activity_at from public.candidates where id = '80000000-0000-0000-0000-0000000008b1') = v_activity,
+    'housekeeping is not activity: the candidate''s last activity stands';
+  assert (select count(*) from public.activity_log where entity_id = '90000000-0000-0000-0000-0000000008b1') = v_audit,
+    'no audit row per application';
+  assert exists (select 1 from public.activity_log
+                  where entity_type = 'application_sub_statuses' and entity_id = 'interview_other_stakeholders'
+                    and action = 'UPDATE' and (after->>'moved')::int = 1 and after->>'moved_to' = 'interview_other_stakeholder'
+                    and actor_person_id = '20000000-0000-0000-0000-000000000004'),
+    'one summary row says what was moved where';
+  assert (select archived_at is not null from public.application_sub_statuses where key = 'interview_other_stakeholders'),
+    'and the status is retired';
+end $$;
+reset role;
+set app.test_uid = '';
+do $$
+begin
+  assert exists (select 1 from pg_trigger where tgrelid = 'public.applications'::regclass and tgname = 'audit' and tgenabled = 'O')
+     and exists (select 1 from pg_trigger where tgrelid = 'public.application_events'::regclass
+                   and tgname = 't8_touch_candidate' and tgenabled = 'O'),
+    'both triggers are back on';
+end $$;
+
+-- 4. A reason that was only the status follows it; one in somebody's words stays.
+set app.test_uid = '00000000-0000-0000-0000-000000000004';
+set role authenticated;
+do $$
+declare r jsonb;
+begin
+  r := public.remove_sub_status('unqualified', 'rejected_by_hr');
+  assert (r->>'moved')::int = 2, 'both Unqualified rows moved: ' || r::text;
+  assert (select rejected_reason from public.applications where id = '90000000-0000-0000-0000-0000000008b2') = 'Rejected by HR'
+     and (select rejected_reason from public.applications where id = '90000000-0000-0000-0000-0000000008b3') = 'Our own words here.',
+    'the reason follows only where it was the old status''s name';
+end $$;
+
+-- 5. Leave them where they are; delete what was never used; retire what history names.
+do $$
+declare r jsonb;
+begin
+  r := public.remove_sub_status('interview_task', null);
+  assert r = '{"moved": 0, "outcome": "retired"}'::jsonb, 'left in place, retired: ' || r::text;
+  assert (select sub_status_key from public.applications where id = '90000000-0000-0000-0000-0000000008b4') = 'interview_task',
+    'the application keeps it';
+  r := public.remove_sub_status('zz_never', null);
+  assert r = '{"moved": 0, "outcome": "deleted"}'::jsonb and not exists (select 1 from public.application_sub_statuses where key = 'zz_never'),
+    'never used, so deleted: ' || r::text;
+  assert exists (select 1 from public.activity_log where entity_type = 'application_sub_statuses'
+                   and entity_id = 'zz_never' and action = 'DELETE'), 'and the deletion is on record';
+  r := public.remove_sub_status('zz_history', null);
+  assert r->>'outcome' = 'retired' and exists (select 1 from public.application_sub_statuses
+                                                where key = 'zz_history' and archived_at is not null),
+    'named in a timeline, so retired rather than deleted';
+  -- A move onto a retired status is refused like any other bad target.
+  begin
+    perform public.remove_sub_status('interview_hr', 'interview_task');
+    raise exception 'FAIL: moved applications onto a retired status';
+  exception when invalid_parameter_value then null;
+  end;
+end $$;
+reset role;
+set app.test_uid = '';
+
+delete from public.application_events where application_id::text like '90000000-0000-0000-0000-0000000008b_';
+delete from public.applications where id::text like '90000000-0000-0000-0000-0000000008b_';
+delete from public.candidates where id::text like '80000000-0000-0000-0000-0000000008b_';
+delete from public.jobs where id = '70000000-0000-0000-0000-0000000008b1';
+delete from public.application_sub_statuses where key = 'zz_history';
+update public.application_sub_statuses set archived_at = null
+ where key in ('interview_other_stakeholders', 'unqualified', 'interview_task');
+
 select 'SMOKE TESTS PASSED' as result;

@@ -5559,6 +5559,10 @@ export type Database = {
       remove_handover_recipient: { Args: { p_id: string }; Returns: Json }
       revoke_access: { Args: { p_id: string; p_note?: string }; Returns: Json }
       remove_payroll_item: { Args: { p_id: string }; Returns: Json }
+      remove_sub_status: {
+        Args: { p_key: string; p_move_to?: string }
+        Returns: Json
+      }
       reopen_payroll_period: { Args: { p_period_id: string }; Returns: Json }
       reorder_template_tasks: {
         Args: { p_ids: string[]; p_template_id: string }
@@ -5696,6 +5700,7 @@ export type Database = {
         Returns: Json
       }
       starter_kit: { Args: { p_company_id: string }; Returns: Json }
+      sub_status_usage: { Args: { p_key: string }; Returns: Json }
       submit_requested_document: {
         Args: { p_document_id: string; p_request_id: string }
         Returns: Json

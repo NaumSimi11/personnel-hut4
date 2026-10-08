@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { supabase } from '@/lib/supabase'
+import RemoveStatusDialog from '@/components/hiring/RemoveStatusDialog.vue'
 import {
   KEY_PATTERN,
   MAX_LABEL_LENGTH,
@@ -22,8 +23,9 @@ import {
  * the years of Zoho Recruit before this app). A label changes; a key stays,
  * because the Zoho status map and the applications point at it. Since plan
  * 068 an admin also adds a status at any stage — usable the moment it is
- * saved — and retires one instead of deleting it, so applications that
- * already carry it keep reading it.
+ * saved — and removes one (plan 069): its applications move to another
+ * status of the stage or stay where they are, and the status is deleted when
+ * nothing ever used it, retired otherwise, so old timelines keep reading it.
  *
  * Admins only: both lookups carry an `admin_write` policy, so a non-admin's
  * write is refused by the database rather than by this panel.
@@ -39,6 +41,7 @@ const loaded = ref(false)
 const savingId = ref<string | null>(null)
 const error = ref<string | null>(null)
 const notice = ref<string | null>(null)
+const removeDialog = ref<InstanceType<typeof RemoveStatusDialog> | null>(null)
 
 const groups = computed(() => groupByStage(subStatuses.value))
 
@@ -166,26 +169,32 @@ async function add(group: SubStatusGroup): Promise<void> {
   notice.value = `Added “${label}” to ${group.stageLabel}. It can be picked from the next page load.`
 }
 
-async function setRetired(row: SubStatusRow, retire: boolean): Promise<void> {
-  if (!retire) {
-    const clash = duplicateLabel(row.label, stageRows(row.stage_key), row.key)
-    if (clash) {
-      error.value = `${clash} Rename that one first.`
-      return
-    }
-  }
-  const archivedAt = retire ? new Date().toISOString() : null
-  startWrite(idOf('application_sub_statuses', row.key))
-  const { error: err } = await supabase.from('application_sub_statuses').update({ archived_at: archivedAt }).eq('key', row.key)
-  savingId.value = null
-  if (err) {
-    error.value = writeError(err.message, 'Only platform admins retire hiring statuses.')
+function openRemove(group: SubStatusGroup, row: SubStatusRow): void {
+  error.value = null
+  notice.value = null
+  void removeDialog.value?.open(row, group.rows.filter((r) => r.key !== row.key))
+}
+
+async function onRemoved(message: string): Promise<void> {
+  await load()
+  notice.value = message
+}
+
+async function restore(row: SubStatusRow): Promise<void> {
+  const clash = duplicateLabel(row.label, stageRows(row.stage_key), row.key)
+  if (clash) {
+    error.value = `${clash} Rename that one first.`
     return
   }
-  subStatuses.value = subStatuses.value.map((r) => (r.key === row.key ? { ...r, archived_at: archivedAt } : r))
-  notice.value = retire
-    ? `Retired “${row.label}”. Applications that have it keep it; nobody can pick it any more.`
-    : `Restored “${row.label}”. It can be picked again.`
+  startWrite(idOf('application_sub_statuses', row.key))
+  const { error: err } = await supabase.from('application_sub_statuses').update({ archived_at: null }).eq('key', row.key)
+  savingId.value = null
+  if (err) {
+    error.value = writeError(err.message, 'Only platform admins restore hiring statuses.')
+    return
+  }
+  subStatuses.value = subStatuses.value.map((r) => (r.key === row.key ? { ...r, archived_at: null } : r))
+  notice.value = `Restored “${row.label}”. It can be picked again.`
 }
 
 onMounted(load)
@@ -195,9 +204,9 @@ onMounted(load)
   <div data-testid="hiring-labels-panel">
     <p class="hint">
       Name the statuses of every stage and the sources in your team's own words, add the ones you are missing,
-      and retire the ones nobody uses. A rename changes only the wording — reports, filters and the Zoho import
-      keep working, because they match on the key beside each name, never on the name. A retired status stays on
-      the applications that have it.
+      and remove the ones you no longer want — moving their applications to another status, or leaving them be. A
+      rename changes only the wording — reports, filters and the Zoho import keep working, because they match on
+      the key beside each name, never on the name.
     </p>
 
     <p v-if="error" class="error-note" role="alert">{{ error }}</p>
@@ -243,10 +252,10 @@ onMounted(load)
                 class="button secondary"
                 type="button"
                 :disabled="savingId !== null"
-                :data-testid="`label-retire-${row.key}`"
-                @click="setRetired(row, true)"
+                :data-testid="`label-remove-${row.key}`"
+                @click="openRemove(group, row)"
               >
-                Retire
+                Remove…
               </button>
               <small v-else class="kept" title="New's defaults and the &quot;not responding&quot; count use this status.">
                 Used by the rules
@@ -288,7 +297,7 @@ onMounted(load)
                   type="button"
                   :disabled="savingId !== null"
                   :data-testid="`label-restore-${row.key}`"
-                  @click="setRetired(row, false)"
+                  @click="restore(row)"
                 >
                   Restore
                 </button>
@@ -333,6 +342,7 @@ onMounted(load)
         </div>
       </section>
     </template>
+    <RemoveStatusDialog ref="removeDialog" @removed="onRemoved" />
   </div>
 </template>
 

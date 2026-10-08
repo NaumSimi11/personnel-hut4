@@ -15,6 +15,7 @@ export const ENTITY_LABELS: Record<string, string> = {
   job_channels: 'Job channel',
   promotions: 'Promotion',
   applications: 'Application',
+  application_sub_statuses: 'Hiring status',
   application_files: 'Candidate file',
   interviews: 'Interview',
   scorecards: 'Scorecard',

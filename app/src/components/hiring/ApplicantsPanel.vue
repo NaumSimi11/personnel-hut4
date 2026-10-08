@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
+import { useRoute } from 'vue-router'
 import { supabase } from '@/lib/supabase'
 import CompanyFilter from '@/components/CompanyFilter.vue'
 import { PIPELINE_STAGES } from '@/lib/dashboard'
@@ -24,6 +25,8 @@ import { useDialogStore } from '@/stores/dialogs'
  * over the New and Screening rows. Since plan 068 every stage has statuses:
  * the badge names a retired one too, and the status filter travels to the
  * query like the stage filter, narrowed to the chosen stage's statuses.
+ * `?stage=` and `?status=` open the list already filtered — the Labels
+ * page's "Review them first" (plan 069) links here that way.
  */
 const PAGE_CAP = 1000
 const CLOSED_STAGES = '(hired,rejected,withdrawn)'
@@ -37,9 +40,15 @@ const busyId = ref<string | null>(null)
 const applications = ref<ApplicantLite[]>([])
 const subStatusRows = ref<SubStatusRow[]>([])
 const subStatusLabels = computed<Record<string, string>>(() => statusLabels(subStatusRows.value))
+const route = useRoute()
+const STAGE_FILTERS = new Set(['live', 'all', NOT_RESPONDING_FILTER, 'withdrawn', ...PIPELINE_STAGES.map((s) => s.key)])
+function queryText(name: string): string {
+  const raw = route.query[name]
+  return typeof raw === 'string' ? raw : ''
+}
 const companyId = ref('')
-const stage = ref('live')
-const status = ref('')
+const stage = ref(STAGE_FILTERS.has(queryText('stage')) ? queryText('stage') : 'live')
+const status = ref(queryText('status'))
 const statusGroups = computed(() => statusFilterGroups(subStatusRows.value, filterStagesFor(stage.value)))
 const search = ref('')
 const capped = computed(() => applications.value.length === PAGE_CAP)

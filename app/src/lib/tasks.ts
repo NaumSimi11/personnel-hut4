@@ -148,22 +148,39 @@ export function friendlyTaskError(message: string): string {
   return message
 }
 
+/** Lower-case, accents and the Turkish dotless i folded away, so "ozkan" finds "Özkan". */
+function fold(text: string): string {
+  return text.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/ı/g, 'i').toLowerCase()
+}
+
+const SUGGEST_LIMIT = 8
+
 /**
- * The people you may connect, in the order that helps (task.md: "when we add
- * task, the dialog list employees very bad"). Forty-two names in a 520px
- * dialog is a wall, so there is a filter over them — and the ones already
- * ticked come first and stay whatever is typed, because a filter that can
- * hide a name you just chose turns "who is on this" into a guess.
+ * The task dialog's "With" autocomplete (2026-10-08, HR: "an autocomplete to
+ * search and select people"): nobody until something is typed, then the
+ * colleagues not yet on it whose name matches — the name starting with it
+ * first, then a later word starting with it, then anywhere — at most `limit`.
  */
-export function orderGuests<T extends TaskPerson>(
+export function suggestGuests<T extends TaskPerson>(
   guests: readonly T[],
   query: string,
   selectedIds: readonly string[],
+  limit: number = SUGGEST_LIMIT,
 ): T[] {
-  const needle = query.trim().toLowerCase()
+  const needle = fold(query.trim())
+  if (!needle) return []
   const chosen = new Set(selectedIds)
-  return [
-    ...guests.filter((g) => chosen.has(g.id)),
-    ...guests.filter((g) => !chosen.has(g.id) && (!needle || g.full_name.toLowerCase().includes(needle))),
-  ]
+  const rank = (name: string): number => {
+    const folded = fold(name)
+    if (folded.startsWith(needle)) return 0
+    if (folded.split(/\s+/).some((w) => w.startsWith(needle))) return 1
+    return folded.includes(needle) ? 2 : -1
+  }
+  return guests
+    .filter((g) => !chosen.has(g.id))
+    .map((g) => ({ g, r: rank(g.full_name) }))
+    .filter(({ r }) => r >= 0)
+    .sort((a, b) => a.r - b.r)
+    .slice(0, limit)
+    .map(({ g }) => g)
 }

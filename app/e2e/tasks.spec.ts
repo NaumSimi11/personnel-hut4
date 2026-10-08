@@ -87,9 +87,14 @@ test('a person writes a task down, connects a colleague, ticks it and deletes it
   // Change it, and connect the first colleague offered.
   await page.getByTestId(`task-edit-${taskId}`).click()
   await page.getByTestId('task-title').fill(RETITLED)
-  const firstColleague = page.locator('[data-testid^="task-with-"]').first()
-  const connected = (await firstColleague.count()) > 0
-  if (connected) await firstColleague.check()
+  // "With" is an autocomplete: type, then pick the first suggestion.
+  const search = page.getByTestId('task-people-search')
+  const connected = (await search.count()) > 0
+  if (connected) {
+    await search.fill('a')
+    await page.locator('[data-testid^="task-suggest-"]').first().click()
+    await expect(page.locator('[data-testid^="task-with-remove-"]')).toHaveCount(1)
+  }
   await page.getByTestId('task-save').click()
   await expect(card).toContainText(RETITLED)
   if (connected) {

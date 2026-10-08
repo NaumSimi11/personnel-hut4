@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   dueLabel,
-  orderGuests,
+  suggestGuests,
   dueTone,
   friendlyTaskError,
   openCount,
@@ -144,30 +144,36 @@ describe('choosing who else is on a task', () => {
     { id: 'a', full_name: 'Adrijana Ristova' },
     { id: 'b', full_name: 'Bojan Ivanovski' },
     { id: 'c', full_name: 'Filip Babamov' },
+    { id: 'd', full_name: 'Özkan Yılmaz' },
+    { id: 'e', full_name: 'Ivana Frost' },
   ]
+  const ids = (q: string, chosen: string[] = [], limit?: number) => suggestGuests(guests, q, chosen, limit).map((g) => g.id)
 
-  it('keeps everyone when nothing is typed', () => {
-    expect(orderGuests(guests, '', []).map((g) => g.id)).toEqual(['a', 'b', 'c'])
+  it('suggests nobody until something is typed', () => {
+    expect(ids('')).toEqual([])
+    expect(ids('   ')).toEqual([])
   })
 
-  it('filters on the name, ignoring case', () => {
-    expect(orderGuests(guests, 'iva', []).map((g) => g.id)).toEqual(['b'])
-    expect(orderGuests(guests, '  BABAMOV ', []).map((g) => g.id)).toEqual(['c'])
+  it('matches the name, ignoring case and surrounding space', () => {
+    expect(ids('  BABAMOV ')).toEqual(['c'])
   })
 
-  it('puts the chosen first', () => {
-    expect(orderGuests(guests, '', ['c']).map((g) => g.id)).toEqual(['c', 'a', 'b'])
+  it('puts a name or a word that starts with it before a match inside a word', () => {
+    // "Ivana Frost" starts with "iva"; "Bojan Ivanovski" has a word that does;
+    // nobody has it only mid-word here, so add one who does.
+    expect(suggestGuests([...guests, { id: 'f', full_name: 'Nikola Divac' }], 'iva', []).map((g) => g.id)).toEqual(['e', 'b', 'f'])
   })
 
-  it('never hides somebody already ticked, whatever is typed', () => {
-    expect(orderGuests(guests, 'zzz', ['c']).map((g) => g.id)).toEqual(['c'])
+  it('ignores accents both ways', () => {
+    expect(ids('ozkan')).toEqual(['d'])
+    expect(ids('yilmaz')).toEqual(['d'])
   })
 
-  it('does not list the chosen twice when they also match', () => {
-    expect(orderGuests(guests, 'bojan', ['b']).map((g) => g.id)).toEqual(['b'])
+  it('leaves out who is already on it', () => {
+    expect(ids('iva', ['e'])).toEqual(['b'])
   })
 
-  it('does not hand back the array it was given', () => {
-    expect(orderGuests(guests, '', [])).not.toBe(guests)
+  it('stops at the limit', () => {
+    expect(ids('a', [], 2)).toHaveLength(2)
   })
 })

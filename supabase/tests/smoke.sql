@@ -8812,4 +8812,76 @@ delete from public.candidates where id::text like '80000000-0000-0000-0000-00000
 delete from public.jobs where id::text like '70000000-0000-0000-0000-0000000008c_';
 delete from public.hiring_requests where id = '60000000-0000-0000-0000-0000000008c1';
 
+-- ================================================================ 0091
+-- Tidying my notifications (plan 071): archive (picked, or all read),
+-- restore, delete (picked, all read, all archived); my own only; the bulk
+-- forms never take an unread one; a delete with no target deletes nothing.
+insert into public.notifications (id, person_id, kind, title, dedupe_key, read_at) values
+  ('a0000000-0000-0000-0000-000000000911', '20000000-0000-0000-0000-000000000002', 'smoke', 'Unread one', 'smoke0091:1', null),
+  ('a0000000-0000-0000-0000-000000000912', '20000000-0000-0000-0000-000000000002', 'smoke', 'Read two', 'smoke0091:2', now()),
+  ('a0000000-0000-0000-0000-000000000913', '20000000-0000-0000-0000-000000000002', 'smoke', 'Read three', 'smoke0091:3', now()),
+  ('a0000000-0000-0000-0000-000000000919', '20000000-0000-0000-0000-000000000003', 'smoke', 'Omar''s', 'smoke0091:9', now());
+
+set app.test_uid = '00000000-0000-0000-0000-000000000002';  -- Fiona
+set role authenticated;
+do $$
+declare n int;
+begin
+  n := public.archive_notifications(null);
+  assert n = 2, 'all read: the two read ones, not the unread: ' || n;
+  assert (select archived_at is null from public.notifications where id = 'a0000000-0000-0000-0000-000000000911'),
+    'the unread one is not swept up';
+  n := public.archive_notifications(array['a0000000-0000-0000-0000-000000000911',
+                                          'a0000000-0000-0000-0000-000000000919']::uuid[]);
+  assert n = 1, 'picked: only my own one: ' || n;
+  assert (select read_at is not null and archived_at is not null from public.notifications
+           where id = 'a0000000-0000-0000-0000-000000000911'), 'archiving a picked unread one also reads it';
+  n := public.restore_notifications(array['a0000000-0000-0000-0000-000000000912',
+                                          'a0000000-0000-0000-0000-000000000919']::uuid[]);
+  assert n = 1 and (select archived_at is null from public.notifications where id = 'a0000000-0000-0000-0000-000000000912'),
+    'restore brings back my own: ' || n;
+  n := public.delete_notifications(array['a0000000-0000-0000-0000-000000000912',
+                                         'a0000000-0000-0000-0000-000000000919']::uuid[], null);
+  assert n = 1 and not exists (select 1 from public.notifications where id = 'a0000000-0000-0000-0000-000000000912'),
+    'delete picked: only my own: ' || n;
+  n := public.delete_notifications(null, 'archived');
+  assert n = 2, 'all archived: the two left in the archive: ' || n;
+  begin
+    perform public.delete_notifications(null, null);
+    raise exception 'FAIL: a delete with no target';
+  exception when invalid_parameter_value then
+    if sqlerrm not like '%Say which notifications to delete.%' then raise; end if;
+  end;
+  begin
+    perform public.archive_notifications(array[]::uuid[]);
+    raise exception 'FAIL: archived an empty pick';
+  exception when invalid_parameter_value then null;
+  end;
+end $$;
+reset role;
+set app.test_uid = '';
+
+insert into public.notifications (id, person_id, kind, title, dedupe_key, read_at) values
+  ('a0000000-0000-0000-0000-000000000914', '20000000-0000-0000-0000-000000000002', 'smoke', 'Read four', 'smoke0091:4', now()),
+  ('a0000000-0000-0000-0000-000000000915', '20000000-0000-0000-0000-000000000002', 'smoke', 'Unread five', 'smoke0091:5', null);
+set app.test_uid = '00000000-0000-0000-0000-000000000002';
+set role authenticated;
+do $$
+declare n int;
+begin
+  n := public.delete_notifications(null, 'read');
+  assert n >= 1 and not exists (select 1 from public.notifications where id = 'a0000000-0000-0000-0000-000000000914'),
+    'all read: gone: ' || n;
+  assert exists (select 1 from public.notifications where id = 'a0000000-0000-0000-0000-000000000915'),
+    'and the unread one stays';
+end $$;
+reset role;
+set app.test_uid = '';
+do $$
+begin
+  assert exists (select 1 from public.notifications where id = 'a0000000-0000-0000-0000-000000000919'),
+    'Omar''s notification was never touched by Fiona''s calls';
+end $$;
+delete from public.notifications where dedupe_key like 'smoke0091:%';
+
 select 'SMOKE TESTS PASSED' as result;

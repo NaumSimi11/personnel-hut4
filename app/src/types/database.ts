@@ -3611,6 +3611,7 @@ export type Database = {
       }
       notifications: {
         Row: {
+          archived_at: string | null
           body: string | null
           company_id: string | null
           created_at: string
@@ -3630,6 +3631,7 @@ export type Database = {
           title: string
         }
         Insert: {
+          archived_at?: string | null
           body?: string | null
           company_id?: string | null
           created_at?: string
@@ -3649,6 +3651,7 @@ export type Database = {
           title: string
         }
         Update: {
+          archived_at?: string | null
           body?: string | null
           company_id?: string | null
           created_at?: string
@@ -5321,6 +5324,7 @@ export type Database = {
       apply_due_employment_changes: { Args: never; Returns: number }
       approve_payroll_period: { Args: { p_period_id: string }; Returns: Json }
       archive_company: { Args: { p_company_id: string }; Returns: Json }
+      archive_notifications: { Args: { p_ids?: string[] }; Returns: number }
       archive_policy: { Args: { p_policy_id: string }; Returns: Json }
       attach_leave_document: {
         Args: { p_document_id: string; p_request_id: string }
@@ -5390,6 +5394,7 @@ export type Database = {
       create_employee: { Args: { p: Json }; Returns: Json }
       dashboard_snapshot: { Args: { p_days?: number }; Returns: Json }
       delete_candidate: { Args: { p_candidate_id: string }; Returns: Json }
+      delete_notifications: { Args: { p_ids?: string[]; p_where?: string }; Returns: number }
       delete_policy: { Args: { p_policy_id: string }; Returns: Json }
       delete_person: { Args: { p_person_id: string; p_force?: boolean }; Returns: Json }
       person_delete_cost: { Args: { p_person_id: string }; Returns: Json }
@@ -5557,6 +5562,7 @@ export type Database = {
         Returns: Json
       }
       remove_handover_recipient: { Args: { p_id: string }; Returns: Json }
+      restore_notifications: { Args: { p_ids: string[] }; Returns: number }
       revoke_access: { Args: { p_id: string; p_note?: string }; Returns: Json }
       remove_payroll_item: { Args: { p_id: string }; Returns: Json }
       remove_sub_status: {

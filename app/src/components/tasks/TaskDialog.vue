@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
-import { orderGuests, taskInput, type MyTask, type TaskPerson } from '@/lib/tasks'
+import { taskInput, type MyTask, type TaskPerson } from '@/lib/tasks'
+import PeopleAutocomplete from '@/components/tasks/PeopleAutocomplete.vue'
 
 /**
  * Write a task down, or change one (plan 057).
@@ -8,7 +9,8 @@ import { orderGuests, taskInput, type MyTask, type TaskPerson } from '@/lib/task
  * Three fields and two pickers, in the order the thought arrives: what has to
  * happen, by when, whose it is, who else is on it. "For" only appears when
  * there is somebody else you may hand one to — most people may only give
- * themselves a task, and a picker with one entry is furniture.
+ * themselves a task, and a picker with one entry is furniture. "With" is an
+ * autocomplete (2026-10-08): type a name, pick it, it sits as a chip.
  */
 const props = defineProps<{
   /** Who the signed-in person may hand a task to, themselves included. */
@@ -28,14 +30,11 @@ const detail = ref('')
 const dueDate = ref('')
 const personId = ref('')
 const withIds = ref<string[]>([])
-const guestQuery = ref('')
 const error = ref<string | null>(null)
 
 const isEdit = computed(() => editing.value !== null)
 // A task never changes hands, so the owner is fixed once it exists.
 const mayChooseOwner = computed(() => !isEdit.value && props.assignable.length > 1)
-/** A handful of names needs no filter; a company's worth of them does. */
-const FILTER_FROM = 8
 const ownerName = computed(
   () => props.assignable.find((p) => p.id === personId.value)?.full_name ?? editing.value?.person_name ?? 'you',
 )
@@ -47,15 +46,10 @@ function open(task: MyTask | null): void {
   dueDate.value = task?.due_date ?? ''
   personId.value = task?.person_id ?? props.meId
   withIds.value = task?.with_people.map((p) => p.id) ?? []
-  guestQuery.value = ''
   error.value = null
   dialog.value?.showModal()
 }
 defineExpose({ open })
-
-function toggleWith(id: string, on: boolean): void {
-  withIds.value = on ? [...new Set([...withIds.value, id])] : withIds.value.filter((x) => x !== id)
-}
 
 // Hand the task to somebody who was on it as a guest and they stop being one:
 // the database refuses an owner who is also connected, and leaving the id in
@@ -94,7 +88,6 @@ const guests = computed<TaskPerson[]>(() => {
   byId.delete(personId.value)
   return [...byId.values()].sort((a, b) => a.full_name.localeCompare(b.full_name))
 })
-const guestsShown = computed(() => orderGuests(guests.value, guestQuery.value, withIds.value))
 </script>
 
 <template>
@@ -134,27 +127,7 @@ const guestsShown = computed(() => orderGuests(guests.value, guestQuery.value, w
           They see it, they are told, and they can tick it off. It stays
           {{ personId === meId ? 'yours' : `${ownerName}'s` }} to change or delete.
         </p>
-        <input
-          v-if="guests.length > FILTER_FROM"
-          v-model="guestQuery"
-          class="guest-filter"
-          type="search"
-          aria-label="Filter people"
-          placeholder="Filter by name…"
-          data-testid="task-people-filter"
-        />
-        <div class="chips">
-          <label v-for="p in guestsShown" :key="p.id" class="chip" :class="{ on: withIds.includes(p.id) }">
-            <input
-              type="checkbox"
-              :checked="withIds.includes(p.id)"
-              :data-testid="`task-with-${p.id}`"
-              @change="toggleWith(p.id, ($event.target as HTMLInputElement).checked)"
-            />
-            <span>{{ p.full_name }}</span>
-          </label>
-          <p v-if="!guestsShown.length" class="hint no-match">Nobody matches “{{ guestQuery.trim() }}”.</p>
-        </div>
+        <PeopleAutocomplete v-model="withIds" :people="guests" />
       </fieldset>
 
       <p v-if="error" class="error-note" role="alert" data-testid="task-dialog-error">{{ error }}</p>
@@ -179,9 +152,6 @@ const guestsShown = computed(() => orderGuests(guests.value, guestQuery.value, w
 .body { padding: 26px 28px; max-height: min(80vh, 640px); overflow: auto; }
 h2 { font-size: 19px; margin: 10px 0 16px; }
 .field { margin-bottom: 14px; }
-/* Direct children only. The people picker's chips are labels too, and this
-   rule was turning every one of them into a block — checkbox above the name,
-   the name spilling past its own pill. */
 .field > label, legend { display: block; font-size: 11px; color: var(--muted); margin-bottom: 5px; padding: 0; }
 .field input[type='text'],
 .field input[type='date'],
@@ -201,25 +171,5 @@ h2 { font-size: 19px; margin: 10px 0 16px; }
 @media (max-width: 520px) { .pair { grid-template-columns: 1fr; } }
 .people { border: 0; margin: 0 0 14px; padding: 0; }
 .hint { font-size: 11px; color: var(--muted); line-height: 1.6; margin: 0 0 9px; }
-.guest-filter { width: 100%; font-size: 12px; padding: 8px 11px; border-radius: 8px; margin-bottom: 9px; }
-/* Bounded, so forty names do not push Cancel and Add task off the bottom. */
-.chips { display: flex; flex-wrap: wrap; gap: 7px; max-height: 168px; overflow-y: auto; padding: 1px; }
-.no-match { margin: 4px 2px; }
-.chip {
-  display: inline-flex;
-  max-width: 100%;
-  white-space: nowrap;
-  align-items: center;
-  gap: 6px;
-  font-size: 12px;
-  border: 1px solid var(--line);
-  border-radius: 999px;
-  padding: 6px 12px;
-  cursor: pointer;
-  margin: 0;
-}
-.chip.on { border-color: var(--green); color: var(--green); font-weight: 550; background: var(--green-soft); }
-.chip input { flex: none; margin: 0; }
-.chip span { overflow: hidden; text-overflow: ellipsis; }
 .actions { display: flex; gap: 9px; justify-content: flex-end; margin-top: 6px; }
 </style>

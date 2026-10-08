@@ -21,8 +21,9 @@ import { candidateNextStep } from '@/lib/hiringJourney'
 import { criteriaFor } from '@/lib/interviews'
 import type { OfferTerms } from '@/lib/offers'
 import { missingRecordMessage } from '@/lib/missingRecord'
-import OutreachDialog, { type OutreachApplication } from '@/components/OutreachDialog.vue'
-import { SUB_STATUS_STAGES, notResponding, outreachLine, subStatusesFor, type SubStatus, type SubStatusRow } from '@/lib/outreach'
+import StatusDialog, { type OutreachApplication } from '@/components/StatusDialog.vue'
+import { notResponding, outreachLine, type SubStatus, type SubStatusRow } from '@/lib/outreach'
+import { liveStatuses, reasonFor, statusChangeLine, statusLabels } from '@/lib/stageStatuses'
 
 /**
  * One application, everything in one place (plan 018a): who the candidate
@@ -134,10 +135,23 @@ function openHandoff(mode: 'assign' | 'start' | 'outcome'): void {
   })
 }
 
+/**
+ * What a screening outcome of Reject writes beside the stage (plan 068 D6):
+ * the reason — the note, else the status picked — and that status. Empty for
+ * any other outcome.
+ */
+function handoffRejection(payload: HandoffPayload): Record<string, string> {
+  if (payload.stage !== 'rejected') return {}
+  const status = subStatuses.value.find((s) => s.key === payload.subStatusKey)
+  if (!status) return { rejected_reason: payload.note }
+  return { rejected_reason: reasonFor(status.label, payload.note), sub_status_key: status.key }
+}
+
 async function saveHandoff(payload: HandoffPayload): Promise<void> {
   if (!application.value) throw new Error('Reload this application before continuing.')
   const current = application.value
   const terminal = payload.stage === 'rejected'
+  const rejection = handoffRejection(payload)
   if (current.stage_key === 'screening' && payload.stage === 'interview') {
     const missing = answerRows.value.find(r => !r.orphaned && r.question.required && !r.answer.trim())
     if (missing) throw new Error(`Answer the required question before proceeding: ${missing.question.prompt}`)
@@ -149,7 +163,7 @@ async function saveHandoff(payload: HandoffPayload): Promise<void> {
     next_action: terminal ? null : payload.nextAction,
     next_action_due: terminal ? null : payload.nextActionDue,
     ...(payload.stage !== current.stage_key || terminal ? { screening_answers: answersFromRows(answerRows.value) } : {}),
-    ...(terminal ? { rejected_reason: payload.note } : {}),
+    ...rejection,
   }).eq('id', current.id).eq('updated_at', current.updated_at).select('id, updated_at').maybeSingle()
   if (err) throw new Error(friendlyReview(err.message))
   if (!data) throw new Error('This candidate changed since you opened the page. Cancel, refresh the page, and review the latest assignment.')
@@ -157,7 +171,7 @@ async function saveHandoff(payload: HandoffPayload): Promise<void> {
     application_id: current.id, actor_id: auth.personId,
     kind: payload.stage === current.stage_key ? 'note' : 'stage_change',
     from_stage_key: current.stage_key, to_stage_key: payload.stage,
-    body: payload.note || `Assigned next action: ${payload.nextAction}; due ${payload.nextActionDue}.`,
+    body: rejection.rejected_reason ?? (payload.note || `Assigned next action: ${payload.nextAction}; due ${payload.nextActionDue}.`),
   })
   handoffNotice.value = terminal ? 'Screening outcome saved. Application closed.' : 'Assignment saved.'
   // The owner hears about it when they are newly assigned or the ask changed — not on every save.
@@ -182,7 +196,7 @@ const noteError = ref<string | null>(null)
 const stageBusy = ref(false)
 const stageError = ref<string | null>(null)
 
-const outreachDialog = ref<InstanceType<typeof OutreachDialog> | null>(null)
+const statusDialog = ref<InstanceType<typeof StatusDialog> | null>(null)
 const subStatusRows = ref<SubStatusRow[]>([])
 
 const rejectDialog = ref<InstanceType<typeof RejectApplicationDialog> | null>(null)
@@ -204,14 +218,12 @@ const canReview = computed(() =>
 const isTerminal = computed(() => ['hired', 'rejected', 'withdrawn'].includes(application.value?.stage_key ?? ''))
 const nextStages = computed(() => STAGE_NEXT[application.value?.stage_key ?? ''] ?? [])
 
-// Outreach (plan 054): the lookup labels the badge and the timeline; the
-// newest event on this page judges "not responding" exactly as D3 does.
-const subStatuses = computed<SubStatus[]>(() => SUB_STATUS_STAGES.flatMap((stage) => subStatusesFor(subStatusRows.value, stage)))
-const subStatusLabels = computed<Record<string, string>>(() => Object.fromEntries(subStatuses.value.map((s) => [s.key, s.label])))
+// Statuses (plan 054 at New and Screening, plan 068 at every stage): the
+// lookup labels the badge and the timeline — a retired status still reads —
+// and the newest event on this page judges "not responding" exactly as D3 does.
+const subStatuses = computed<SubStatus[]>(() => liveStatuses(subStatusRows.value))
+const subStatusLabels = computed<Record<string, string>>(() => statusLabels(subStatusRows.value))
 const subStatusLabel = computed(() => subStatusLabels.value[application.value?.sub_status_key ?? ''] ?? '')
-const canLogOutreach = computed(
-  () => canReview.value && (SUB_STATUS_STAGES as readonly string[]).includes(application.value?.stage_key ?? ''),
-)
 const notRespondingNow = computed(() => {
   const a = application.value
   if (!a) return false
@@ -264,6 +276,7 @@ function eventText(e: EventRow): string {
     return e.body ? `${move} · ${e.body}` : move
   }
   if (e.kind === 'outreach') return outreachLine(e, subStatusLabels.value)
+  if (e.kind === 'status_change') return statusChangeLine(e, subStatusLabels.value)
   return e.body ?? ''
 }
 
@@ -271,6 +284,7 @@ function eventLabel(e: EventRow): string {
   if (e.kind === 'stage_change') return 'Stage'
   if (e.kind === 'interview_feedback') return 'Feedback'
   if (e.kind === 'outreach') return 'Outreach'
+  if (e.kind === 'status_change') return 'Status'
   return 'Note'
 }
 
@@ -460,9 +474,14 @@ async function changeStage(to: string, body?: string, extra: Record<string, unkn
   await load()
 }
 
-function onDecided(payload: { mode: 'reject' | 'withdraw'; reason: string }): void {
-  if (payload.mode === 'reject') void changeStage('rejected', payload.reason, { rejected_reason: payload.reason })
-  else void changeStage('withdrawn', payload.reason, { withdrawn_reason: payload.reason })
+// The status chosen in the dialog rides with the stage move (0088's trigger
+// keeps it because it belongs to the stage arrived at); the reason is the
+// note, or the status itself when nothing more was written.
+function onDecided(payload: { mode: 'reject' | 'withdraw'; note: string; status: SubStatus | null }): void {
+  const reason = payload.status ? reasonFor(payload.status.label, payload.note) : payload.note
+  const status = payload.status ? { sub_status_key: payload.status.key } : {}
+  if (payload.mode === 'reject') void changeStage('rejected', reason, { rejected_reason: reason, ...status })
+  else void changeStage('withdrawn', reason, { withdrawn_reason: reason, ...status })
 }
 
 function openConfirmHire(): void {
@@ -489,7 +508,6 @@ async function loadSubStatuses(): Promise<void> {
   const { data, error: err } = await supabase
     .from('application_sub_statuses')
     .select('key, stage_key, label, sort_order, archived_at')
-    .is('archived_at', null)
     .order('sort_order')
   if (err) {
     console.error('Sub-statuses load failed:', err.message)
@@ -747,6 +765,15 @@ onMounted(() => {
                 <h3 class="sub-heading">Stage</h3>
                 <p v-if="stageError" class="error-note" role="alert">{{ stageError }}</p>
                 <div class="stage-actions">
+                  <button
+                    class="button secondary small-btn"
+                    type="button"
+                    :disabled="stageBusy"
+                    data-testid="log-outreach"
+                    @click="statusDialog?.open()"
+                  >
+                    Set status
+                  </button>
                   <router-link
                     v-if="application.stage_key === 'hired' && application.employment_period?.person_id"
                     class="button secondary small-btn"
@@ -755,16 +782,6 @@ onMounted(() => {
                     Open employee profile
                   </router-link>
                   <template v-else-if="!isTerminal">
-                    <button
-                      v-if="canLogOutreach"
-                      class="button secondary small-btn"
-                      type="button"
-                      :disabled="stageBusy"
-                      data-testid="log-outreach"
-                      @click="outreachDialog?.open()"
-                    >
-                      Log outreach
-                    </button>
                     <button
                       v-for="a in nextStages.filter(s => s.to === 'offer')"
                       :key="a.to"
@@ -811,9 +828,14 @@ onMounted(() => {
       </div>
     </template>
 
-    <CandidateHandoffDialog ref="handoffDialog" :people="people" :save="saveHandoff" />
-    <RejectApplicationDialog ref="rejectDialog" @confirmed="onDecided" />
-    <OutreachDialog ref="outreachDialog" :applications="outreachApplications" :sub-statuses="subStatuses" @logged="load" />
+    <CandidateHandoffDialog
+      ref="handoffDialog"
+      :people="people"
+      :save="saveHandoff"
+      :reject-statuses="subStatuses.filter((s) => s.stage_key === 'rejected')"
+    />
+    <RejectApplicationDialog ref="rejectDialog" :sub-statuses="subStatuses" @confirmed="onDecided" />
+    <StatusDialog ref="statusDialog" :applications="outreachApplications" :sub-statuses="subStatuses" @logged="load" />
     <AddEmployeeDialog ref="confirmHireDialog" @created="load" />
   </div>
 </template>

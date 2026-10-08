@@ -8,6 +8,7 @@ import AddCandidateDialog from '@/components/AddCandidateDialog.vue'
 import UploadCvsDialog from '@/components/UploadCvsDialog.vue'
 import PickFromPoolDialog from '@/components/PickFromPoolDialog.vue'
 import AddEmployeeDialog from '@/components/AddEmployeeDialog.vue'
+import RejectApplicationDialog from '@/components/RejectApplicationDialog.vue'
 import { useDialogStore } from '@/stores/dialogs'
 import JobStepper from '@/components/JobStepper.vue'
 import ScreeningQuestionsEditor from '@/components/ScreeningQuestionsEditor.vue'
@@ -17,8 +18,9 @@ import JobActivityPanel from '@/components/JobActivityPanel.vue'
 import JobInterviewsPanel from '@/components/JobInterviewsPanel.vue'
 import { criteriaFor, criteriaInput, type Criterion } from '@/lib/interviews'
 import { missingRecordMessage } from '@/lib/missingRecord'
-import OutreachDialog, { type OutreachApplication } from '@/components/OutreachDialog.vue'
-import { NOT_RESPONDING_DAYS, SUB_STATUS_STAGES, notResponding, subStatusesFor, type SubStatus, type SubStatusRow } from '@/lib/outreach'
+import StatusDialog, { type OutreachApplication } from '@/components/StatusDialog.vue'
+import { NOT_RESPONDING_DAYS, notResponding, type SubStatus, type SubStatusRow } from '@/lib/outreach'
+import { liveStatuses, reasonFor, statusFilterGroups, statusLabels } from '@/lib/stageStatuses'
 import { todayDb } from '@/lib/compensation'
 import { PAGE_SIZE } from '@/lib/pageAll'
 import { friendlyDetachError } from '@/lib/detachApplication'
@@ -122,13 +124,16 @@ const addCandidateDialog = ref<InstanceType<typeof AddCandidateDialog> | null>(n
 const uploadCvsDialog = ref<InstanceType<typeof UploadCvsDialog> | null>(null)
 const pickFromPoolDialog = ref<InstanceType<typeof PickFromPoolDialog> | null>(null)
 const confirmHireDialog = ref<InstanceType<typeof AddEmployeeDialog> | null>(null)
+const rejectDialog = ref<InstanceType<typeof RejectApplicationDialog> | null>(null)
+const rejectTarget = ref<ApplicationRow | null>(null)
 const dialogs = useDialogStore()
 const channelsPanel = ref<InstanceType<typeof JobChannelsPanel> | null>(null)
 const activityPanel = ref<InstanceType<typeof JobActivityPanel> | null>(null)
 
-// Outreach (plan 054): the lookup, the newest event per application, the
-// filters over the list, and the rows ticked for a bulk log.
-const outreachDialog = ref<InstanceType<typeof OutreachDialog> | null>(null)
+// Statuses (plan 054, every stage since plan 068): the lookup, the newest
+// event per application, the filters over the list, and the rows ticked for
+// a bulk set.
+const statusDialog = ref<InstanceType<typeof StatusDialog> | null>(null)
 const subStatusRows = ref<SubStatusRow[]>([])
 const lastActivity = ref<Record<string, string>>({})
 // The activity query came back at its cap, so rows missing from it may simply
@@ -138,7 +143,6 @@ const subStatusFilter = ref('')
 const notRespondingOnly = ref(false)
 const selectedIds = ref<string[]>([])
 const outreachTarget = ref<ApplicationRow[]>([])
-const STAGE_LABELS: Record<string, string> = { new: 'New', screening: 'Screening' }
 
 const activeTab = computed<TabId>(() => {
   const raw = route.query.tab
@@ -153,13 +157,11 @@ function selectTab(id: TabId): void {
 const canEdit = computed(() => (job.value ? auth.can(job.value.company_id, 'jobs.edit') : false))
 // A hint only: the pool RPCs and RLS decide (plan 052).
 const canSource = computed(() => auth.isAdmin || auth.canAnywhere('candidates.source'))
-// A hint only: log_outreach decides (plan 054).
+// A hint only: set_application_status decides (plan 068).
 const canReview = computed(() => (job.value ? auth.can(job.value.company_id, 'candidates.review') : false))
-const subStatuses = computed<SubStatus[]>(() => SUB_STATUS_STAGES.flatMap((stage) => subStatusesFor(subStatusRows.value, stage)))
-const subStatusLabels = computed<Record<string, string>>(() => Object.fromEntries(subStatuses.value.map((s) => [s.key, s.label])))
-const subStatusGroups = computed(() =>
-  SUB_STATUS_STAGES.map((stage) => ({ stage, label: STAGE_LABELS[stage] ?? stage, options: subStatuses.value.filter((s) => s.stage_key === stage) })),
-)
+const subStatuses = computed<SubStatus[]>(() => liveStatuses(subStatusRows.value))
+const subStatusLabels = computed<Record<string, string>>(() => statusLabels(subStatusRows.value))
+const subStatusGroups = computed(() => statusFilterGroups(subStatusRows.value))
 const visibleApplications = computed(() =>
   applications.value.filter(
     (a) => (!subStatusFilter.value || a.sub_status_key === subStatusFilter.value) && (!notRespondingOnly.value || isNotResponding(a)),
@@ -169,10 +171,6 @@ const selectedApplications = computed(() => applications.value.filter((a) => sel
 const outreachApplications = computed<OutreachApplication[]>(() =>
   outreachTarget.value.map((a) => ({ id: a.id, full_name: a.candidate?.full_name ?? '—', stage_key: a.stage_key, sub_status_key: a.sub_status_key })),
 )
-
-function hasSubStatus(stage: string): boolean {
-  return (SUB_STATUS_STAGES as readonly string[]).includes(stage)
-}
 
 /** D3 as the lib mirrors it: the newest event in the window, else received_at; the job must be live. */
 function isNotResponding(a: ApplicationRow): boolean {
@@ -199,7 +197,7 @@ watch([subStatusFilter, notRespondingOnly], () => {
 
 function openOutreach(rows: ApplicationRow[]): void {
   outreachTarget.value = rows
-  outreachDialog.value?.open()
+  statusDialog.value?.open()
 }
 
 async function onLogged(): Promise<void> {
@@ -322,8 +320,8 @@ async function loadApplications(): Promise<void> {
     return
   }
   applications.value = (data ?? []) as ApplicationRow[]
-  // A row that left New / Screening leaves the selection with it.
-  selectedIds.value = selectedIds.value.filter((id) => applications.value.some((a) => a.id === id && hasSubStatus(a.stage_key)))
+  // A row that is no longer on this job leaves the selection with it.
+  selectedIds.value = selectedIds.value.filter((id) => applications.value.some((a) => a.id === id))
   await loadLastActivity()
 }
 
@@ -365,7 +363,6 @@ async function loadSubStatuses(): Promise<void> {
   const { data, error: err } = await supabase
     .from('application_sub_statuses')
     .select('key, stage_key, label, sort_order, archived_at')
-    .is('archived_at', null)
     .order('stage_key')
     .order('sort_order')
   if (err) {
@@ -484,12 +481,17 @@ async function deleteApplication(app: ApplicationRow): Promise<void> {
   }
 }
 
-async function updateStage(app: ApplicationRow, toStage: string, body?: string): Promise<void> {
+async function updateStage(
+  app: ApplicationRow,
+  toStage: string,
+  body?: string,
+  extra: Record<string, string> = {},
+): Promise<void> {
   actionError.value = null
   busyId.value = app.id
   const { error: err } = await supabase
     .from('applications')
-    .update({ stage_key: toStage })
+    .update({ stage_key: toStage, ...extra })
     .eq('id', app.id)
   if (!err) {
     await supabase.from('application_events').insert({
@@ -518,16 +520,18 @@ function moveToInterview(app: ApplicationRow): void {
 function prepareOffer(app: ApplicationRow): void {
   void updateStage(app, 'offer')
 }
-async function reject(app: ApplicationRow): Promise<void> {
-  const answer = await dialogs.askReason({
-    eyebrow: 'Decision',
-    title: `Reject ${app.candidate?.full_name || 'this application'}.`,
-    hint: 'The reason stays on the application and in its timeline. Write it as you would want it read back to you.',
-    confirmLabel: 'Reject application',
-    danger: true,
-  })
-  if (!answer) return
-  void updateStage(app, 'rejected', answer.reason)
+// The same dialog and the same write as the application page (plan 068 D6):
+// a Rejected status, the reason on the row, and both in the timeline.
+function reject(app: ApplicationRow): void {
+  rejectTarget.value = app
+  rejectDialog.value?.open('reject', app.candidate?.full_name ?? '')
+}
+function onRejectDecided(payload: { note: string; status: SubStatus | null }): void {
+  const app = rejectTarget.value
+  if (!app) return
+  const reason = payload.status ? reasonFor(payload.status.label, payload.note) : payload.note
+  const status: Record<string, string> = payload.status ? { sub_status_key: payload.status.key } : {}
+  void updateStage(app, 'rejected', reason, { rejected_reason: reason, ...status })
 }
 
 function openConfirmHire(app: ApplicationRow): void {
@@ -841,7 +845,7 @@ onMounted(async () => {
           </div>
           <div class="head-actions">
             <button v-if="canReview" class="button secondary" type="button" :disabled="!selectedApplications.length" data-testid="log-outreach" @click="openOutreach(selectedApplications)">
-              Log outreach
+              Set status
             </button>
             <button v-if="canSource" class="button secondary" type="button" data-testid="source-from-pool" @click="pickFromPoolDialog?.open()">
               Source from pool
@@ -860,10 +864,10 @@ onMounted(async () => {
         <div v-else>
           <div class="filter-row">
             <label class="filter">
-              <span>Sub-status</span>
+              <span>Status</span>
               <select v-model="subStatusFilter" data-testid="filter-sub-status">
-                <option value="">Any sub-status</option>
-                <optgroup v-for="g in subStatusGroups" :key="g.stage" :label="g.label">
+                <option value="">Any status</option>
+                <optgroup v-for="g in subStatusGroups" :key="g.stageKey" :label="g.stageLabel">
                   <option v-for="s in g.options" :key="s.key" :value="s.key">{{ s.label }}</option>
                 </optgroup>
               </select>
@@ -877,7 +881,7 @@ onMounted(async () => {
           <div v-if="!visibleApplications.length" class="empty">No applications match these filters.</div>
           <div v-for="a in visibleApplications" :key="a.id" class="application-row">
             <input
-              v-if="canReview && hasSubStatus(a.stage_key)"
+              v-if="canReview"
               class="select-app"
               type="checkbox"
               :checked="selectedIds.includes(a.id)"
@@ -914,6 +918,9 @@ onMounted(async () => {
                 :data-testid="`delete-application-${a.id}`"
                 @click="deleteApplication(a)"
               >Delete application</button>
+              <button v-if="canReview" class="button secondary small-btn" type="button" :data-testid="`log-outreach-${a.id}`" @click="openOutreach([a])">
+                Set status
+              </button>
               <router-link
                 v-if="a.stage_key === 'hired' && a.employment_period?.person_id"
                 class="button secondary small-btn"
@@ -922,9 +929,6 @@ onMounted(async () => {
                 Open employee profile
               </router-link>
               <template v-else-if="a.stage_key !== 'hired'">
-                <button v-if="canReview && hasSubStatus(a.stage_key)" class="button secondary small-btn" type="button" :data-testid="`log-outreach-${a.id}`" @click="openOutreach([a])">
-                  Log outreach
-                </button>
                 <button v-if="a.stage_key === 'new'" class="button secondary small-btn" type="button" :disabled="busyId === a.id" @click="moveToScreening(a)">
                   Move to screening
                 </button>
@@ -987,7 +991,8 @@ onMounted(async () => {
       @created="loadApplications"
     />
     <AddEmployeeDialog ref="confirmHireDialog" @created="onHired" />
-    <OutreachDialog ref="outreachDialog" :applications="outreachApplications" :sub-statuses="subStatuses" @logged="onLogged" />
+    <RejectApplicationDialog ref="rejectDialog" :sub-statuses="subStatuses" @confirmed="onRejectDecided" />
+    <StatusDialog ref="statusDialog" :applications="outreachApplications" :sub-statuses="subStatuses" @logged="onLogged" />
   </div>
 </template>
 

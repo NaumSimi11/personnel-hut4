@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
   NOT_RESPONDING_DAYS,
-  OUTREACH_BLOCKED,
   SUB_STATUS_STAGES,
   notResponding,
   outreachBadge,
@@ -147,6 +146,5 @@ describe('constants', () => {
   it('carry the plan values verbatim', () => {
     expect(SUB_STATUS_STAGES).toEqual(['new', 'screening'])
     expect(NOT_RESPONDING_DAYS).toBe(30)
-    expect(OUTREACH_BLOCKED).toBe('Outreach is logged at New or Screening.')
   })
 })

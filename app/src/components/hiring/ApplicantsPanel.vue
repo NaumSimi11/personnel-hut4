@@ -4,7 +4,8 @@ import { supabase } from '@/lib/supabase'
 import CompanyFilter from '@/components/CompanyFilter.vue'
 import { PIPELINE_STAGES } from '@/lib/dashboard'
 import { NOT_RESPONDING_FILTER, applicantRows, type ApplicantLite, type ApplicantRow } from '@/lib/hiringTabs'
-import { SUB_STATUS_STAGES, subStatusesFor, type SubStatusRow } from '@/lib/outreach'
+import { SUB_STATUS_STAGES, type SubStatusRow } from '@/lib/outreach'
+import { filterStagesFor, statusFilterGroups, statusLabels } from '@/lib/stageStatuses'
 import { blockerCount, blockerWords, friendlyHardDeleteError } from '@/lib/hardDelete'
 import { FILE_BUCKET } from '@/lib/applicationFiles'
 import { useAuthStore } from '@/stores/auth'
@@ -20,7 +21,9 @@ import { useDialogStore } from '@/stores/dialogs'
  * Since plan 054 the stage cell carries the sub-status and "Not responding",
  * judged over the loaded rows from the candidate's last activity (see
  * outreachRowOf); "Not responding" in the stage filter is that judgement
- * over the New and Screening rows.
+ * over the New and Screening rows. Since plan 068 every stage has statuses:
+ * the badge names a retired one too, and the status filter travels to the
+ * query like the stage filter, narrowed to the chosen stage's statuses.
  */
 const PAGE_CAP = 1000
 const CLOSED_STAGES = '(hired,rejected,withdrawn)'
@@ -33,11 +36,11 @@ const error = ref<string | null>(null)
 const busyId = ref<string | null>(null)
 const applications = ref<ApplicantLite[]>([])
 const subStatusRows = ref<SubStatusRow[]>([])
-const subStatusLabels = computed<Record<string, string>>(() =>
-  Object.fromEntries(SUB_STATUS_STAGES.flatMap((stage) => subStatusesFor(subStatusRows.value, stage)).map((s) => [s.key, s.label])),
-)
+const subStatusLabels = computed<Record<string, string>>(() => statusLabels(subStatusRows.value))
 const companyId = ref('')
 const stage = ref('live')
+const status = ref('')
+const statusGroups = computed(() => statusFilterGroups(subStatusRows.value, filterStagesFor(stage.value)))
 const search = ref('')
 const capped = computed(() => applications.value.length === PAGE_CAP)
 
@@ -111,6 +114,7 @@ async function load(): Promise<void> {
   if (stageKey === 'live') query = query.not('stage_key', 'in', CLOSED_STAGES)
   else if (stageKey === NOT_RESPONDING_FILTER) query = query.in('stage_key', [...SUB_STATUS_STAGES])
   else if (stageKey !== 'all') query = query.eq('stage_key', stageKey)
+  if (status.value) query = query.eq('sub_status_key', status.value)
   const { data, error: err } = await query.order('received_at', { ascending: false }).limit(PAGE_CAP)
   loading.value = false
   if (err) {
@@ -125,7 +129,6 @@ async function loadSubStatuses(): Promise<void> {
   const { data, error: err } = await supabase
     .from('application_sub_statuses')
     .select('key, stage_key, label, sort_order, archived_at')
-    .is('archived_at', null)
     .order('sort_order')
   if (err) {
     console.error('Sub-statuses load failed:', err.message)
@@ -138,7 +141,13 @@ onMounted(() => {
   void loadSubStatuses()
   void load()
 })
-watch(stage, load)
+// A status of another stage cannot match: clearing it reloads through its own watcher.
+watch(stage, () => {
+  const fits = statusGroups.value.some((g) => g.options.some((o) => o.key === status.value))
+  if (status.value && !fits) status.value = ''
+  else void load()
+})
+watch(status, load)
 </script>
 
 <template>
@@ -158,6 +167,14 @@ watch(stage, load)
             <option v-for="s in PIPELINE_STAGES" :key="s.key" :value="s.key">{{ s.label }}</option>
             <option value="withdrawn">Withdrawn</option>
             <option :value="NOT_RESPONDING_FILTER">Not responding</option>
+          </select>
+        </label>
+        <label class="stage-filter">
+          <select v-model="status" aria-label="Status" data-testid="applicants-status-filter">
+            <option value="">Any status</option>
+            <optgroup v-for="g in statusGroups" :key="g.stageKey" :label="g.stageLabel">
+              <option v-for="o in g.options" :key="o.key" :value="o.key">{{ o.label }}</option>
+            </optgroup>
           </select>
         </label>
       </div>

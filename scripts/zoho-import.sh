@@ -75,6 +75,12 @@ trap 'rm -f "$SQLFILE"' EXIT
   cat "$PAYLOAD"
   printf '$zohopayload$::jsonb, %s)::text;
 ' "$COMMIT"
+  # The import inserts applications without a stage status; label the new
+  # ones in the same transaction (0088). A DO block prints nothing, so the
+  # report's last line stays the import's JSON.
+  if [ "$COMMIT" = true ] && [ "$HISTORY" = false ]; then
+    echo "do \$\$ begin perform app.backfill_sub_statuses(); end \$\$;"
+  fi
   echo "commit;"
 } > "$SQLFILE"
 psql "$URL" -X -q -At -v ON_ERROR_STOP=1 -o "$REPORT" -f "$SQLFILE"

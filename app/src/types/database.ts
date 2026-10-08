@@ -5647,6 +5647,14 @@ export type Database = {
         Args: { p_plan_id: string; p_to?: string }
         Returns: Json
       }
+      set_application_status: {
+        Args: {
+          p_application_ids: string[]
+          p_note: string
+          p_sub_status_key: string
+        }
+        Returns: Json
+      }
       set_avatar: {
         Args: { p_path?: string; p_person_id: string }
         Returns: Json

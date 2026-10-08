@@ -3,8 +3,9 @@
  * as the browser mirrors it (the database decides for real, in
  * `app.not_responding` and the `recruitment_report` attention count —
  * migration 0069), the badge and timeline-line phrasing, and the lookup
- * helper for `application_sub_statuses`. Nothing here writes; `log_outreach`
- * is the only way a sub-status changes.
+ * helper for `application_sub_statuses`. Nothing here writes; since plan 068
+ * `set_application_status` changes a status at any stage (stageStatuses.ts
+ * shapes the all-stage lists), and at New and Screening it still logs outreach.
  */
 
 // -------------------------------------------------------------- the lookup
@@ -99,5 +100,3 @@ export function outreachLine(event: OutreachEvent, labels: Record<string, string
   const move = `Outreach: ${label(event.from_sub_status_key)} → ${label(event.to_sub_status_key)}`
   return event.body ? `${move} · ${event.body}` : move
 }
-
-export const OUTREACH_BLOCKED = 'Outreach is logged at New or Screening.'

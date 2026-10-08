@@ -145,7 +145,7 @@ async function readNotResponding(page: import('@playwright/test').Page): Promise
   return Number(text)
 }
 
-test('sub-status badges → bulk Log outreach → not-responding filter → the timeline → the report tile → a stage move takes the default', async ({
+test('sub-status badges → bulk Set status → not-responding filter → the timeline → the report tile → a stage move takes the default', async ({
   page,
 }) => {
   const db = serviceClient()
@@ -184,7 +184,7 @@ test('sub-status badges → bulk Log outreach → not-responding filter → the 
   await expect(rowOf('Dee').getByTestId('sub-badge')).toHaveText(LABEL.contacted)
   await expect(rowOf('Dee').getByTestId('not-responding-badge')).toHaveText('Not responding')
 
-  // Tick two → Log outreach → "Contact attempted", a note → both badges change.
+  // Tick two → Set status → "Contact attempted", a note → both badges change.
   const bulkButton = page.getByTestId('log-outreach')
   await expect(bulkButton).toBeDisabled()
   await page.getByTestId(`select-app-${appIds.Ana}`).check()
@@ -194,7 +194,7 @@ test('sub-status badges → bulk Log outreach → not-responding filter → the 
   await bulkButton.click()
   const dialog = page.getByTestId('outreach-dialog')
   await expect(dialog).toBeVisible()
-  await expect(dialog).toContainText('Log outreach for 2 applications.')
+  await expect(dialog).toContainText('Set the status for 2 applications.')
   await expect(dialog.getByTestId('outreach-sub-contacted')).toHaveCount(0) // only the new stage's options
   await dialog.getByTestId('outreach-sub-contact_attempted').check()
   await dialog.getByTestId('outreach-note').fill(VOICEMAIL_NOTE)
@@ -244,7 +244,7 @@ test('sub-status badges → bulk Log outreach → not-responding filter → the 
   await page.getByTestId('log-outreach').click()
   const pageDialog = page.getByTestId('outreach-dialog')
   await expect(pageDialog).toBeVisible()
-  await expect(pageDialog).toContainText(`Log outreach for ${candidateName('Dee')}.`)
+  await expect(pageDialog).toContainText(`Set the status for ${candidateName('Dee')}.`)
   await expect(pageDialog.getByTestId('outreach-sub-sourced')).toHaveCount(0) // only the screening stage's options
   await pageDialog.getByTestId('outreach-sub-interested').check()
   await pageDialog.getByTestId('outreach-note').fill(INTERESTED_NOTE)

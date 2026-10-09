@@ -5694,6 +5694,7 @@ export type Database = {
         Returns: Json
       }
       set_task_done: { Args: { p_done?: boolean; p_task_id: string }; Returns: Json }
+      setup_gaps: { Args: Record<PropertyKey, never>; Returns: Json }
       start_equipment_return: {
         Args: {
           p_asset_id: string

@@ -40,6 +40,7 @@ import MyTasksCard from '@/components/tasks/MyTasksCard.vue'
 import RecruitmentSnapshot from '@/components/home/RecruitmentSnapshot.vue'
 import CelebratePanel from '@/components/home/CelebratePanel.vue'
 import AwayToday from '@/components/home/AwayToday.vue'
+import SetupGapsBanner from '@/components/home/SetupGapsBanner.vue'
 
 /**
  * Home (blueprint §7.1, plan 044): headline numbers by what the viewer may
@@ -410,6 +411,8 @@ onMounted(load)
       <h1>Welcome, {{ firstName }}.</h1>
       <p class="page-sub">A clear view of the team — what needs you, who is where, and what is coming up.</p>
     </div>
+
+    <SetupGapsBanner />
 
     <p v-if="error" class="error-note" role="alert">{{ error }}</p>
 

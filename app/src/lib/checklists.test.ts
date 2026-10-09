@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { OWNER_ROLES, PHASES_FOR, clearConfirmation, emptyTemplateLine, filterPlans, groupByPhase, lineInput, messageForChecklist, moved, ownerLabel, planClearable, planMeta, progress, type ChecklistTask, whenLabel } from './checklists'
+import { OWNER_ROLES, PHASES_FOR, clearConfirmation, unownedNote, emptyTemplateLine, filterPlans, groupByPhase, lineInput, messageForChecklist, moved, ownerLabel, planClearable, planMeta, progress, type ChecklistTask, whenLabel } from './checklists'
 
 const t = (over: Partial<ChecklistTask>): ChecklistTask => ({
   id: 'x',
@@ -161,5 +161,19 @@ describe('clearing a closed checklist', () => {
     expect(clearConfirmation('Ina', 'offboarding', 11)).toContain("Ina's offboarding and its 11 lines")
     expect(clearConfirmation('Ina', 'onboarding', 1)).toContain('its 1 line out of the queue')
     expect(clearConfirmation('Ina', 'onboarding', 3)).toMatch(/Documents, handovers and IT requests it produced are kept/)
+  })
+})
+
+describe('unownedNote', () => {
+  it('says why an open IT line has nobody', () => {
+    expect(unownedNote({ owner_role: 'it', status: 'open', owner: null })).toBe('nobody — no IT owner is set for this company')
+    expect(unownedNote({ owner_role: 'it', status: 'blocked', owner: null })).toBe('nobody — no IT owner is set for this company')
+  })
+
+  it('says nothing when somebody has it, when it is finished, or for other roles', () => {
+    expect(unownedNote({ owner_role: 'it', status: 'open', owner: { full_name: 'Ivana Frost' } })).toBeNull()
+    expect(unownedNote({ owner_role: 'it', status: 'done', owner: null })).toBeNull()
+    expect(unownedNote({ owner_role: 'it', status: 'skipped', owner: null })).toBeNull()
+    expect(unownedNote({ owner_role: 'finance', status: 'open', owner: null })).toBeNull()
   })
 })

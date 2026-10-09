@@ -8979,4 +8979,91 @@ set app.test_uid = '';
 delete from public.grant_capabilities where grant_id = '40000000-0000-0000-0000-000000000003'
    and capability_key in ('it.view', 'it.assign', 'it.complete');
 
+-- ================================================================ 0093
+-- Setup gaps (plan 073): the IT and HR owners and inboxes each company still
+-- lacks — every company for an admin, Company HR's own for HR, nothing for
+-- anybody else; an archived owner is no owner.
+-- Start A and B from nothing, whatever earlier blocks left; put it all back after.
+create temp table setup_0093_owners as
+  select * from public.workflow_owners where company_id in ('10000000-0000-0000-0000-00000000000a', '10000000-0000-0000-0000-00000000000b');
+create temp table setup_0093_inboxes as
+  select id, it_notification_email, hr_notification_email from public.companies
+   where id in ('10000000-0000-0000-0000-00000000000a', '10000000-0000-0000-0000-00000000000b');
+delete from public.workflow_owners where company_id in ('10000000-0000-0000-0000-00000000000a', '10000000-0000-0000-0000-00000000000b')
+   and role_key in ('it_owner', 'hr_owner');
+update public.companies set it_notification_email = null, hr_notification_email = null
+ where id in ('10000000-0000-0000-0000-00000000000a', '10000000-0000-0000-0000-00000000000b');
+insert into public.people (id, full_name, work_email, archived_at) values
+  ('20000000-0000-0000-0000-000000000931', 'Owner Long Gone', 'gone@a.test', now());
+insert into public.workflow_owners (company_id, role_key, person_id) values
+  ('10000000-0000-0000-0000-00000000000a', 'it_owner', '20000000-0000-0000-0000-000000000001'),
+  ('10000000-0000-0000-0000-00000000000a', 'hr_owner', '20000000-0000-0000-0000-000000000931')
+on conflict (company_id, role_key) do update set person_id = excluded.person_id;
+update public.companies set it_notification_email = 'it@a.test' where id = '10000000-0000-0000-0000-00000000000a';
+
+set app.test_uid = '00000000-0000-0000-0000-000000000004';  -- Ada, admin
+set role authenticated;
+do $$
+declare r jsonb; a jsonb; b jsonb;
+begin
+  r := public.setup_gaps();
+  assert (r->>'can_fix')::boolean, 'an admin may fix them';
+  select g into a from jsonb_array_elements(r->'companies') g where g->>'company_id' = '10000000-0000-0000-0000-00000000000a';
+  select g into b from jsonb_array_elements(r->'companies') g where g->>'company_id' = '10000000-0000-0000-0000-00000000000b';
+  assert a->'missing_roles' = '["hr_owner"]'::jsonb, 'A has its IT owner; its HR owner is archived, so missing: ' || coalesce(a::text, 'none');
+  assert a->'missing_inboxes' = '["hr"]'::jsonb, 'A has an IT inbox, not an HR one';
+  assert b->'missing_roles' = '["it_owner", "hr_owner"]'::jsonb and b->'missing_inboxes' = '["it", "hr"]'::jsonb,
+    'B lacks everything: ' || coalesce(b::text, 'none');
+end $$;
+reset role;
+
+set app.test_uid = '00000000-0000-0000-0000-000000000005';  -- Bea, Company HR in B
+set role authenticated;
+do $$
+declare r jsonb;
+begin
+  r := public.setup_gaps();
+  assert not (r->>'can_fix')::boolean, 'HR is told, an admin fixes';
+  assert jsonb_array_length(r->'companies') = 1
+     and r->'companies'->0->>'company_id' = '10000000-0000-0000-0000-00000000000b',
+    'Bea hears only about Company B: ' || r::text;
+end $$;
+reset role;
+
+set app.test_uid = '00000000-0000-0000-0000-000000000003';  -- Omar, no grants
+set role authenticated;
+do $$
+begin
+  assert public.setup_gaps()->'companies' = '[]'::jsonb, 'an employee hears nothing';
+end $$;
+reset role;
+set app.test_uid = '';
+
+-- Naming B's IT owner hands them B's open IT lines that had nobody, and no other.
+do $$
+declare v_line uuid; v_done uuid;
+begin
+  select t.id into v_line from public.plan_tasks t join public.plans p on p.id = t.plan_id
+   where p.company_id = '10000000-0000-0000-0000-00000000000b' and t.owner_role = 'it' and t.status = 'open' limit 1;
+  assert v_line is not null, 'a B checklist has an IT line to test with';
+  update public.plan_tasks set owner_id = null where id = v_line;
+  insert into public.workflow_owners (company_id, role_key, person_id)
+    values ('10000000-0000-0000-0000-00000000000b', 'it_owner', '20000000-0000-0000-0000-000000000005');
+  assert (select owner_id from public.plan_tasks where id = v_line) = '20000000-0000-0000-0000-000000000005',
+    'the open IT line with nobody goes to the new IT owner';
+  assert not exists (select 1 from public.plan_tasks t join public.plans p on p.id = t.plan_id
+                      where p.company_id = '10000000-0000-0000-0000-00000000000a' and t.owner_id = '20000000-0000-0000-0000-000000000005'
+                        and t.owner_role = 'it'),
+    'and no line of another company';
+end $$;
+
+delete from public.workflow_owners where company_id in ('10000000-0000-0000-0000-00000000000a', '10000000-0000-0000-0000-00000000000b')
+   and role_key in ('it_owner', 'hr_owner');
+insert into public.workflow_owners select * from setup_0093_owners where role_key in ('it_owner', 'hr_owner')
+on conflict (company_id, role_key) do nothing;
+update public.companies c set it_notification_email = i.it_notification_email, hr_notification_email = i.hr_notification_email
+  from setup_0093_inboxes i where i.id = c.id;
+delete from public.people where id = '20000000-0000-0000-0000-000000000931';
+drop table setup_0093_owners, setup_0093_inboxes;
+
 select 'SMOKE TESTS PASSED' as result;

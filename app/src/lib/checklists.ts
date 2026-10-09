@@ -38,6 +38,16 @@ export const PHASES_FOR: Record<ChecklistKind, string[]> = {
   offboarding: ['before_last_day', 'last_day', 'after_departure'],
 }
 
+/**
+ * Why an open IT line has nobody (plan 073): the company has no IT owner,
+ * which the Overview banner also says. Other roles keep their silence — a
+ * finance line has no owner anywhere yet, and saying so on every line is noise.
+ */
+export function unownedNote(task: { owner_role: string; status: string; owner: { full_name: string } | null }): string | null {
+  if (task.owner_role !== 'it' || task.owner || task.status === 'done' || task.status === 'skipped') return null
+  return 'nobody — no IT owner is set for this company'
+}
+
 export function ownerLabel(role: string): string {
   return OWNER_ROLES.find((o) => o.key === role)?.label ?? role
 }

@@ -10,6 +10,7 @@ import {
   groupByPhase,
   messageForChecklist,
   ownerLabel,
+  unownedNote,
   progress,
   type ChecklistKind,
   type ChecklistTask,
@@ -167,7 +168,8 @@ function dueClass(task: ChecklistTask): string {
         <div class="text">
           <strong>{{ task.title }}</strong>
           <small>
-            {{ ownerLabel(task.owner_role) }}<template v-if="task.owner?.full_name"> · {{ task.owner.full_name }}</template>
+            {{ ownerLabel(task.owner_role) }}<template v-if="task.owner?.full_name"> · {{ task.owner.full_name }}</template><template
+              v-else-if="unownedNote(task)"> · <span class="unowned" data-testid="unowned-note">{{ unownedNote(task) }}</span></template>
             <template v-if="task.due_date"> · due {{ task.due_date }}</template>
             <template v-if="task.critical"> · {{ criticalWord }}</template>
           </small>
@@ -223,6 +225,7 @@ function dueClass(task: ChecklistTask): string {
 .text strong { display: block; font-size: 12px; font-weight: 550; }
 .text small { display: block; font-size: 11px; color: var(--muted); margin-top: 3px; }
 .reason { margin: 4px 0 0; font-size: 11px; color: var(--amber); }
+.unowned { color: var(--amber); }
 .menu { position: relative; }
 .menu summary { list-style: none; cursor: pointer; font-size: 14px; letter-spacing: 1px; padding: 2px 8px; border-radius: 6px; color: var(--muted); }
 .menu summary::-webkit-details-marker { display: none; }

@@ -121,15 +121,33 @@ export function ownerLabel(companyId: string | null, companies: Record<string, s
   return companies[companyId] ?? 'Company'
 }
 
-export type KitItem = { item: string; issued_at: string | null; asset_id: string | null }
+export type KitItem = {
+  item: string
+  issued_at: string | null
+  asset_id: string | null
+  /** What went out, kept on the line since 0094; null on older lines and lines without an asset. */
+  asset: { asset_tag: string; model: string | null; type_label: string | null; company_name: string | null } | null
+}
+
+function keptAsset(raw: unknown): KitItem['asset'] {
+  if (!raw || typeof raw !== 'object' || typeof (raw as { asset_tag?: unknown }).asset_tag !== 'string') return null
+  const o = raw as Record<string, unknown>
+  const text = (v: unknown) => (typeof v === 'string' ? v : null)
+  return { asset_tag: o.asset_tag as string, model: text(o.model), type_label: text(o.type_label), company_name: text(o.company_name) }
+}
 
 /** The kit items on an onboarding IT request (requested_systems), junk dropped. */
 export function kitItems(raw: unknown): KitItem[] {
   if (!Array.isArray(raw)) return []
   return raw.flatMap((x) => {
     if (!x || typeof x !== 'object' || typeof (x as { item?: unknown }).item !== 'string') return []
-    const o = x as { item: string; issued_at?: unknown; asset_id?: unknown }
-    return [{ item: o.item, issued_at: typeof o.issued_at === 'string' ? o.issued_at : null, asset_id: typeof o.asset_id === 'string' ? o.asset_id : null }]
+    const o = x as { item: string; issued_at?: unknown; asset_id?: unknown; asset?: unknown }
+    return [{
+      item: o.item,
+      issued_at: typeof o.issued_at === 'string' ? o.issued_at : null,
+      asset_id: typeof o.asset_id === 'string' ? o.asset_id : null,
+      asset: keptAsset(o.asset),
+    }]
   })
 }
 

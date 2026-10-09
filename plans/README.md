@@ -109,6 +109,7 @@ round; merging it into `main` is the maintainer's decision.
 | 071 | Tidying my notifications — archive, restore and delete your own, picked or all read / all archived, counted past the hundred shown; and the task dialog's "With" becomes an autocomplete with chips (migration 0091). | DONE (applied live 2026-10-08) |
 | 072 | Free equipment for anyone in the holding — the starter kit offers every available asset whoever owns it (only an asset somebody holds is left out), searchable with the line's kind first; it stays on its owner's books (migration 0092). | DONE (applied live 2026-10-08) |
 | 073 | What is missing for the app to work — an Overview banner for admins and Company HR naming the companies without an IT owner, an HR owner or their inboxes, and what breaks; naming the IT owner hands them the open IT lines nobody had (migration 0093). | DONE (applied live 2026-10-09) |
+| 074 | The starter kit says what went out and tells who hands it over — issued lines name the asset, Badge and Furniture types exist, untracked lines are plain tick boxes, and issuing a registered asset notifies the IT owner who keeps it and the hire (migration 0094). | DONE (applied live 2026-10-09) |
 
 Round-03 executors branch from `main` as `feature/NNN-<slug>`; the reviewer
 runs the full E2E suite serially and merges after review.

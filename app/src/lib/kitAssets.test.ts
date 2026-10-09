@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { assetLabel, assetSuggestions, kitPickerHint, type KitAssetOption } from './kitAssets'
+import { assetLabel, assetSuggestions, hasMatchingStock, issuedLabel, kitPickerHint, type KitAssetOption } from './kitAssets'
 
 const opt = (id: string, tag: string, type_key: string, type_label: string, extra: Partial<KitAssetOption> = {}): KitAssetOption => ({
   id,
@@ -66,5 +66,40 @@ describe('kitPickerHint', () => {
   it('says so when nothing of that kind is free', () => {
     expect(kitPickerHint('Desk & chair', options)).toBe('Nothing of this kind is free. Pick any free asset, or tick it without one.')
     expect(kitPickerHint('Laptop', [])).toBe('No free equipment in the holding. Tick it without an asset.')
+  })
+})
+
+describe('the new kinds', () => {
+  const more = [...options, opt('b1', 'BDG-01', 'badge', 'Badge'), opt('f1', 'FUR-01', 'furniture', 'Furniture', { model: 'Desk 160' })]
+
+  it('matches a badge line and a desk line to their types', () => {
+    expect(assetSuggestions(more, 'Badge / access card', '')[0]?.id).toBe('b1')
+    expect(assetSuggestions(more, 'Desk & chair', '')[0]?.id).toBe('f1')
+    expect(kitPickerHint('Desk & chair', more)).toBe('1 free furniture in the holding.')
+  })
+
+  it('knows a vehicle by its real key', () => {
+    expect(assetSuggestions([...options, opt('v1', 'CAR-01', 'vehicle', 'Vehicles')], 'Company car', '')[0]?.id).toBe('v1')
+  })
+})
+
+describe('hasMatchingStock', () => {
+  it('is true only when something of the line\'s kind is free', () => {
+    expect(hasMatchingStock('Laptop', options)).toBe(true)
+    expect(hasMatchingStock('Desk & chair', options)).toBe(false)
+    expect(hasMatchingStock('Laptop', [])).toBe(false)
+  })
+})
+
+describe('issuedLabel', () => {
+  it('names what went out', () => {
+    expect(issuedLabel({ asset_id: 'x', asset: { asset_tag: 'LT-0012', model: 'ThinkPad T14', type_label: 'Laptop', company_name: 'Synami' } })).toBe(
+      'LT-0012 · ThinkPad T14 · Laptop · Synami',
+    )
+  })
+
+  it('falls back for a line issued before lines kept their asset, and is empty without one', () => {
+    expect(issuedLabel({ asset_id: 'x', asset: null })).toBe('a registered asset')
+    expect(issuedLabel({ asset_id: null, asset: null })).toBeNull()
   })
 })

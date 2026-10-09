@@ -4,7 +4,7 @@ import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/stores/auth'
 import { kitItems, kitProgress, type KitItem } from '@/lib/equipment'
 import { generateDocuments } from '@/lib/notificationsApi'
-import type { KitAssetOption } from '@/lib/kitAssets'
+import { hasMatchingStock, issuedLabel, type KitAssetOption } from '@/lib/kitAssets'
 import AssetPicker from '@/components/equipment/AssetPicker.vue'
 
 /**
@@ -16,6 +16,9 @@ import AssetPicker from '@/components/equipment/AssetPicker.vue'
  * line ticks itself. Since plan 072 the assets offered are every free one
  * in the holding, whoever owns it (kit_asset_options) — only an asset
  * somebody holds is left out — picked by typing, the line's kind first.
+ * Since plan 074 an issued line names what went out, a line with nothing of
+ * its kind free is a plain tick box (the picker one click away), and the
+ * database tells the IT owner who keeps the asset, and the hire.
  */
 const props = defineProps<{ planId: string; personId: string; companyId: string }>()
 // `present` lets the page know whether this card rendered anything: with no
@@ -28,6 +31,8 @@ const auth = useAuthStore()
 const request = ref<Request | null>(null)
 const assets = ref<KitAssetOption[]>([])
 const picks = ref<Record<number, string>>({})
+// Lines whose kind has nothing free, opened anyway to pick some other asset.
+const opened = ref<Record<number, boolean>>({})
 const extra = ref('')
 const loading = ref(true)
 const busyIndex = ref<number | null>(null)
@@ -37,7 +42,6 @@ const items = computed<KitItem[]>(() => kitItems(request.value?.requested_system
 const bar = computed(() => kitProgress(items.value))
 const canIssue = computed(() => auth.can(props.companyId, 'it.assign') || auth.can(props.companyId, 'it.complete'))
 const canAdd = computed(() => auth.can(props.companyId, 'it.assign') || auth.can(props.companyId, 'tasks.assign'))
-const assetLabel = (id: string | null) => (id ? (assets.value.find((a) => a.id === id)?.asset_tag ?? 'asset') : null)
 
 async function load(): Promise<void> {
   loading.value = true
@@ -126,7 +130,13 @@ onMounted(load)
       </label>
       <div class="text">
         <strong>{{ item.item }}</strong>
-        <small v-if="item.issued_at">Issued {{ item.issued_at.slice(0, 10) }}<template v-if="item.asset_id"> · {{ assetLabel(item.asset_id) ?? 'registered asset' }}</template></small>
+        <small v-if="item.issued_at" :data-testid="`kit-issued-${i}`">Issued {{ item.issued_at.slice(0, 10) }}<template v-if="issuedLabel(item)"> · {{ issuedLabel(item) }}</template></small>
+        <small v-else-if="canIssue && !hasMatchingStock(item.item, assets) && !opened[i] && !picks[i]" class="plain">
+          Not tracked as equipment — tick it when it is handed over.
+          <button v-if="assets.length" type="button" class="link" :data-testid="`kit-open-${i}`" @click="opened = { ...opened, [i]: true }">
+            Pick an asset anyway
+          </button>
+        </small>
         <div v-else-if="canIssue" class="pick">
           <AssetPicker
             :model-value="picks[i] ?? ''"
@@ -153,6 +163,7 @@ onMounted(load)
 .text strong { display: block; font-size: 12px; font-weight: 550; }
 .text small { display: block; font-size: 11px; color: var(--muted); margin-top: 3px; }
 .pick { margin-top: 5px; }
+.link { background: none; border: 0; padding: 0; margin-left: 4px; font-size: 11px; color: var(--green); text-decoration: underline; cursor: pointer; }
 .add { display: flex; gap: 8px; padding: 12px 24px 14px; border-top: 1px solid #edf0eb; max-width: 460px; }
 .add input { flex: 1; border: 1px solid #dce3d7; padding: 8px 10px; font-size: 12px; }
 .small-btn { font-size: 11px; padding: 7px 11px; }

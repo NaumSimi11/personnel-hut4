@@ -25,7 +25,9 @@ const TYPE_WORDS: Record<string, readonly string[]> = {
   phone: ['phone', 'mobile', 'smartphone'],
   accessory: ['keyboard', 'mouse', 'headset', 'dock', 'docking', 'adapter', 'cable', 'accessory', 'accessories'],
   software_license: ['software', 'licence', 'licences', 'license', 'licenses'],
-  vehicles: ['car', 'vehicle', 'vehicles'],
+  vehicle: ['car', 'vehicle', 'vehicles', 'van'],
+  badge: ['badge', 'card', 'keycard', 'pass'],
+  furniture: ['desk', 'chair', 'furniture', 'table', 'cabinet', 'drawer'],
 }
 
 const PLURAL: Record<string, string> = {
@@ -35,7 +37,9 @@ const PLURAL: Record<string, string> = {
   phone: 'phones',
   accessory: 'accessories',
   software_license: 'software licences',
-  vehicles: 'vehicles',
+  vehicle: 'vehicles',
+  badge: 'badges',
+  furniture: 'furniture items',
 }
 
 const DEFAULT_LIMIT = 10
@@ -86,4 +90,22 @@ export function kitPickerHint(item: string, options: ReadonlyArray<KitAssetOptio
   const n = matching.length
   const noun = keys.length === 1 ? (n === 1 ? (matching[0]?.type_label ?? 'asset').toLowerCase() : (PLURAL[keys[0] as string] ?? 'assets')) : n === 1 ? 'asset' : 'assets'
   return `${n} free ${noun} in the holding.`
+}
+
+/** Whether anything of the line's kind is free — when not, the picker stays folded away. */
+export function hasMatchingStock(item: string, options: ReadonlyArray<KitAssetOption>): boolean {
+  const wanted = typesFor(item)
+  return options.some((o) => o.type_key !== null && wanted.has(o.type_key))
+}
+
+export type IssuedAsset = { asset_tag: string; model: string | null; type_label: string | null; company_name: string | null }
+
+/**
+ * What an issued line handed out, as the line kept it (0094). A line issued
+ * before lines kept their asset knows only that there was one.
+ */
+export function issuedLabel(item: { asset_id: string | null; asset: IssuedAsset | null }): string | null {
+  if (!item.asset_id) return null
+  if (!item.asset) return 'a registered asset'
+  return [item.asset.asset_tag, item.asset.model, item.asset.type_label, item.asset.company_name].filter(Boolean).join(' · ')
 }

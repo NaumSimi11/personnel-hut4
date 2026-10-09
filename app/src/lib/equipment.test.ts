@@ -56,9 +56,16 @@ describe('the holding pool and the starter kit (plan 049)', () => {
   it('reads the kit items off a request and counts what is issued', () => {
     const items = kitItems([{ item: 'Laptop', issued_at: '2026-01-01T00:00:00Z', asset_id: 'a1' }, { item: 'Badge', issued_at: null, asset_id: null }, 'junk'])
     expect(items).toEqual([
-      { item: 'Laptop', issued_at: '2026-01-01T00:00:00Z', asset_id: 'a1' },
-      { item: 'Badge', issued_at: null, asset_id: null },
+      { item: 'Laptop', issued_at: '2026-01-01T00:00:00Z', asset_id: 'a1', asset: null },
+      { item: 'Badge', issued_at: null, asset_id: null, asset: null },
     ])
+    // Since 0094 an issued line keeps what went out; anything malformed there is dropped, not trusted.
+    expect(
+      kitItems([
+        { item: 'Laptop', issued_at: '2026-01-01T00:00:00Z', asset_id: 'a1', asset: { asset_tag: 'LT-1', model: 'T14', type_label: 'Laptop', company_name: 'Synami' } },
+        { item: 'Phone', issued_at: '2026-01-01T00:00:00Z', asset_id: 'a2', asset: { model: 'no tag' } },
+      ]).map((i) => i.asset),
+    ).toEqual([{ asset_tag: 'LT-1', model: 'T14', type_label: 'Laptop', company_name: 'Synami' }, null])
     expect(kitProgress(items)).toEqual({ issued: 1, total: 2 })
     expect(kitItems(null)).toEqual([])
   })

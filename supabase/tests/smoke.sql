@@ -9066,4 +9066,88 @@ update public.companies c set it_notification_email = i.it_notification_email, h
 delete from public.people where id = '20000000-0000-0000-0000-000000000931';
 drop table setup_0093_owners, setup_0093_inboxes;
 
+-- ================================================================ 0094
+-- The kit says what went out and tells who hands it over (plan 074): Badge
+-- and Furniture types; an issued line keeps its asset; the IT owner where the
+-- asset sits is told (else the hire's company's), and the hire is told.
+do $$
+begin
+  assert (select count(*) from public.asset_types where key in ('badge', 'furniture')) = 2, 'Badge and Furniture exist';
+end $$;
+create temp table kit_0094_owners as
+  select * from public.workflow_owners where company_id in ('10000000-0000-0000-0000-00000000000a', '10000000-0000-0000-0000-00000000000b')
+     and role_key = 'it_owner';
+delete from public.workflow_owners where company_id in ('10000000-0000-0000-0000-00000000000a', '10000000-0000-0000-0000-00000000000b')
+   and role_key = 'it_owner';
+-- B's IT owner is Fiona; A has none yet.
+insert into public.workflow_owners (company_id, role_key, person_id) values
+  ('10000000-0000-0000-0000-00000000000b', 'it_owner', '20000000-0000-0000-0000-000000000002');
+insert into public.assets (id, company_id, asset_tag, type_key, model, serial_number) values
+  ('a0000000-0000-0000-0000-000000000941', '10000000-0000-0000-0000-00000000000a', 'X-0094-1', 'laptop', 'ThinkPad T14', 'SN-941'),
+  ('a0000000-0000-0000-0000-000000000942', '10000000-0000-0000-0000-00000000000a', 'X-0094-2', 'monitor', 'Dell P24', null);
+insert into public.grant_capabilities (grant_id, capability_key) values
+  ('40000000-0000-0000-0000-000000000003', 'it.view'),
+  ('40000000-0000-0000-0000-000000000003', 'it.assign'),
+  ('40000000-0000-0000-0000-000000000003', 'it.complete')
+on conflict do nothing;
+
+set app.test_uid = '00000000-0000-0000-0000-000000000005';  -- Bea
+set role authenticated;
+do $$
+declare r jsonb; v_req uuid; v_person uuid;
+begin
+  r := public.create_employee(jsonb_build_object('full_name', 'Kit Told', 'work_email', 'kit-told@b.test',
+    'company_id', '10000000-0000-0000-0000-00000000000b', 'job_title', 'Clerk', 'start_date', current_date + 4));
+  v_person := (r->>'person_id')::uuid;
+  select id into v_req from public.it_requests where person_id = v_person and kind = 'onboarding';
+  perform set_config('app.smoke_0094_req', v_req::text, false);
+  perform set_config('app.smoke_0094_person', v_person::text, false);
+  -- A has no IT owner, so the hire's company's (B: Fiona) is told.
+  r := public.issue_kit_item(v_req, 2, 'a0000000-0000-0000-0000-000000000941');
+  assert r->'items'->2->'asset' = '{"asset_tag": "X-0094-1", "model": "ThinkPad T14", "type_label": "Laptop", "company_name": "Company A"}'::jsonb,
+    'the line keeps what went out: ' || (r->'items'->2)::text;
+end $$;
+reset role;
+set app.test_uid = '';
+do $$
+declare v_person uuid := current_setting('app.smoke_0094_person')::uuid;
+begin
+  assert exists (select 1 from public.notifications where person_id = '20000000-0000-0000-0000-000000000002'
+                   and kind = 'equipment.kit_issued' and title = 'Hand over X-0094-1 to Kit Told'
+                   and body like 'X-0094-1 · ThinkPad T14 · Laptop · serial SN-941 (Company A''s, no location recorded)%'),
+    'with no IT owner at A, B''s IT owner is told what to hand over';
+  assert exists (select 1 from public.notifications where person_id = v_person and kind = 'equipment.kit_yours'
+                   and title = 'Your starter kit: X-0094-1 · ThinkPad T14' and link = '/me'),
+    'and the hire hears what is theirs';
+  assert not exists (select 1 from public.notifications where person_id = '20000000-0000-0000-0000-000000000005'
+                       and kind like 'equipment.kit_%'), 'Bea, who did it, is not told';
+end $$;
+-- Now A has an IT owner (Alex): they keep A's stock, so they are told, not Fiona.
+insert into public.workflow_owners (company_id, role_key, person_id) values
+  ('10000000-0000-0000-0000-00000000000a', 'it_owner', '20000000-0000-0000-0000-000000000001');
+set app.test_uid = '00000000-0000-0000-0000-000000000005';
+set role authenticated;
+do $$
+begin
+  perform public.issue_kit_item(current_setting('app.smoke_0094_req')::uuid, 1, 'a0000000-0000-0000-0000-000000000942');
+end $$;
+reset role;
+set app.test_uid = '';
+do $$
+begin
+  assert exists (select 1 from public.notifications where person_id = '20000000-0000-0000-0000-000000000001'
+                   and kind = 'equipment.kit_issued' and title = 'Hand over X-0094-2 to Kit Told'),
+    'the IT owner where the asset sits is told';
+  assert not exists (select 1 from public.notifications where person_id = '20000000-0000-0000-0000-000000000002'
+                       and title = 'Hand over X-0094-2 to Kit Told'), 'and not the hire''s company''s';
+end $$;
+
+delete from public.notifications where kind in ('equipment.kit_issued', 'equipment.kit_yours');
+delete from public.workflow_owners where company_id in ('10000000-0000-0000-0000-00000000000a', '10000000-0000-0000-0000-00000000000b')
+   and role_key = 'it_owner';
+insert into public.workflow_owners select * from kit_0094_owners on conflict (company_id, role_key) do nothing;
+drop table kit_0094_owners;
+delete from public.grant_capabilities where grant_id = '40000000-0000-0000-0000-000000000003'
+   and capability_key in ('it.view', 'it.assign', 'it.complete');
+
 select 'SMOKE TESTS PASSED' as result;

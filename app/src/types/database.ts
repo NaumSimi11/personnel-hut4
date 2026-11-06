@@ -5481,6 +5481,7 @@ export type Database = {
         Returns: Json
       }
       grant_access: { Args: { p: Json }; Returns: Json }
+      hiring_summary: { Args: Record<PropertyKey, never>; Returns: Json }
       issue_asset: { Args: { p_assignment_id: string }; Returns: Json }
       issue_kit_item: {
         Args: { p_asset_id?: string; p_index: number; p_request_id: string }
@@ -5511,6 +5512,10 @@ export type Database = {
         Returns: Json
       }
       my_tasks: { Args: Record<PropertyKey, never>; Returns: Json }
+      opening_counts: {
+        Args: { p_job_ids: string[] }
+        Returns: { job_id: string; in_play: number; hired: number; total: number }[]
+      }
       payroll_settings: { Args: { p_company_id: string }; Returns: Json }
       person_can_sign: { Args: { p_person_id: string }; Returns: boolean }
       prepare_payroll_period: {

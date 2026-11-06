@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { applicantRows, openingRows, type ApplicantLite, type OpeningJobLite } from './hiringTabs'
+import { applicantRows, openingRows, type ApplicantLite, type OpeningCount, type OpeningJobLite } from './hiringTabs'
 import { NOT_RESPONDING_FILTER } from './stageStatuses'
 
 const jobs: OpeningJobLite[] = [
@@ -8,25 +8,23 @@ const jobs: OpeningJobLite[] = [
   { id: 'j3', title: 'Engineer', status: 'on_hold', company_id: 'B', company: { name: 'Praedium' }, request: { headcount: 1, manager: null } },
   { id: 'j4', title: 'Draft role', status: 'draft', company_id: 'B', company: { name: 'Praedium' }, request: null },
 ]
-const apps = [
-  { id: 'a1', job_id: 'j1', stage_key: 'screening', in_play: true },
-  { id: 'a2', job_id: 'j1', stage_key: 'hired', in_play: false },
-  { id: 'a3', job_id: 'j1', stage_key: 'interview', in_play: false },
-  { id: 'a4', job_id: 'j2', stage_key: 'interview', in_play: true },
+const counts: OpeningCount[] = [
+  { job_id: 'j1', in_play: 1, hired: 1, total: 3 },
+  { job_id: 'j2', in_play: 1, hired: 0, total: 1 },
 ]
 
 describe('hiring tabs', () => {
   it('openings: live statuses by default, counts in play and hired, labels and manager', () => {
-    const rows = openingRows(jobs, apps, { companyId: '', status: 'live' })
+    const rows = openingRows(jobs, counts, { companyId: '', status: 'live' })
     expect(rows.map((r) => r.id)).toEqual(['j1', 'j3'])
     expect(rows[0]).toMatchObject({ title: 'Designer', company: 'Synami', headcount: 2, inPlay: 1, hired: 1, manager: 'Mia Manager', statusLabel: 'Open', statusTone: 'green' })
     expect(rows[1]).toMatchObject({ headcount: 1, manager: null, statusLabel: 'On hold', statusTone: 'amber' })
   })
 
   it('openings: filters by company and by one status; all shows drafts and closed too', () => {
-    expect(openingRows(jobs, apps, { companyId: 'B', status: 'live' }).map((r) => r.id)).toEqual(['j3'])
-    expect(openingRows(jobs, apps, { companyId: '', status: 'closed' }).map((r) => r.id)).toEqual(['j2'])
-    expect(openingRows(jobs, apps, { companyId: '', status: 'all' }).map((r) => r.id)).toEqual(['j1', 'j2', 'j3', 'j4'])
+    expect(openingRows(jobs, counts, { companyId: 'B', status: 'live' }).map((r) => r.id)).toEqual(['j3'])
+    expect(openingRows(jobs, counts, { companyId: '', status: 'closed' }).map((r) => r.id)).toEqual(['j2'])
+    expect(openingRows(jobs, counts, { companyId: '', status: 'all' }).map((r) => r.id)).toEqual(['j1', 'j2', 'j3', 'j4'])
   })
 
   it('openings: carries the total received and the closing stamp (plan 056)', () => {
@@ -41,10 +39,9 @@ describe('hiring tabs', () => {
         closed_at: '2026-09-12T08:30:00+00:00',
         closed_reason: 'Headcount withdrawn.',
         closed_by_person: { full_name: 'Ivana Frost' },
-        applications: [{ count: 14 }],
       },
     ]
-    const [row] = openingRows(closed, apps, { companyId: '', status: 'all' })
+    const [row] = openingRows(closed, [{ job_id: 'j2', in_play: 0, hired: 0, total: 14 }], { companyId: '', status: 'all' })
     expect(row).toMatchObject({
       applications: 14,
       companyId: 'A',
@@ -55,7 +52,7 @@ describe('hiring tabs', () => {
   })
 
   it('openings: an opening closed before the stamp existed claims no author, and no count means none', () => {
-    const [row] = openingRows(jobs.filter((j) => j.id === 'j2'), apps, { companyId: '', status: 'all' })
+    const [row] = openingRows(jobs.filter((j) => j.id === 'j2'), [], { companyId: '', status: 'all' })
     expect(row.closedLine).toBeNull()
     expect(row.applications).toBe(0)
   })

@@ -23,15 +23,16 @@ import {
   type PolicyQueueRow,
 } from '@/lib/homeQueue'
 import { todayDb } from '@/lib/compensation'
-import { pageAll } from '@/lib/pageAll'
 import {
+  EMPTY_HIRING_SUMMARY,
   EMPTY_SNAPSHOT,
+  parseHiringSummary,
   awayToday,
   dashboardSections,
   statTiles,
-  type ApplicationLite,
   type AwayRow,
   type DashboardSnapshot,
+  type HiringSummary,
   type JobLite,
 } from '@/lib/dashboard'
 import type { InterviewLite } from '@/lib/hiringBoard'
@@ -97,7 +98,7 @@ const metrics = ref({
   openOnboardingTasks: 0,
 })
 const snapshot = ref<DashboardSnapshot>(EMPTY_SNAPSHOT)
-const applications = ref<ApplicationLite[]>([])
+const summary = ref<HiringSummary>(EMPTY_HIRING_SUMMARY)
 const jobs = ref<JobLite[]>([])
 const interviews = ref<InterviewLite[]>([])
 const away = ref<AwayRow[]>([])
@@ -123,7 +124,7 @@ const tiles = computed(() =>
   statTiles({
     snapshot: snapshot.value,
     away: away.value,
-    applications: applications.value,
+    summary: summary.value,
     requestsToDecide: metrics.value.hiringRequests,
     viewer: auth,
   }),
@@ -231,21 +232,15 @@ function loadLaterQueues() {
   ])
 }
 
-/**
- * Every application on a live role, past PostgREST's 1,000-row cap.
- * Paged in id order so a page boundary never skips or repeats a row;
- * `recentApplicants` sorts by `received_at` itself, so the id order costs the
- * "just applied" list nothing.
- */
-function loadPipelineApplications(): Promise<{ data: ApplicationLite[]; error: { message: string } | null }> {
-  return pageAll<ApplicationLite>((from, to) =>
-    supabase
-      .from('applications')
-      .select('id, job_id, stage_key, sub_status_key, in_play, received_at, candidate:candidates(full_name, last_activity_at), job:jobs!inner(title, status, company:companies(name))')
-      .in('job.status', ['ready', 'open', 'on_hold'])
-      .order('id')
-      .range(from, to) as unknown as PromiseLike<{ data: ApplicationLite[] | null; error: { message: string } | null }>,
-  )
+/** The recruitment counts, summed in the database (0097) instead of downloaded row by row; empty for a viewer without candidates.view. */
+async function loadHiringSummary(): Promise<{ data: HiringSummary; error: { message: string } | null }> {
+  const { data, error: err } = await supabase.rpc('hiring_summary')
+  if (err) return { data: EMPTY_HIRING_SUMMARY, error: err }
+  try {
+    return { data: parseHiringSummary(data), error: null }
+  } catch (e) {
+    return { data: EMPTY_HIRING_SUMMARY, error: { message: e instanceof Error ? e.message : 'The hiring summary has an unexpected shape.' } }
+  }
 }
 
 /** Scheduled interviews in the next seven days, for a viewer who sees candidates anywhere; RLS keeps each to its company. */
@@ -279,7 +274,7 @@ async function load(): Promise<void> {
   error.value = null
 
   const [
-    applicationsRes,
+    summaryRes,
     jobsRes,
     hiringRequestsCount,
     openTasksCount,
@@ -292,12 +287,10 @@ async function load(): Promise<void> {
     candidateAssignments,
     interviewsRes,
   ] = await Promise.all([
-    // The pipeline of live roles (plan 052): the imported history sits on
-    // closed jobs. Live jobs still carry more than PostgREST's 1,000 rows, so
-    // this is paged (plan 054 review) — the pipeline card, the "just applied"
-    // list and the "not responding" line all count every row. The sub-status
-    // and the candidate's last activity feed that line (see outreachRowOf).
-    loadPipelineApplications(),
+    // The pipeline of live roles (plan 052), counted in the database: the
+    // pipeline card, the hiring board, the "just applied" list and the "not
+    // responding" line all come from this one summary, not from the rows.
+    loadHiringSummary(),
     // On hold too, so the hiring board can date those rows; openPositions keeps to ready and open.
     supabase.from('jobs').select('id, title, status, opened_at, company:companies(name), request:hiring_requests!jobs_hiring_request_id_fkey(headcount)').in('status', ['ready', 'open', 'on_hold']),
     supabase
@@ -348,7 +341,7 @@ async function load(): Promise<void> {
     console.error(`Overview: ${label} failed:`, err.message)
   }
 
-  logIfError('applications', applicationsRes.error)
+  logIfError('hiring summary', summaryRes.error)
   logIfError('open jobs', jobsRes.error)
   logIfError('team snapshot', snapshotRes.error)
   logIfError('hiring requests count', hiringRequestsCount.error)
@@ -373,7 +366,7 @@ async function load(): Promise<void> {
     hiringRequests: hiringRequestsCount.count ?? 0,
     openOnboardingTasks: openTasksCount.count ?? 0,
   }
-  applications.value = applicationsRes.data
+  summary.value = summaryRes.data
   jobs.value = (jobsRes.data ?? []) as unknown as JobLite[]
   interviews.value = (interviewsRes.data ?? []) as unknown as InterviewLite[]
   away.value = awayToday((leaveRes.data ?? []) as unknown as Parameters<typeof awayToday>[0], todayDb())
@@ -447,7 +440,7 @@ onMounted(load)
 
     <RecruitmentSnapshot
       v-if="sections.recruitment"
-      :applications="applications"
+      :summary="summary"
       :jobs="jobs"
       :interviews="interviews"
       :show-pipeline="sections.pipeline"

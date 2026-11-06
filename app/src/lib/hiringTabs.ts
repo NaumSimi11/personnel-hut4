@@ -34,10 +34,9 @@ export type OpeningJobLite = {
   closed_at?: string | null
   closed_reason?: string | null
   closed_by_person?: { full_name: string } | null
-  /** PostgREST's embedded count of every application ever received here. */
-  applications?: ReadonlyArray<{ count: number }> | null
 }
-export type OpeningApplicationLite = { id: string; job_id: string; stage_key: string; in_play: boolean }
+/** One row of `opening_counts` (0097): what a job holds, counted in the database. */
+export type OpeningCount = { job_id: string; in_play: number; hired: number; total: number }
 
 export type JobOpeningRow = {
   id: string
@@ -79,14 +78,14 @@ function closedLine(j: OpeningJobLite): string | null {
 
 export function openingRows(
   jobs: ReadonlyArray<OpeningJobLite>,
-  apps: ReadonlyArray<OpeningApplicationLite>,
+  counts: ReadonlyArray<OpeningCount>,
   filter: { companyId: string; status: string },
 ): JobOpeningRow[] {
   return jobs
     .filter((j) => !filter.companyId || j.company_id === filter.companyId)
     .filter((j) => (filter.status === 'all' ? true : filter.status === 'live' ? LIVE_JOB_STATUSES.has(j.status) : j.status === filter.status))
     .map((j) => {
-      const own = apps.filter((a) => a.job_id === j.id)
+      const own = counts.find((c) => c.job_id === j.id)
       return {
         id: j.id,
         title: j.title,
@@ -96,10 +95,10 @@ export function openingRows(
         statusLabel: JOB_STATUS_LABEL[j.status] ?? j.status,
         statusTone: jobStatusTone(j.status),
         headcount: jobHeadcount(j),
-        inPlay: own.filter((a) => a.in_play).length,
-        hired: own.filter((a) => a.stage_key === 'hired').length,
+        inPlay: own?.in_play ?? 0,
+        hired: own?.hired ?? 0,
         manager: j.request?.manager?.full_name ?? null,
-        applications: j.applications?.[0]?.count ?? 0,
+        applications: own?.total ?? 0,
         closedLine: closedLine(j),
         closedReason: j.closed_reason ?? null,
       }

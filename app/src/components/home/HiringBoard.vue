@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import { BOARD_COLUMNS, jobBoard, type BoardColumnKey, type BoardRow } from '@/lib/hiringBoard'
-import type { ApplicationLite, JobLite } from '@/lib/dashboard'
+import type { HiringSummary, JobLite } from '@/lib/dashboard'
 import { todayDb } from '@/lib/compensation'
 
 /**
@@ -10,7 +10,7 @@ import { todayDb } from '@/lib/compensation'
  * stage reached drawn as an arrow — so a glance says which roles are moving
  * and which have stalled in screening. Each row opens the job's applicants.
  */
-const props = defineProps<{ applications: ApplicationLite[]; jobs: JobLite[]; loading?: boolean }>()
+const props = defineProps<{ summary: HiringSummary; jobs: JobLite[]; loading?: boolean }>()
 
 const COLLAPSED_ROWS = 8
 /** The same line Open positions draws: a quarter without filling it. */
@@ -19,7 +19,7 @@ const AGING_DAYS = 90
 const company = ref('')
 const expanded = ref(false)
 
-const allRows = computed(() => jobBoard(props.applications, props.jobs, todayDb()))
+const allRows = computed(() => jobBoard(props.summary, props.jobs, todayDb()))
 const companies = computed(() => [...new Set(allRows.value.map((r) => r.company))].sort())
 const rows = computed(() => allRows.value.filter((r) => !company.value || r.company === company.value))
 // A reload that no longer carries the chosen company must not strand the

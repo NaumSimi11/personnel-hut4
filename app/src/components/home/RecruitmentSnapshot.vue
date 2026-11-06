@@ -6,10 +6,9 @@ import {
   pipelineCounts,
   recentApplicants,
   stageLabel,
-  type ApplicationLite,
+  type HiringSummary,
   type JobLite,
 } from '@/lib/dashboard'
-import { todayDb } from '@/lib/compensation'
 import { shortDate } from '@/lib/leave'
 import { NOT_RESPONDING_DAYS } from '@/lib/outreach'
 import type { InterviewLite } from '@/lib/hiringBoard'
@@ -21,16 +20,16 @@ import UpcomingInterviews from '@/components/home/UpcomingInterviews.vue'
  * 044): bars per stage across every application the viewer may see, open
  * positions with their live applicant count, the newest applicants. Each
  * row opens the job or the candidate. One line under the pipeline (plan
- * 054) counts who is not responding — judged from the candidate's last
- * activity (see outreachRowOf), so Home may under-count; the report's
- * attention tile is the authoritative number. Absent at zero.
+ * 054) counts who is not responding, counted in the database by
+ * app.not_responding (the report's own rule). Absent at zero. All of it comes from one `hiring_summary` call,
+ * not from a download of the applications.
  *
  * Plan 067 brought the Zoho Recruit home's best parts: the per-job hiring
  * board across the top, how long each open position has been open, and the
  * week's interviews.
  */
 const props = defineProps<{
-  applications: ApplicationLite[]
+  summary: HiringSummary
   jobs: JobLite[]
   /** The next seven days' interviews; loaded only for a viewer who sees candidates. */
   interviews?: InterviewLite[]
@@ -43,11 +42,11 @@ const props = defineProps<{
 /** Past this, an opening reads as aging: a quarter without filling it. */
 const AGING_DAYS = 90
 
-const counts = computed(() => pipelineCounts(props.applications))
+const counts = computed(() => pipelineCounts(props.summary))
 const max = computed(() => Math.max(1, ...counts.value.map((c) => c.count)))
-const positions = computed(() => openPositions(props.jobs, props.applications))
-const recent = computed(() => recentApplicants(props.applications, 5))
-const notResponding = computed(() => notRespondingCount(props.applications, todayDb()))
+const positions = computed(() => openPositions(props.jobs, props.summary))
+const recent = computed(() => recentApplicants(props.summary, 5))
+const notResponding = computed(() => notRespondingCount(props.summary))
 
 function barHeight(count: number): string {
   return `${Math.round((count / max.value) * 88) + 6}px`
@@ -64,7 +63,7 @@ function badgeClass(stage: string, inPlay: boolean): string {
   <section class="recruitment" aria-labelledby="recruitment-heading" data-testid="recruitment-snapshot">
     <div class="section-label"><span id="recruitment-heading">Recruitment</span> <small>What the pipeline holds and who just applied.</small></div>
     <div class="grid">
-      <HiringBoard v-if="showPipeline" :applications="applications" :jobs="jobs" :loading="loading" />
+      <HiringBoard v-if="showPipeline" :summary="summary" :jobs="jobs" :loading="loading" />
 
       <div v-if="showPipeline" class="card pipeline-card">
         <div class="card-head">

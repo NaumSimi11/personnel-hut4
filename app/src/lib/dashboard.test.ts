@@ -1,11 +1,13 @@
 import { describe, expect, it } from 'vitest'
 import {
+  EMPTY_HIRING_SUMMARY,
   EMPTY_SNAPSHOT,
   applicantsInProgress,
   awayToday,
   dashboardSections,
   inDaysLabel,
   notRespondingCount,
+  parseHiringSummary,
   openPositions,
   payrollLabel,
   pipelineCounts,
@@ -13,7 +15,7 @@ import {
   shoutoutLine,
   stageLabel,
   statTiles,
-  type ApplicationLite,
+  type HiringSummary,
   type JobLite,
   type PayrollFact,
 } from './dashboard'
@@ -22,26 +24,15 @@ import {
 const viewerWith = (...caps: string[]) => ({ canAnywhere: (cap: string) => caps.includes(cap) })
 const PAYROLL: PayrollFact = { company_name: 'Synami', period_start: '2026-08-01', period_end: '2026-08-31', currency: 'EUR', total: 1000, people: 2, status: 'approved' }
 
-const app = (over: Partial<ApplicationLite>): ApplicationLite => ({
-  id: 'a',
-  job_id: 'j1',
-  stage_key: 'screening',
-  in_play: true,
-  received_at: '2026-09-10T10:00:00Z',
-  candidate: { full_name: 'Cand' },
-  job: { title: 'Role', company: { name: 'Synami' } },
-  ...over,
-})
+/** One by_job row of hiring_summary; the count defaults to one application. */
+const row = (job_id: string, stage_key: string, in_play = true, count = 1) => ({ job_id, stage_key, in_play, count, last_received_at: '2026-09-10T10:00:00Z' })
+const summaryOf = (by_job: HiringSummary['by_job'], extra: Partial<HiringSummary> = {}): HiringSummary => ({ ...EMPTY_HIRING_SUMMARY, by_job, ...extra })
 
 describe('dashboard', () => {
   it('counts applications per live stage in pipeline order, zero for empty stages', () => {
-    const counts = pipelineCounts([
-      app({ id: '1', stage_key: 'screening' }),
-      app({ id: '2', stage_key: 'interview' }),
-      app({ id: '3', stage_key: 'interview' }),
-      app({ id: '4', stage_key: 'screening', in_play: false }),
-      app({ id: '5', stage_key: 'hired', in_play: false }),
-    ])
+    const counts = pipelineCounts(
+      summaryOf([row('j1', 'screening'), row('j1', 'interview', true, 2), row('j2', 'screening', false), row('j2', 'hired', false)]),
+    )
     expect(counts.map((c) => [c.key, c.count])).toEqual([
       ['screening', 1],
       ['interview', 2],
@@ -54,14 +45,11 @@ describe('dashboard', () => {
 
   it('applicants in progress counts only the ones still in play', () => {
     expect(
-      applicantsInProgress([
-        app({ id: '1', stage_key: 'screening' }),
-        app({ id: '2', stage_key: 'offer' }),
-        app({ id: '3', stage_key: 'hired', in_play: false }),
-        app({ id: '4', stage_key: 'interview', in_play: false }),
-      ]),
+      applicantsInProgress(
+        summaryOf([row('j1', 'screening'), row('j1', 'offer'), row('j1', 'hired', false), row('j1', 'interview', false)]),
+      ),
     ).toBe(2)
-    expect(applicantsInProgress([app({ stage_key: 'screening', in_play: false })])).toBe(0)
+    expect(applicantsInProgress(summaryOf([row('j1', 'screening', false)]))).toBe(0)
   })
 
   it('open positions are roles being hired (ready or open) with their live applicant count, headcount from the request', () => {
@@ -71,11 +59,7 @@ describe('dashboard', () => {
       { id: 'j3', title: 'Ready', status: 'ready', company: { name: 'Praedium' }, request: null },
       { id: 'j4', title: 'Paused', status: 'on_hold', company: { name: 'Praedium' }, request: null },
     ]
-    const rows = openPositions(jobs, [
-      app({ id: '1', job_id: 'j1' }),
-      app({ id: '2', job_id: 'j1', stage_key: 'interview', in_play: false }),
-      app({ id: '3', job_id: 'j2' }),
-    ])
+    const rows = openPositions(jobs, summaryOf([row('j1', 'screening'), row('j1', 'interview', false), row('j2', 'screening')]))
     expect(rows).toEqual([
       { id: 'j1', title: 'Designer', company: 'Synami', headcount: 2, applicants: 1, daysOpen: null },
       { id: 'j3', title: 'Ready', company: 'Praedium', headcount: 1, applicants: 0, daysOpen: null },
@@ -88,22 +72,17 @@ describe('dashboard', () => {
       { id: 'ready', title: 'Ready', status: 'ready', company: null, request: null, opened_at: null },
       { id: 'old', title: 'Old', status: 'open', company: null, request: null, opened_at: '2026-06-01T09:00:00Z' },
     ]
-    const rows = openPositions(jobs, [], '2026-09-24')
+    const rows = openPositions(jobs, EMPTY_HIRING_SUMMARY, '2026-09-24')
     expect(rows.map((r) => [r.id, r.daysOpen])).toEqual([['old', 115], ['young', 4], ['ready', null]])
   })
 
-  it('recent applicants are the newest first, capped', () => {
-    const rows = recentApplicants(
-      [
-        app({ id: 'old', received_at: '2026-09-01T00:00:00Z' }),
-        app({ id: 'new', received_at: '2026-09-12T00:00:00Z' }),
-        app({ id: 'mid', received_at: '2026-09-05T00:00:00Z' }),
-      ],
-      2,
-    )
+  it('recent applicants come shaped from the summary, capped', () => {
+    const recent = (id: string, received_at: string) => ({ application_id: id, candidate_name: 'Cand', job_title: 'Role', company_name: 'Synami', stage_key: 'screening', received_at })
+    const summary = summaryOf([], { recent: [recent('new', '2026-09-12T00:00:00Z'), recent('mid', '2026-09-05T00:00:00Z'), recent('old', '2026-09-01T00:00:00Z')] })
+    const rows = recentApplicants(summary, 2)
     expect(rows.map((r) => r.id)).toEqual(['new', 'mid'])
-    expect(rows[0]).toMatchObject({ name: 'Cand', position: 'Role', stage: 'screening', inPlay: true })
-    expect(recentApplicants([app({ id: 'x', in_play: false })])[0]?.inPlay).toBe(false)
+    expect(rows[0]).toMatchObject({ name: 'Cand', position: 'Role', company: 'Synami', stage: 'screening', inPlay: true })
+    expect(recentApplicants(summaryOf([], { recent: [{ ...recent('x', '2026-09-01T00:00:00Z'), candidate_name: null, job_title: null, company_name: null }] }))[0]).toMatchObject({ name: 'Candidate', position: '—', company: '—' })
   })
 
   it('away today lists approved leave covering today, with the last day', () => {
@@ -129,7 +108,7 @@ describe('dashboard', () => {
 
   it('shows each stat only to a viewer who may already see that data', () => {
     const snapshot = { ...EMPTY_SNAPSHOT, active: 12, starting: 1 }
-    const input = { snapshot, away: [{ id: '1', name: 'Ana', type: 'annual', until: '2026-09-16', backOn: false }], applications: [app({ id: '1' })], requestsToDecide: 3 }
+    const input = { snapshot, away: [{ id: '1', name: 'Ana', type: 'annual', until: '2026-09-16', backOn: false }], summary: summaryOf([row('j1', 'screening')]), requestsToDecide: 3 }
 
     expect(statTiles({ ...input, viewer: viewerWith() }).map((t) => t.key)).toEqual([])
     expect(statTiles({ ...input, viewer: viewerWith('people.view') }).map((t) => t.key)).toEqual(['active'])
@@ -141,7 +120,7 @@ describe('dashboard', () => {
   it('states the headline numbers and keeps the payroll tile on what the database returned', () => {
     const snapshot = { ...EMPTY_SNAPSHOT, active: 12, starting: 1, payroll: [PAYROLL] }
     const all = viewerWith('people.view', 'leave.view', 'candidates.view', 'jobs.approve')
-    const tiles = statTiles({ snapshot, away: [], applications: [app({ id: '1' }), app({ id: '2', stage_key: 'hired', in_play: false })], requestsToDecide: 3, viewer: all })
+    const tiles = statTiles({ snapshot, away: [], summary: summaryOf([row('j1', 'screening'), row('j1', 'hired', false)]), requestsToDecide: 3, viewer: all })
     expect(tiles.map((t) => [t.key, t.value])).toEqual([
       ['active', 12],
       ['away', 0],
@@ -151,7 +130,7 @@ describe('dashboard', () => {
     ])
     expect(tiles[0]?.sub).toBe('1 starting soon')
     // No payroll row came back (no payroll.summary anywhere) → no tile, whatever the viewer claims.
-    expect(statTiles({ snapshot: { ...snapshot, payroll: [] }, away: [], applications: [], requestsToDecide: 0, viewer: all }).map((t) => t.key)).not.toContain('payroll')
+    expect(statTiles({ snapshot: { ...snapshot, payroll: [] }, away: [], summary: EMPTY_HIRING_SUMMARY, requestsToDecide: 0, viewer: all }).map((t) => t.key)).not.toContain('payroll')
   })
 
   it('opens each dashboard section to the capability that governs its data', () => {
@@ -180,25 +159,15 @@ describe('dashboard', () => {
     })
   })
 
-  it('counts not responding from the sub-status, the job status and the candidate activity, else received_at', () => {
-    const today = '2026-09-21'
-    const live = { title: 'Role', status: 'open', company: { name: 'Synami' } }
-    const rows: ApplicationLite[] = [
-      // sourced, quiet candidate, received long ago: counts
-      app({ id: '1', sub_status_key: 'sourced', received_at: '2026-06-01T10:00:00Z', candidate: { full_name: 'A', last_activity_at: '2026-07-01T10:00:00Z' }, job: live }),
-      // contacted at screening, no activity known, received long ago: counts on received_at
-      app({ id: '2', stage_key: 'screening', sub_status_key: 'contacted', received_at: '2026-06-01T10:00:00Z', job: live }),
-      // the candidate was active this month: not counted
-      app({ id: '3', sub_status_key: 'sourced', received_at: '2026-06-01T10:00:00Z', candidate: { full_name: 'C', last_activity_at: '2026-09-15T10:00:00Z' }, job: live }),
-      // interested: an answer, never "not responding"
-      app({ id: '4', stage_key: 'screening', sub_status_key: 'interested', received_at: '2026-06-01T10:00:00Z', job: live }),
-      // a closed job, and a row without its job: not counted
-      app({ id: '5', sub_status_key: 'sourced', received_at: '2026-06-01T10:00:00Z', job: { ...live, status: 'closed' } }),
-      app({ id: '6', sub_status_key: 'sourced', received_at: '2026-06-01T10:00:00Z', job: null }),
-      // no sub-status at all (pre-054 rows, other stages): not counted
-      app({ id: '7', received_at: '2026-06-01T10:00:00Z', job: live }),
-    ]
-    expect(notRespondingCount(rows, today)).toBe(2)
-    expect(notRespondingCount([], today)).toBe(0)
+  it('reads the not responding count the database made', () => {
+    expect(notRespondingCount(summaryOf([], { not_responding: 7 }))).toBe(7)
+    expect(notRespondingCount(EMPTY_HIRING_SUMMARY)).toBe(0)
+  })
+
+  it('validates the hiring_summary JSON at the boundary', () => {
+    const raw = { by_job: [row('j1', 'screening')], not_responding: 2, recent: [] }
+    expect(parseHiringSummary(raw)).toEqual(raw)
+    expect(() => parseHiringSummary({ by_job: [{ job_id: 'j1' }], not_responding: 0, recent: [] })).toThrow()
+    expect(() => parseHiringSummary(null)).toThrow()
   })
 })

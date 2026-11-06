@@ -3,8 +3,7 @@ import { computed, onMounted, ref, watch } from 'vue'
 import { supabase } from '@/lib/supabase'
 import CompanyFilter from '@/components/CompanyFilter.vue'
 import CloseJobsDialog from '@/components/hiring/CloseJobsDialog.vue'
-import { openingRows, type JobOpeningRow, type OpeningApplicationLite, JOB_STATUS_LABEL } from '@/lib/hiringTabs'
-import { pageAll } from '@/lib/pageAll'
+import { openingRows, type JobOpeningRow, type OpeningCount, JOB_STATUS_LABEL } from '@/lib/hiringTabs'
 import { closeSummary, friendlyCloseError, whyNotSelectable, type CloseOutcome, type CloseTarget } from '@/lib/closeJobs'
 import { friendlyDeleteError, jobDeletable } from '@/lib/hiringDelete'
 import { useAuthStore } from '@/stores/auth'
@@ -33,7 +32,6 @@ type JobRow = {
   company: { name: string } | null
   closed_by_person: { full_name: string } | null
   request: { headcount: number; manager: { full_name: string } | null } | null
-  applications: { count: number }[] | null
 }
 
 const auth = useAuthStore()
@@ -42,7 +40,7 @@ const dialogs = useDialogStore()
 const loading = ref(true)
 const error = ref<string | null>(null)
 const jobs = ref<JobRow[]>([])
-const applications = ref<OpeningApplicationLite[]>([])
+const counts = ref<OpeningCount[]>([])
 const companyId = ref('')
 const status = ref<'live' | 'all' | string>('live')
 
@@ -57,7 +55,7 @@ const companies = computed(() => {
   jobs.value.forEach((j) => seen.set(j.company_id, j.company?.name ?? '—'))
   return [...seen].map(([id, name]) => ({ id, name })).sort((a, b) => a.name.localeCompare(b.name))
 })
-const rows = computed<JobOpeningRow[]>(() => openingRows(jobs.value, applications.value, { companyId: companyId.value, status: status.value }))
+const rows = computed<JobOpeningRow[]>(() => openingRows(jobs.value, counts.value, { companyId: companyId.value, status: status.value }))
 
 /** A row as the closing dialog and its rules see it. */
 function target(r: JobOpeningRow): CloseTarget {
@@ -165,47 +163,33 @@ async function removeJob(r: JobOpeningRow): Promise<void> {
   await load()
 }
 
-// PostgREST answers at most 1,000 rows per request; since the Zoho import
-// (0067) the holding carries several thousand applications, so one plain
-// select silently dropped the newest and every "in play" read low. Only the
-// rows that count are asked for (in play, or hired — the rest count nowhere), in
-// pages, in id order so a page boundary never skips or repeats a row. The
-// total per job — the rule for deleting — comes from the jobs query instead,
-// counted in the database, so this stays the smaller read.
-function loadCountedApplications(): Promise<{ data: OpeningApplicationLite[]; error: { message: string } | null }> {
-  return pageAll<OpeningApplicationLite>((from, to) =>
-    supabase
-      .from('applications')
-      .select('id, job_id, stage_key, in_play')
-      .or('in_play.eq.true,stage_key.eq.hired')
-      .order('id')
-      .range(from, to),
-  )
+/** In play, hired and total per job, counted in the database (0097) for the jobs already loaded. */
+async function loadOpeningCounts(jobIds: string[]): Promise<{ data: OpeningCount[]; error: { message: string } | null }> {
+  if (!jobIds.length) return { data: [], error: null }
+  const { data, error: err } = await supabase.rpc('opening_counts', { p_job_ids: jobIds })
+  return { data: data ?? [], error: err }
 }
 
 async function load(): Promise<void> {
   loading.value = true
   error.value = null
-  const [jobsRes, appsRes] = await Promise.all([
-    supabase
-      .from('jobs')
-      .select(
-        `id, title, status, company_id, created_at, closed_at, closed_reason, custom,
-         company:companies(name), closed_by_person:people!jobs_closed_by_fkey(full_name),
-         request:hiring_requests!jobs_hiring_request_id_fkey(headcount, manager:people!hiring_requests_hiring_manager_id_fkey(full_name)),
-         applications(count)`,
-      )
-      .order('created_at', { ascending: false }),
-    loadCountedApplications(),
-  ])
+  const jobsRes = await supabase
+    .from('jobs')
+    .select(
+      `id, title, status, company_id, created_at, closed_at, closed_reason, custom,
+       company:companies(name), closed_by_person:people!jobs_closed_by_fkey(full_name),
+       request:hiring_requests!jobs_hiring_request_id_fkey(headcount, manager:people!hiring_requests_hiring_manager_id_fkey(full_name))`,
+    )
+    .order('created_at', { ascending: false })
+  const countsRes = jobsRes.error ? { data: [], error: null } : await loadOpeningCounts((jobsRes.data ?? []).map((j) => j.id))
   loading.value = false
-  if (jobsRes.error || appsRes.error) {
+  if (jobsRes.error || countsRes.error) {
     error.value = 'Could not load the job openings.'
-    console.error('Job openings load failed:', jobsRes.error?.message ?? appsRes.error?.message)
+    console.error('Job openings load failed:', jobsRes.error?.message ?? countsRes.error?.message)
     return
   }
   jobs.value = (jobsRes.data ?? []) as unknown as JobRow[]
-  applications.value = appsRes.data
+  counts.value = countsRes.data
 }
 
 onMounted(load)

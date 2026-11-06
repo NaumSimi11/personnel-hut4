@@ -9083,4 +9083,76 @@ delete from public.candidates where id::text like '80000000-0000-0000-0000-00000
 delete from public.jobs where id::text like '70000000-0000-0000-0000-00000000096_';
 delete from public.application_sub_statuses where key in ('zz96_a', 'zz96_b');
 
+-- 0097-summary: hiring_summary and opening_counts count in the database and
+-- stop at the companies where the caller holds candidates.view.
+insert into public.jobs (id, company_id, title, status) values
+  ('70000000-0000-0000-0000-000000000971', '10000000-0000-0000-0000-00000000000a', 'ZZ97 A role', 'open'),
+  ('70000000-0000-0000-0000-000000000972', '10000000-0000-0000-0000-00000000000b', 'ZZ97 B role', 'open');
+insert into public.candidates (id, full_name, email) values
+  ('80000000-0000-0000-0000-000000000971', 'ZZ97 Ann', 'zz97a@example.test'),
+  ('80000000-0000-0000-0000-000000000972', 'ZZ97 Ben', 'zz97b@example.test'),
+  ('80000000-0000-0000-0000-000000000973', 'ZZ97 Cy', 'zz97c@example.test');
+insert into public.applications (id, job_id, company_id, candidate_id, stage_key, sub_status_key, received_at) values
+  ('90000000-0000-0000-0000-000000000971', '70000000-0000-0000-0000-000000000971', '10000000-0000-0000-0000-00000000000a',
+   '80000000-0000-0000-0000-000000000971', 'screening', 'contacted', now() - interval '90 days'),
+  ('90000000-0000-0000-0000-000000000972', '70000000-0000-0000-0000-000000000971', '10000000-0000-0000-0000-00000000000a',
+   '80000000-0000-0000-0000-000000000972', 'screening', 'applied', now() + interval '1 day'),
+  ('90000000-0000-0000-0000-000000000973', '70000000-0000-0000-0000-000000000972', '10000000-0000-0000-0000-00000000000b',
+   '80000000-0000-0000-0000-000000000973', 'screening', 'contacted', now() - interval '90 days');
+create temp table zz97_expected as
+  select count(*) as n from public.applications a
+   where a.company_id = '10000000-0000-0000-0000-00000000000a' and app.not_responding(a);
+grant select on zz97_expected to authenticated;
+set app.test_uid = '00000000-0000-0000-0000-000000000001';  -- Alex, Director in A only
+set role authenticated;
+do $$
+declare
+  s jsonb := public.hiring_summary();
+  v_expected bigint := (select n from zz97_expected);
+  v_in_play int;
+begin
+  assert not exists (select 1 from jsonb_array_elements(s->'by_job') e
+                      where e->>'job_id' = '70000000-0000-0000-0000-000000000972'),
+    '0097-summary: no Company B job in by_job';
+  assert exists (select 1 from jsonb_array_elements(s->'by_job') e
+                  where e->>'job_id' = '70000000-0000-0000-0000-000000000971'
+                    and e->>'stage_key' = 'screening' and (e->>'in_play')::boolean
+                    and (e->>'count')::int = 2 and e->>'last_received_at' is not null),
+    '0097-summary: the Company A job counts its two screening applications';
+  assert (s->>'not_responding')::bigint = v_expected and v_expected >= 1,
+    '0097-summary: not_responding equals app.not_responding over Company A: ' || (s->>'not_responding');
+  assert jsonb_array_length(s->'recent') <= 5, '0097-summary: at most five recent';
+  assert not exists (select 1 from jsonb_array_elements(s->'recent') e where e->>'candidate_name' = 'ZZ97 Cy'),
+    '0097-summary: no Company B applicant in recent';
+  assert exists (select 1 from jsonb_array_elements(s->'recent') e where e->>'candidate_name' = 'ZZ97 Ben'
+                    and e->>'job_title' = 'ZZ97 A role' and e->>'company_name' = 'Company A'),
+    '0097-summary: recent names the candidate, job and company';
+  assert (s->'recent'->0->>'received_at')::timestamptz >= (s->'recent'->1->>'received_at')::timestamptz,
+    '0097-summary: recent is newest first';
+
+  select c.in_play into v_in_play from public.opening_counts(array[
+    '70000000-0000-0000-0000-000000000971', '70000000-0000-0000-0000-000000000972']::uuid[]) c
+   where c.job_id = '70000000-0000-0000-0000-000000000971';
+  assert v_in_play = 2, '0097-summary: opening_counts in_play for the A job';
+  assert (select count(*) from public.opening_counts(array[
+    '70000000-0000-0000-0000-000000000971', '70000000-0000-0000-0000-000000000972']::uuid[])) = 1,
+    '0097-summary: opening_counts shows nothing for the B job';
+end $$;
+reset role;
+drop table zz97_expected;
+-- Someone with no candidates.view anywhere (Omar) sees empty counts.
+set app.test_uid = '00000000-0000-0000-0000-000000000003';
+set role authenticated;
+do $$
+declare s jsonb := public.hiring_summary();
+begin
+  assert s->'by_job' = '[]'::jsonb and s->'recent' = '[]'::jsonb and (s->>'not_responding')::int = 0,
+    '0097-summary: no capability, no counts';
+end $$;
+reset role;
+set app.test_uid = '';
+delete from public.applications where id::text like '90000000-0000-0000-0000-00000000097_';
+delete from public.candidates where id::text like '80000000-0000-0000-0000-00000000097_';
+delete from public.jobs where id::text like '70000000-0000-0000-0000-00000000097_';
+
 select 'SMOKE TESTS PASSED' as result;

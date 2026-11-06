@@ -1,6 +1,7 @@
 import { formatAmount, todayDb } from '@/lib/compensation'
 import { daysSince } from '@/lib/hiringBoard'
-import { notResponding, type OutreachRow } from '@/lib/outreach'
+import { type OutreachRow } from '@/lib/outreach'
+import { z } from 'zod'
 import { STAGES, STAGE_LABEL, type StageKey } from '@/lib/stageStatuses'
 
 /**
@@ -12,17 +13,40 @@ import { STAGES, STAGE_LABEL, type StageKey } from '@/lib/stageStatuses'
  * `dashboard_snapshot`.
  */
 
-export type ApplicationLite = {
-  id: string
-  job_id: string
-  stage_key: string
-  /** Still being worked: open outcome and not closed with its job (0095). The stage no longer says. */
-  in_play: boolean
-  /** Plan 054; with the candidate's last activity and the job status it feeds notRespondingCount. */
-  sub_status_key?: string | null
-  received_at: string
-  candidate: { full_name: string; last_activity_at?: string | null } | null
-  job: { title: string; status?: string; company: { name: string } | null } | null
+const summaryRow = z.object({
+  job_id: z.string(),
+  stage_key: z.string(),
+  in_play: z.boolean(),
+  count: z.number(),
+  last_received_at: z.string().nullable(),
+})
+
+const recentRow = z.object({
+  application_id: z.string(),
+  candidate_name: z.string().nullable(),
+  job_title: z.string().nullable(),
+  company_name: z.string().nullable(),
+  stage_key: z.string(),
+  received_at: z.string(),
+})
+
+const hiringSummary = z.object({
+  by_job: z.array(summaryRow),
+  not_responding: z.number(),
+  recent: z.array(recentRow),
+})
+
+/**
+ * What `hiring_summary` returns (0097): counts per job, stage and in-play
+ * state on live jobs, how many applications are not responding, and the five
+ * newest in play — all counted in the database, never from a list of rows.
+ */
+export type HiringSummary = z.infer<typeof hiringSummary>
+
+export const EMPTY_HIRING_SUMMARY: HiringSummary = { by_job: [], not_responding: 0, recent: [] }
+
+export function parseHiringSummary(raw: unknown): HiringSummary {
+  return hiringSummary.parse(raw)
 }
 
 export type JobLite = {
@@ -129,11 +153,11 @@ export type StatTile = { key: string; label: string; value: string | number; sub
 export function statTiles(input: {
   snapshot: DashboardSnapshot
   away: ReadonlyArray<AwayRow>
-  applications: ReadonlyArray<ApplicationLite>
+  summary: HiringSummary
   requestsToDecide: number
   viewer: Viewer
 }): StatTile[] {
-  const { snapshot, away, applications, requestsToDecide, viewer } = input
+  const { snapshot, away, summary, requestsToDecide, viewer } = input
   const tiles: StatTile[] = []
   if (viewer.canAnywhere('people.view')) {
     tiles.push({
@@ -147,7 +171,7 @@ export function statTiles(input: {
     tiles.push({ key: 'away', label: 'Away today', value: away.length, tone: away.length ? 'hot' : undefined })
   }
   if (viewer.canAnywhere('candidates.view')) {
-    tiles.push({ key: 'applicants', label: 'Applicants in progress', value: applicantsInProgress(applications) })
+    tiles.push({ key: 'applicants', label: 'Applicants in progress', value: applicantsInProgress(summary) })
   }
   if (viewer.canAnywhere('jobs.approve')) {
     tiles.push({ key: 'requests', label: 'Hiring requests to decide', value: requestsToDecide })
@@ -180,12 +204,15 @@ export function dashboardSections(viewer: Viewer): {
   }
 }
 
-export function pipelineCounts(apps: ReadonlyArray<ApplicationLite>): Array<{ key: string; label: string; tone: string; count: number }> {
-  return PIPELINE_STAGES.map((s) => ({ ...s, count: apps.filter((a) => a.stage_key === s.key && (a.in_play || s.key === 'hired')).length }))
+export function pipelineCounts(summary: HiringSummary): Array<{ key: string; label: string; tone: string; count: number }> {
+  return PIPELINE_STAGES.map((s) => ({
+    ...s,
+    count: summary.by_job.filter((r) => r.stage_key === s.key && (r.in_play || s.key === 'hired')).reduce((n, r) => n + r.count, 0),
+  }))
 }
 
-export function applicantsInProgress(apps: ReadonlyArray<ApplicationLite>): number {
-  return apps.filter((a) => a.in_play).length
+export function applicantsInProgress(summary: HiringSummary): number {
+  return summary.by_job.filter((r) => r.in_play).reduce((n, r) => n + r.count, 0)
 }
 
 export type OpenPosition = { id: string; title: string; company: string; headcount: number; applicants: number; daysOpen: number | null }
@@ -198,7 +225,7 @@ const HIRING_JOB_STATUSES = new Set(['ready', 'open'])
  * without one). Oldest opening first — the one waiting longest is the one to
  * look at — and a job that has not gone live yet last.
  */
-export function openPositions(jobs: ReadonlyArray<JobLite>, apps: ReadonlyArray<ApplicationLite>, today = todayDb()): OpenPosition[] {
+export function openPositions(jobs: ReadonlyArray<JobLite>, summary: HiringSummary, today = todayDb()): OpenPosition[] {
   return jobs
     .filter((j) => HIRING_JOB_STATUSES.has(j.status))
     .map((j) => ({
@@ -206,7 +233,7 @@ export function openPositions(jobs: ReadonlyArray<JobLite>, apps: ReadonlyArray<
       title: j.title,
       company: j.company?.name ?? '—',
       headcount: j.request?.headcount ?? 1,
-      applicants: apps.filter((a) => a.job_id === j.id && a.in_play).length,
+      applicants: summary.by_job.filter((r) => r.job_id === j.id && r.in_play).reduce((n, r) => n + r.count, 0),
       daysOpen: daysSince(j.opened_at, today),
     }))
     .sort((a, b) => (b.daysOpen ?? -1) - (a.daysOpen ?? -1))
@@ -214,19 +241,17 @@ export function openPositions(jobs: ReadonlyArray<JobLite>, apps: ReadonlyArray<
 
 export type RecentApplicant = { id: string; name: string; position: string; company: string; stage: string; inPlay: boolean; received_at: string }
 
-export function recentApplicants(apps: ReadonlyArray<ApplicationLite>, limit = 5): RecentApplicant[] {
-  return [...apps]
-    .sort((a, b) => b.received_at.localeCompare(a.received_at))
-    .slice(0, limit)
-    .map((a) => ({
-      id: a.id,
-      name: a.candidate?.full_name ?? 'Candidate',
-      position: a.job?.title ?? '—',
-      company: a.job?.company?.name ?? '—',
-      stage: a.stage_key,
-      inPlay: a.in_play,
-      received_at: a.received_at,
-    }))
+/** The newest applicants still in play; the database already limited and ordered them. */
+export function recentApplicants(summary: HiringSummary, limit = 5): RecentApplicant[] {
+  return summary.recent.slice(0, limit).map((a) => ({
+    id: a.application_id,
+    name: a.candidate_name ?? 'Candidate',
+    position: a.job_title ?? '—',
+    company: a.company_name ?? '—',
+    stage: a.stage_key,
+    inPlay: true,
+    received_at: a.received_at,
+  }))
 }
 
 export type AwayRow = { id: string; name: string; type: string; until: string; backOn: boolean }
@@ -303,7 +328,7 @@ export function outreachRowOf(a: OutreachLite): OutreachRow {
   }
 }
 
-/** Home's pipeline line: how many of the loaded applications are not responding today. */
-export function notRespondingCount(apps: ReadonlyArray<OutreachLite>, today: string): number {
-  return apps.filter((a) => notResponding(outreachRowOf(a), today)).length
+/** Home's pipeline line: how many applications are not responding, counted by app.not_responding. */
+export function notRespondingCount(summary: HiringSummary): number {
+  return summary.not_responding
 }

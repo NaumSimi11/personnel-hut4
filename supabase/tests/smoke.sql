@@ -9161,4 +9161,239 @@ delete from public.applications where id::text like '90000000-0000-0000-0000-000
 delete from public.candidates where id::text like '80000000-0000-0000-0000-00000000097_';
 delete from public.jobs where id::text like '70000000-0000-0000-0000-00000000097_';
 
+-- 0097-a..d: import_zoho_job_view loads the Candidate-Job View payload all or
+-- nothing: no notifications, no per-row audit, jobs untouched, idempotent.
+insert into public.jobs (id, company_id, title, status, custom) values
+  ('70000000-0000-0000-0000-000000000975', '10000000-0000-0000-0000-00000000000a', 'ZZ97 JV one', 'open',
+   '{"zoho": {"display_id": "ZZ97_1_JOB", "headcount": "3"}}'),
+  ('70000000-0000-0000-0000-000000000976', '10000000-0000-0000-0000-00000000000a', 'ZZ97 JV two', 'open',
+   '{"zoho": {"display_id": "ZZ97_2_JOB"}}');
+-- Someone already in play on job two by hand: the imported hire must leave them be.
+insert into public.candidates (id, full_name, email) values
+  ('80000000-0000-0000-0000-000000000975', 'ZZ97 Hand', 'zz97hand@example.test');
+insert into public.applications (id, job_id, company_id, candidate_id, stage_key, sub_status_key) values
+  ('90000000-0000-0000-0000-000000000975', '70000000-0000-0000-0000-000000000976', '10000000-0000-0000-0000-00000000000a',
+   '80000000-0000-0000-0000-000000000975', 'interview', 'interview_hr');
+create temp table zz97_jv (name text primary key, p jsonb not null);
+insert into zz97_jv values ('ok', jsonb_build_object(
+  'candidates', jsonb_build_array(
+    jsonb_build_object('zoho_id', 'ZZ97_C1', 'full_name', 'ZZ97 Ivo', 'email', 'zz97ivo@example.test', 'phone', null,
+      'linkedin_url', null, 'skills', jsonb_build_array('SQL'), 'source_key', 'head_hunt', 'owner_name', ' bea hr ',
+      'last_activity_at', '2024-08-08T09:25:00.000Z', 'contact_rule', null,
+      'custom', jsonb_build_object('zoho', jsonb_build_object('Candidate ID', 'ZZ97_C1'))),
+    jsonb_build_object('zoho_id', 'ZZ97_C2', 'full_name', 'ZZ97 Jana', 'email', null, 'phone', null,
+      'linkedin_url', null, 'skills', '[]'::jsonb, 'source_key', 'referral', 'owner_name', null,
+      'last_activity_at', null,
+      'contact_rule', jsonb_build_object('rule', 'do_not_contact', 'reason', 'Zoho: NEVER to be contacted again'),
+      'custom', jsonb_build_object('zoho', '{}'::jsonb)),
+    jsonb_build_object('zoho_id', 'ZZ97_C3', 'full_name', 'ZZ97 Kire', 'email', null, 'phone', null,
+      'linkedin_url', null, 'skills', '[]'::jsonb, 'source_key', 'careers_page', 'owner_name', 'Nobody Known',
+      'last_activity_at', null,
+      'contact_rule', jsonb_build_object('rule', 'contact_later', 'reason', 'Zoho: Contact in Future'),
+      'custom', jsonb_build_object('zoho', '{}'::jsonb))),
+  'applications', jsonb_build_array(
+    jsonb_build_object('candidate_zoho_id', 'ZZ97_C1', 'job_display_id', 'ZZ97_1_JOB', 'sub_status_key', 'offer_made',
+      'received_at', '2024-07-30T08:00:00.000Z', 'status_at', '2024-08-08T09:25:00.000Z', 'hired_date', null,
+      'owner_name', 'Someone Else', 'custom', jsonb_build_object('zoho', jsonb_build_object('Status for this Job', 'Offer-Made'))),
+    jsonb_build_object('candidate_zoho_id', 'ZZ97_C1', 'job_display_id', 'ZZ97_2_JOB', 'sub_status_key', 'hired',
+      'received_at', '2022-10-10T08:10:00.000Z', 'status_at', null, 'hired_date', '2022-12-01',
+      'owner_name', null, 'custom', jsonb_build_object('zoho', '{}'::jsonb)),
+    jsonb_build_object('candidate_zoho_id', 'ZZ97_C2', 'job_display_id', 'ZZ97_1_JOB', 'sub_status_key', 'never_contact',
+      'received_at', '2023-02-13T14:38:00.000Z', 'status_at', null, 'hired_date', null,
+      'owner_name', null, 'custom', jsonb_build_object('zoho', '{}'::jsonb)),
+    jsonb_build_object('candidate_zoho_id', 'ZZ97_C3', 'job_display_id', 'ZZ97_1_JOB', 'sub_status_key', 'contact_in_future',
+      'received_at', null, 'status_at', null, 'hired_date', null,
+      'owner_name', null, 'custom', jsonb_build_object('zoho', '{}'::jsonb))),
+  'notes', jsonb_build_array(
+    jsonb_build_object('candidate_zoho_id', 'ZZ97_C1', 'job_display_id', 'ZZ97_1_JOB', 'seq', 1,
+      'occurred_at', '2024-08-08T09:25:00.000Z', 'kind_label', 'Call', 'author_name', 'Bea HR', 'body', '  Called, will think.  '),
+    jsonb_build_object('candidate_zoho_id', 'ZZ97_C1', 'job_display_id', 'ZZ97_1_JOB', 'seq', 2,
+      'occurred_at', '2024-08-01T07:05:00.000Z', 'kind_label', 'Email', 'author_name', 'Nobody Known', 'body', repeat('x', 4100)),
+    jsonb_build_object('candidate_zoho_id', 'ZZ97_C3', 'job_display_id', 'ZZ97_1_JOB', 'seq', 1,
+      'occurred_at', null, 'kind_label', 'Notes', 'author_name', 'Ghost Writer', 'body', 'Maybe next year.')),
+  'timezone_assumed', 'Europe/Skopje'));
+insert into zz97_jv
+  select 'bad', jsonb_set(jsonb_set(p, '{candidates}', jsonb_build_array(p->'candidates'->0 || '{"zoho_id": "ZZ97_C9"}')),
+                          '{applications}', jsonb_build_array(p->'applications'->0
+                            || '{"candidate_zoho_id": "ZZ97_C9", "job_display_id": "ZZ97_NOPE_JOB"}'))
+                - 'notes'
+    from zz97_jv where name = 'ok';
+create temp table zz97_before as
+  select (select count(*) from public.notifications) as notifications,
+         (select count(*) from public.activity_log where entity_type in ('candidates', 'applications', 'candidate_notes')) as audit_rows,
+         (select count(*) from public.activity_log where entity_type = 'imports') as import_rows;
+
+do $$
+begin
+  assert not has_function_privilege('authenticated', 'public.import_zoho_job_view(jsonb, boolean)', 'execute'),
+    '0097-a: signed-in users cannot call the import over the API';
+  assert not has_function_privilege('anon', 'public.import_zoho_job_view(jsonb, boolean)', 'execute'),
+    '0097-a: anon cannot call the import';
+end $$;
+
+-- A non-admin is refused.
+set app.test_uid = '00000000-0000-0000-0000-000000000005';  -- Bea, HR but not a platform admin
+do $$
+begin
+  perform public.import_zoho_job_view((select p from zz97_jv where name = 'ok'), false);
+  assert false, '0097-a: a non-admin ran the import';
+exception when insufficient_privilege then
+  assert sqlerrm = 'Importing from Zoho Recruit needs platform admin access.', '0097-a: admin message: ' || sqlerrm;
+end $$;
+
+set app.test_uid = '00000000-0000-0000-0000-000000000004';  -- Ada, platform admin
+-- 0097-a: the dry run reports and writes nothing.
+do $$
+declare r jsonb := public.import_zoho_job_view((select p from zz97_jv where name = 'ok'), false);
+begin
+  assert r->>'committed' = 'false', '0097-a: committed=false: ' || r::text;
+  assert (r->>'candidates')::int = 3 and (r->>'applications')::int = 4 and (r->>'notes')::int = 3,
+    '0097-a: planned counts: ' || r::text;
+  assert r->'refused' = '[]'::jsonb, '0097-a: nothing refused: ' || (r->'refused')::text;
+  assert not exists (select 1 from public.candidates where provider = 'zoho_recruit' and provider_ref like 'ZZ97_C%'),
+    '0097-a: no candidate written';
+  assert not exists (select 1 from public.applications where provider_ref like 'ZZ97_C%'), '0097-a: no application written';
+  assert not exists (select 1 from public.candidate_notes where provider_ref like 'ZZ97_C%'), '0097-a: no note written';
+  assert (select count(*) from public.activity_log where entity_type = 'imports') = (select import_rows from zz97_before),
+    '0097-a: no summary row on a dry run';
+end $$;
+
+-- 0097-b: the commit writes it all, on Zoho's statuses, quietly.
+create temp table zz97_result as
+  select public.import_zoho_job_view((select p from zz97_jv where name = 'ok'), true) as r;
+do $$
+declare
+  r jsonb := (select r from zz97_result);
+  b record;
+  v_c1 uuid := (select id from public.candidates where provider = 'zoho_recruit' and provider_ref = 'ZZ97_C1');
+begin
+  select * into b from zz97_before;
+  assert r->>'committed' = 'true', '0097-b: committed: ' || r::text;
+  assert (r->>'candidates')::int = 3 and (r->>'applications')::int = 4 and (r->>'notes')::int = 3,
+    '0097-b: counts: ' || r::text;
+  assert r->'by_status' = '{"offer_made": 1, "hired": 1, "never_contact": 1, "contact_in_future": 1}'::jsonb,
+    '0097-b: by_status: ' || (r->'by_status')::text;
+  assert r->'contact_rules' = '{"do_not_contact": 1, "contact_later": 1}'::jsonb,
+    '0097-b: contact_rules: ' || (r->'contact_rules')::text;
+  assert r->'unmatched_people' = '["Ghost Writer", "Nobody Known"]'::jsonb,
+    '0097-b: unmatched_people: ' || (r->'unmatched_people')::text;
+  assert (r->>'notes_truncated')::int = 1, '0097-b: one note truncated: ' || r::text;
+
+  assert (select count(*) from public.candidates where provider = 'zoho_recruit' and provider_ref like 'ZZ97_C%') = 3,
+    '0097-b: three candidates';
+  assert (select count(*) from public.applications where source_provider = 'zoho_recruit' and provider_ref like 'ZZ97_C%') = 4,
+    '0097-b: four applications';
+  assert (select stage_key = 'offer' and sub_status_key = 'offer_made' and in_play
+            and owner_id = '20000000-0000-0000-0000-000000000005'
+            and received_at = '2024-07-30T08:00:00Z' and custom->'zoho'->>'Status for this Job' = 'Offer-Made'
+            from public.applications where provider_ref = 'ZZ97_C1:ZZ97_1_JOB'),
+    '0097-b: Offer-Made sits in the offer stage, owned by the Candidate Owner (Bea), with its date and Zoho data';
+  assert (select stage_key = 'hired' and sub_status_key = 'hired' and not in_play and closed_at is null
+            from public.applications where provider_ref = 'ZZ97_C1:ZZ97_2_JOB'), '0097-b: the hire';
+  assert (select owner_id is null from public.applications where provider_ref = 'ZZ97_C3:ZZ97_1_JOB'),
+    '0097-b: an owner name with no match stays empty';
+  assert (select do_not_contact and do_not_contact_reason = 'Zoho: NEVER to be contacted again' and not contact_later
+            from public.candidates where provider = 'zoho_recruit' and provider_ref = 'ZZ97_C2'),
+    '0097-b: the never-contact candidate is flagged';
+  assert (select contact_later and not do_not_contact from public.candidates
+           where provider = 'zoho_recruit' and provider_ref = 'ZZ97_C3'), '0097-b: contact later';
+  assert (select stage_key = 'screening' and not in_play from public.applications where provider_ref = 'ZZ97_C2:ZZ97_1_JOB'),
+    '0097-b: the never-contact application went in despite the flag';
+
+  assert (select body = 'Called, will think.' and kind = 'note' and actor_id = '20000000-0000-0000-0000-000000000005'
+            and actor_name = 'Bea HR' and company_id = '10000000-0000-0000-0000-00000000000a'
+            and candidate_id = v_c1 and occurred_at = '2024-08-08T09:25:00Z'
+            and custom = '{"zoho": {"job_display_id": "ZZ97_1_JOB", "kind_label": "Call"}}'::jsonb
+            from public.candidate_notes where provider = 'zoho_recruit' and provider_ref = 'ZZ97_C1:ZZ97_1_JOB:1'),
+    '0097-b: the note, trimmed, with its author matched';
+  assert (select length(body) = 4000 and actor_id is null and actor_name = 'Nobody Known'
+            from public.candidate_notes where provider_ref = 'ZZ97_C1:ZZ97_1_JOB:2'),
+    '0097-b: the long note is cut to 4000 characters';
+
+  assert (select count(*) from public.notifications) = b.notifications, '0097-b: no notifications';
+  assert (select count(*) from public.activity_log where entity_type in ('candidates', 'applications', 'candidate_notes'))
+         = b.audit_rows, '0097-b: no per-row audit';
+  assert (select count(*) from public.activity_log where entity_type = 'imports' and action = 'zoho_job_view'
+            and actor_person_id = '20000000-0000-0000-0000-000000000004'
+            and (after->>'applications')::int = 4) = b.import_rows + 1, '0097-b: one summary row';
+  assert (select status from public.jobs where id = '70000000-0000-0000-0000-000000000976') = 'open',
+    '0097-b: the hire on a one-person job leaves the job open';
+  assert (select closed_at is null and in_play from public.applications where id = '90000000-0000-0000-0000-000000000975'),
+    '0097-b: the other applicant on that job is not marked';
+  assert current_setting('app.bulk_import', true) is distinct from 'on', '0097-b: the bulk flag does not outlive the import';
+end $$;
+
+-- 0097-c: an unknown job display id is a refused row; the commit refuses all.
+do $$
+declare r jsonb := public.import_zoho_job_view((select p from zz97_jv where name = 'bad'), false);
+begin
+  assert jsonb_array_length(r->'refused') = 1
+     and r->'refused'->0->>'ref' = 'ZZ97_C9:ZZ97_NOPE_JOB'
+     and r->'refused'->0->>'reason' like '%ZZ97_NOPE_JOB%',
+    '0097-c: the unknown job is named: ' || (r->'refused')::text;
+  begin
+    perform public.import_zoho_job_view((select p from zz97_jv where name = 'bad'), true);
+    assert false, '0097-c: the commit went through';
+  exception when raise_exception then
+    assert sqlerrm = 'Import refused: 1 rows have problems.', '0097-c: message: ' || sqlerrm;
+  end;
+  assert not exists (select 1 from public.candidates where provider_ref = 'ZZ97_C9'), '0097-c: nothing written';
+end $$;
+
+-- 0097-d: the same payload again writes nothing new.
+do $$
+declare r jsonb := public.import_zoho_job_view((select p from zz97_jv where name = 'ok'), true);
+begin
+  assert r->>'committed' = 'true' and (r->>'candidates')::int = 0 and (r->>'applications')::int = 0
+     and (r->>'notes')::int = 0, '0097-d: idempotent: ' || r::text;
+  assert r->'refused' = '[]'::jsonb, '0097-d: nothing refused on the re-run';
+  assert (select count(*) from public.applications where provider_ref like 'ZZ97_C%') = 4, '0097-d: still four';
+  assert (select count(*) from public.candidate_notes where provider_ref like 'ZZ97_C%') = 3, '0097-d: still three notes';
+end $$;
+-- 0097-b: the guards themselves. The same owner change and hire, once with
+-- app.bulk_import on and once without; each in a sub-transaction rolled back.
+do $$
+declare
+  v_notes bigint := (select count(*) from public.notifications);
+  v_audit bigint := (select count(*) from public.activity_log);
+begin
+  begin
+    perform set_config('app.bulk_import', 'on', true);
+    update public.applications set owner_id = '20000000-0000-0000-0000-000000000005', next_action = 'Call back'
+     where id = '90000000-0000-0000-0000-000000000975';
+    update public.applications set stage_key = 'hired', sub_status_key = 'hired'
+     where id = '90000000-0000-0000-0000-000000000975';
+    assert (select count(*) from public.notifications) = v_notes, '0097-b: bulk on, no notification';
+    assert (select count(*) from public.activity_log) = v_audit, '0097-b: bulk on, no audit row';
+    assert (select status from public.jobs where id = '70000000-0000-0000-0000-000000000976') = 'open',
+      '0097-b: bulk on, the hire fills nothing';
+    raise exception 'zz97 rollback';
+  exception when raise_exception then
+    assert sqlerrm = 'zz97 rollback', '0097-b: guarded block: ' || sqlerrm;
+  end;
+  begin
+    perform set_config('app.bulk_import', 'off', true);
+    update public.applications set owner_id = '20000000-0000-0000-0000-000000000005', next_action = 'Call back'
+     where id = '90000000-0000-0000-0000-000000000975';
+    update public.applications set stage_key = 'hired', sub_status_key = 'hired'
+     where id = '90000000-0000-0000-0000-000000000975';
+    assert (select count(*) from public.notifications) = v_notes + 1, '0097-b: bulk off, the owner is notified';
+    assert (select count(*) from public.activity_log) > v_audit, '0097-b: bulk off, the rows are audited';
+    assert (select status from public.jobs where id = '70000000-0000-0000-0000-000000000976') = 'filled',
+      '0097-b: bulk off, the hire fills the job';
+    raise exception 'zz97 rollback';
+  exception when raise_exception then
+    assert sqlerrm = 'zz97 rollback', '0097-b: control block: ' || sqlerrm;
+  end;
+  assert (select status from public.jobs where id = '70000000-0000-0000-0000-000000000976') = 'open',
+    '0097-b: both rolled back';
+end $$;
+set app.test_uid = '';
+drop table zz97_jv, zz97_before, zz97_result;
+delete from public.candidate_notes where provider_ref like 'ZZ97_C%';
+delete from public.applications where provider_ref like 'ZZ97_C%' or id = '90000000-0000-0000-0000-000000000975';
+delete from public.candidates where provider_ref like 'ZZ97_C%' or id = '80000000-0000-0000-0000-000000000975';
+delete from public.jobs where id in ('70000000-0000-0000-0000-000000000975', '70000000-0000-0000-0000-000000000976');
+delete from public.activity_log where entity_type = 'imports' and action = 'zoho_job_view';
+
 select 'SMOKE TESTS PASSED' as result;

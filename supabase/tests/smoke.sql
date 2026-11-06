@@ -9200,7 +9200,7 @@ insert into zz97_jv values ('ok', jsonb_build_object(
       'owner_name', null, 'custom', jsonb_build_object('zoho', '{}'::jsonb)),
     jsonb_build_object('candidate_zoho_id', 'ZZ97_C2', 'job_display_id', 'ZZ97_1_JOB', 'sub_status_key', 'never_contact',
       'received_at', '2023-02-13T14:38:00.000Z', 'status_at', null, 'hired_date', null,
-      'owner_name', null, 'custom', jsonb_build_object('zoho', '{}'::jsonb)),
+      'owner_name', ' ; Bea HR; Someone Else', 'custom', jsonb_build_object('zoho', '{}'::jsonb)),
     jsonb_build_object('candidate_zoho_id', 'ZZ97_C3', 'job_display_id', 'ZZ97_1_JOB', 'sub_status_key', 'contact_in_future',
       'received_at', null, 'status_at', null, 'hired_date', null,
       'owner_name', null, 'custom', jsonb_build_object('zoho', '{}'::jsonb))),
@@ -9290,6 +9290,14 @@ begin
     '0097-b: Offer-Made sits in the offer stage, owned by the Candidate Owner (Bea), with its date and Zoho data';
   assert (select stage_key = 'hired' and sub_status_key = 'hired' and not in_play and closed_at is null
             from public.applications where provider_ref = 'ZZ97_C1:ZZ97_2_JOB'), '0097-b: the hire';
+  assert (select owner_id = '20000000-0000-0000-0000-000000000005' from public.applications
+           where provider_ref = 'ZZ97_C2:ZZ97_1_JOB'),
+    '0097-b: no Candidate Owner, so the first of the Assigned Recruiters (Bea) owns it';
+  assert (select last_activity_at = '2024-08-08T09:25:00Z' from public.candidates
+           where provider = 'zoho_recruit' and provider_ref = 'ZZ97_C1'),
+    '0097-b: the noted candidate keeps Zoho''s last activity, not the import time';
+  assert (select created_at = occurred_at from public.candidate_notes where provider_ref = 'ZZ97_C1:ZZ97_1_JOB:2'),
+    '0097-b: a note is created at its Zoho date';
   assert (select owner_id is null from public.applications where provider_ref = 'ZZ97_C3:ZZ97_1_JOB'),
     '0097-b: an owner name with no match stays empty';
   assert (select do_not_contact and do_not_contact_reason = 'Zoho: NEVER to be contacted again' and not contact_later

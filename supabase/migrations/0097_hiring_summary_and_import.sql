@@ -131,14 +131,14 @@ end $$;
 create or replace function app.audit_redacted() returns trigger
 language plpgsql security definer set search_path = public as $$
 declare
-  rec jsonb;
-  v_keys text[];
+  rec jsonb := to_jsonb(coalesce(new, old));
+  v_keys text[] := string_to_array(coalesce(tg_argv[0], ''), ',');
+  v_before jsonb := case when tg_op <> 'INSERT' then to_jsonb(old) - v_keys end;
+  v_after jsonb := case when tg_op <> 'DELETE' then to_jsonb(new) - v_keys end;
 begin
   if current_setting('app.bulk_import', true) = 'on' then
     return coalesce(new, old);
   end if;
-  rec := to_jsonb(coalesce(new, old));
-  v_keys := string_to_array(coalesce(tg_argv[0], ''), ',');
   insert into public.activity_log
     (company_id, actor_person_id, actor_user_id, entity_type, entity_id, action, before, after)
   values (
@@ -148,8 +148,8 @@ begin
     tg_table_name,
     rec->>'id',
     tg_op,
-    case when tg_op <> 'INSERT' then to_jsonb(old) - v_keys end,
-    case when tg_op <> 'DELETE' then to_jsonb(new) - v_keys end
+    v_before,
+    v_after
   );
   return coalesce(new, old);
 end $$;
@@ -269,8 +269,12 @@ begin
            c.source_key, c.v->>'last_activity_at' as candidate_activity,
            j.n as job_matches, j.job_id, j.company_id,
            s.key as sub_status_key, s.stage_key, s.outcome,
+           -- The Candidate Owner, else the first of the Assigned Recruiter(s)
+           -- (the extract already keeps one; "; " or ", " separate several).
            coalesce(nullif(btrim(coalesce(c.v->>'owner_name', '')), ''),
-                    nullif(btrim(coalesce(a.v->>'owner_name', '')), '')) as owner_name
+                    (select btrim(t.name)
+                       from regexp_split_to_table(coalesce(a.v->>'owner_name', ''), '[;,]') with ordinality t(name, i)
+                      where btrim(t.name) <> '' order by t.i limit 1)) as owner_name
       from a
       left join lateral (select * from pg_temp.zoho_jv_cand c where c.ref = a.cand_ref order by c.ord limit 1) c on true
       left join pg_temp.zoho_jv_jobs j on j.display_id = a.job_ref
@@ -382,8 +386,10 @@ begin
    order by a.ord;
 
   insert into public.candidate_notes
-    (candidate_id, company_id, kind, body, actor_id, actor_name, occurred_at, provider, provider_ref, custom)
-  select n.candidate_id, n.company_id, 'note', n.body, n.actor_id, n.author_name, n.occurred_at,
+    (candidate_id, company_id, kind, body, actor_id, actor_name, occurred_at, created_at, provider, provider_ref, custom)
+  -- created_at = occurred_at (0070's convention): t8_touch_candidate reads a
+  -- note's created_at, so a 2023 note leaves 2023 activity, not the import's.
+  select n.candidate_id, n.company_id, 'note', n.body, n.actor_id, n.author_name, n.occurred_at, n.occurred_at,
          'zoho_recruit', n.ref,
          jsonb_build_object('zoho', jsonb_strip_nulls(jsonb_build_object('job_display_id', n.job_ref, 'kind_label', n.kind_label)))
     from pg_temp.zoho_jv_note n

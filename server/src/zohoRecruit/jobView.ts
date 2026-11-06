@@ -52,6 +52,8 @@ const ENTRY_BREAK = /\r?\n[ \t]*\r?\n(?=\[\d{4}-\d{2}-\d{2} \d{2}:\d{2}\] )/
 
 const cell = (r: CsvRow, column: string): string => (r[column] ?? '').trim()
 const blank = (value: string): string | null => (value === '' ? null : value)
+/** Zoho lists several recruiters in one cell ("; " or ", "); the first one owns the application. */
+const firstName = (value: string): string | null => blank(value.split(/[;,]/).map((n) => n.trim()).find((n) => n !== '') ?? '')
 
 /** The notes log of one application: entries split on blank lines, newest first. */
 export function splitNotesLog(log: string, tz: string): ParsedNote[] {
@@ -134,7 +136,7 @@ function buildJobRow(r: CsvRow, jobColumns: string[], ctx: Ctx): JobRow | null {
     received_at: stamp(ctx, ref, 'Associated On', cell(r, 'Associated On')) ?? stamp(ctx, ref, 'Candidate Last Activity', cell(r, 'Candidate Last Activity')),
     status_at: stamp(ctx, ref, 'Status Last Updated', cell(r, 'Status Last Updated')),
     hired_date: blank(cell(r, 'Hired Date')),
-    owner_name: blank(cell(r, 'Assigned Recruiter(s)')),
+    owner_name: firstName(cell(r, 'Assigned Recruiter(s)')),
     custom: { zoho: zohoColumns(r, jobColumns, [COL.ignored, COL.notesLog]) },
   }
   const notes = splitNotesLog(r[COL.notesLog] ?? '', ctx.tz).map((n, i) => {

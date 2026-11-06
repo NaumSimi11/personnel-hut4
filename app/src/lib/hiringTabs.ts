@@ -2,7 +2,7 @@ import { outreachRowOf, stageLabel } from '@/lib/dashboard'
 import { todayDb } from '@/lib/compensation'
 import { shortDate } from '@/lib/leave'
 import { notResponding } from '@/lib/outreach'
-import { NOT_RESPONDING_FILTER } from '@/lib/stageStatuses'
+import { NOT_RESPONDING_FILTER, closureLine } from '@/lib/stageStatuses'
 import { jobHeadcount } from '@/lib/headcount'
 
 /**
@@ -114,6 +114,9 @@ export type ApplicantLite = {
   offers?: { count: number }[] | null
   stage_key: string
   in_play: boolean
+  /** Plan 075: the mark its job's closing left, when it did. */
+  closed_at?: string | null
+  closed_reason?: string | null
   /** Plan 054; the candidate's last activity and the job status judge "not responding" (see outreachRowOf). */
   sub_status_key?: string | null
   received_at: string
@@ -137,14 +140,14 @@ export type ApplicantRow = {
   stage: string
   stageLabel: string
   subStatusKey: string | null
+  inPlay: boolean
+  /** "Job closed — <reason> (<date>)", shown in place of the status; null when nothing closed it. */
+  closure: string | null
   notResponding: boolean
   received: string
   owner: string | null
   nextAction: string | null
 }
-
-/** The stage filter's pseudo-value (plan 054): open outreach with no activity in 30 days, judged over the loaded rows. */
-export { NOT_RESPONDING_FILTER }
 
 function stageMatches(a: ApplicantLite, stage: string, today: string): boolean {
   if (stage === 'all') return true
@@ -182,6 +185,8 @@ export function applicantRows(
       stage: a.stage_key,
       stageLabel: stageLabel(a.stage_key),
       subStatusKey: a.sub_status_key ?? null,
+      inPlay: a.in_play,
+      closure: closureLine(a.closed_at ?? null, a.closed_reason ?? null),
       notResponding: notResponding(outreachRowOf(a), today),
       received: shortDate(a.received_at.slice(0, 10)),
       owner: a.owner?.full_name ?? null,

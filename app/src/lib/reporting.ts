@@ -16,7 +16,7 @@ import { STAGES, STAGE_LABEL } from '@/lib/stageStatuses'
 export const STAGE_ORDER = [...STAGES, 'rejected', 'withdrew', 'closed'] as const
 export type Stage = (typeof STAGE_ORDER)[number]
 
-const STAGE_HEADER: Record<Stage, string> = { ...STAGE_LABEL, rejected: 'Rejected', withdrew: 'Withdrew', closed: 'Closed' }
+export const STAGE_HEADER: Record<Stage, string> = { ...STAGE_LABEL, rejected: 'Rejected', withdrew: 'Withdrew', closed: 'Closed' }
 
 const count = z.number().int().nonnegative().catch(0)
 

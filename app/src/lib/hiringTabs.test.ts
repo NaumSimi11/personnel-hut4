@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { NOT_RESPONDING_FILTER, applicantRows, openingRows, type ApplicantLite, type OpeningJobLite } from './hiringTabs'
+import { applicantRows, openingRows, type ApplicantLite, type OpeningJobLite } from './hiringTabs'
+import { NOT_RESPONDING_FILTER } from './stageStatuses'
 
 const jobs: OpeningJobLite[] = [
   { id: 'j1', title: 'Designer', status: 'open', company_id: 'A', company: { name: 'Synami' }, request: { headcount: 2, manager: { full_name: 'Mia Manager' } } },
@@ -63,7 +64,7 @@ describe('hiring tabs', () => {
     const list: ApplicantLite[] = [
       { id: 'a1', company_id: 'A', stage_key: 'screening', in_play: true, received_at: '2026-09-01T00:00:00Z', next_action: null, next_action_due: null, candidate: { full_name: 'Ana Kova', email: 'ana@x.test' }, job: { id: 'j1', title: 'Designer', company: { name: 'Synami' } }, owner: null },
       { id: 'a2', company_id: 'A', stage_key: 'interview', in_play: true, received_at: '2026-09-10T00:00:00Z', next_action: 'Second interview', next_action_due: '2026-09-20', candidate: { full_name: 'Ben Ilic', email: null }, job: { id: 'j1', title: 'Designer', company: { name: 'Synami' } }, owner: { full_name: 'Mia Manager' } },
-      { id: 'a3', company_id: 'B', stage_key: 'screening', in_play: false, received_at: '2026-09-05T00:00:00Z', next_action: null, next_action_due: null, candidate: { full_name: 'Cy Dan', email: null }, job: { id: 'j3', title: 'Engineer', company: { name: 'Praedium' } }, owner: null },
+      { id: 'a3', company_id: 'B', stage_key: 'screening', in_play: false, closed_at: '2026-09-15T08:00:00Z', closed_reason: 'Position filled.', received_at: '2026-09-05T00:00:00Z', next_action: null, next_action_due: null, candidate: { full_name: 'Cy Dan', email: null }, job: { id: 'j3', title: 'Engineer', company: { name: 'Praedium' } }, owner: null },
     ]
     const all = applicantRows(list, { companyId: '', stage: 'all', search: '' })
     expect(all.map((r) => r.id)).toEqual(['a2', 'a3', 'a1'])
@@ -73,6 +74,11 @@ describe('hiring tabs', () => {
     expect(applicantRows(list, { companyId: 'B', stage: 'all', search: '' }).map((r) => r.id)).toEqual(['a3'])
     expect(applicantRows(list, { companyId: '', stage: 'all', search: 'engi' }).map((r) => r.id)).toEqual(['a3'])
     expect(applicantRows(list, { companyId: '', stage: 'all', search: 'ANA' }).map((r) => r.id)).toEqual(['a1'])
+    expect(all.map((r) => [r.id, r.inPlay, r.closure])).toEqual([
+      ['a2', true, null],
+      ['a3', false, 'Job closed — Position filled (2026-09-15)'],
+      ['a1', true, null],
+    ])
   })
 
   it('applicants: carries the company and counts what blocks a delete (plan 063)', () => {

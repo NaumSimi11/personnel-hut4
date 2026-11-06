@@ -30,7 +30,6 @@ watch(companies, (list) => {
 const shown = computed(() => (expanded.value ? rows.value : rows.value.slice(0, COLLAPSED_ROWS)))
 
 const TONES: Record<BoardColumnKey, string> = {
-  new: 'blue',
   screening: 'blue',
   interview: 'amber',
   offer: 'gold',

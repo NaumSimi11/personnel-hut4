@@ -6,8 +6,10 @@ import { confirmDialog } from './support/dialogs'
  * Closing job openings from the Hiring list (plan 056). An admin picks a
  * seeded opening with three candidates still in play, closes it with the
  * withdraw switch on, and sees the row fall to zero in play with the closing
- * line under its status; the candidates are withdrawn in the database with
- * the reason. A second opening nobody ever applied to is deleted from the
+ * line under its status. Since plan 075 the candidates keep their status
+ * and get the closure mark with the reason, and the job's Applications tab
+ * shows "Job closed — <reason>" where each status was, with Set status
+ * locked. A second opening nobody ever applied to is deleted from the
  * same list, while the first one's Delete stays disabled and says why.
  *
  * Seeds one Snowball job with three applications and one empty job; cleans
@@ -92,7 +94,7 @@ async function seed(): Promise<void> {
       job_id: busyJobId,
       company_id: company.id,
       candidate_id: candidate.id,
-      stage_key: name === 'Cal' ? 'interview' : 'new',
+      stage_key: name === 'Cal' ? 'interview' : 'screening',
       source_key: 'head_hunt',
     })
     if (appErr) throw new Error(`Could not seed application ${name}: ${appErr.message}`)
@@ -149,15 +151,35 @@ test('an admin abandons an opening and deletes an empty one', async ({ page }) =
 
   // It really happened, not just on screen.
   const db = serviceClient()
-  const { data: apps } = await db.from('applications').select('stage_key, withdrawn_reason').eq('job_id', busyJobId)
+  const { data: apps } = await db
+    .from('applications')
+    .select('id, stage_key, sub_status_key, in_play, closed_at, closed_reason')
+    .eq('job_id', busyJobId)
   expect(apps).toHaveLength(3)
-  expect(apps?.every((a) => a.stage_key === 'withdrawn' && a.withdrawn_reason === REASON)).toBe(true)
+  // They keep the stage and status they had; the mark is what closes them.
+  expect(apps?.map((a) => `${a.stage_key}/${a.sub_status_key}`).sort()).toEqual([
+    'interview/interview_to_schedule',
+    'screening/sourced',
+    'screening/sourced',
+  ])
+  expect(apps?.every((a) => !a.in_play && a.closed_at && a.closed_reason === REASON)).toBe(true)
   const { data: events } = await db
     .from('application_events')
-    .select('to_stage_key')
-    .eq('kind', 'stage_change')
+    .select('from_sub_status_key, to_sub_status_key')
+    .eq('kind', 'status_change')
     .eq('body', REASON)
   expect(events?.length).toBe(3)
+  expect(events?.every((e) => e.from_sub_status_key === e.to_sub_status_key)).toBe(true)
+
+  // On the job, each row shows the closure where its status was, and its status is locked.
+  await page.goto(`/hiring/jobs/${busyJobId}?tab=applications`)
+  for (const app of apps ?? []) {
+    const row = page.locator('.application-row', { has: page.getByTestId(`log-outreach-${app.id}`) })
+    const closure = row.getByTestId('closure-badge')
+    await expect(closure).toContainText(`Job closed — ${REASON.replace(/\.$/, '')} (`)
+    await expect(page.getByTestId(`log-outreach-${app.id}`)).toBeDisabled()
+  }
+  await page.goto('/hiring?tab=openings')
 
   // The empty opening goes entirely.
   await page.locator('select[aria-label="Status"]').selectOption('all')

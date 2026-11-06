@@ -52,9 +52,9 @@ const notResponding = computed(() => notRespondingCount(props.applications, toda
 function barHeight(count: number): string {
   return `${Math.round((count / max.value) * 88) + 6}px`
 }
-function badgeClass(stage: string): string {
+function badgeClass(stage: string, inPlay: boolean): string {
   if (stage === 'hired') return 'green'
-  if (stage === 'rejected' || stage === 'withdrawn') return ''
+  if (!inPlay) return ''
   if (stage === 'offer' || stage === 'interview') return 'amber'
   return 'blue'
 }
@@ -122,7 +122,7 @@ function badgeClass(stage: string): string {
           <li v-for="a in recent" :key="a.id">
             <router-link class="row" :to="{ name: 'application', params: { applicationId: a.id } }">
               <span class="row-text"><b>{{ a.name }}</b><small>{{ a.position }} · {{ a.company }} · {{ shortDate(a.received_at.slice(0, 10)) }}</small></span>
-              <span class="badge" :class="badgeClass(a.stage)">{{ stageLabel(a.stage) }}</span>
+              <span class="badge" :class="badgeClass(a.stage, a.inPlay)">{{ stageLabel(a.stage) }}</span>
             </router-link>
           </li>
         </ul>

@@ -1,19 +1,16 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
-import { supabase } from '@/lib/supabase'
-import { friendlyRecruitmentError } from '@/lib/jobWorkspace'
-import { stageLabel } from '@/lib/dashboard'
-import type { SubStatus } from '@/lib/outreach'
-import { contactHint, noStatusesHint, statusEventTitle } from '@/lib/stageStatuses'
+import type { SubStatusRow } from '@/lib/hiringLabels'
+import { setApplicationStatus } from '@/lib/applicationStatus'
+import { contactHint, pickableStatusGroups, statusEventTitle } from '@/lib/stageStatuses'
 
 /**
- * Set the status of one application or many, at any stage (plan 068; plan
- * 054 began it as "Log outreach" at New and Screening). Pick the status of
- * the stage the applications are at, say what happened, and
- * set_application_status writes one event per application plus the status —
- * all or nothing. The RPC decides who may set what, and refuses a retired
- * status; its refusals are shown as it phrases them. Only the empty-selection
- * and empty-key guards live here.
+ * Set the status of one application or many (plan 068; plan 054 began it as
+ * "Log outreach"). Every live status is offered, grouped by stage, and the
+ * status carries its stage: picking one moves the applications there
+ * (plan 075). set_application_status writes one event per application plus
+ * the status — all or nothing — decides who may set what, and refuses a
+ * closed or hired application; its refusals are shown as it phrases them.
  */
 
 export type OutreachApplication = {
@@ -25,7 +22,7 @@ export type OutreachApplication = {
 
 const NOTE_MAX = 2000
 
-const props = defineProps<{ applications: OutreachApplication[]; subStatuses: SubStatus[] }>()
+const props = defineProps<{ applications: OutreachApplication[]; rows: SubStatusRow[] }>()
 const emit = defineEmits<{ logged: [count: number] }>()
 
 const dialog = ref<HTMLDialogElement | null>(null)
@@ -34,14 +31,9 @@ const note = ref('')
 const busy = ref(false)
 const error = ref<string | null>(null)
 
+const groups = computed(() => pickableStatusGroups(props.rows))
 const stages = computed(() => [...new Set(props.applications.map((a) => a.stage_key))])
-const mixed = computed(() => stages.value.length > 1)
-const stage = computed(() => (stages.value.length === 1 ? (stages.value[0] ?? '') : ''))
-const options = computed(() =>
-  props.subStatuses.filter((s) => s.stage_key === stage.value).sort((a, b) => a.sort_order - b.sort_order),
-)
-const empty = computed(() => Boolean(stage.value) && options.value.length === 0)
-const eyebrow = computed(() => statusEventTitle(stage.value))
+const eyebrow = computed(() => statusEventTitle(stages.value.length === 1 ? (stages.value[0] ?? '') : ''))
 const title = computed(() => {
   const [first] = props.applications
   return props.applications.length === 1 && first
@@ -49,7 +41,7 @@ const title = computed(() => {
     : `Set the status for ${props.applications.length} applications.`
 })
 const warning = computed(() => contactHint(subStatusKey.value))
-const canSave = computed(() => !busy.value && !mixed.value && !empty.value && props.applications.length > 0)
+const canSave = computed(() => !busy.value && groups.value.length > 0 && props.applications.length > 0)
 
 function open(): void {
   subStatusKey.value = ''
@@ -61,7 +53,7 @@ defineExpose({ open })
 
 async function submit(): Promise<void> {
   error.value = null
-  const ids = [...new Set(props.applications.map((a) => a.id))]
+  const ids = props.applications.map((a) => a.id)
   if (!ids.length) {
     error.value = 'Pick at least one application.'
     return
@@ -71,19 +63,14 @@ async function submit(): Promise<void> {
     return
   }
   busy.value = true
-  const { data, error: err } = await supabase.rpc('set_application_status', {
-    p_application_ids: ids,
-    p_sub_status_key: subStatusKey.value,
-    p_note: note.value.trim(),
-  })
+  const result = await setApplicationStatus(ids, subStatusKey.value, note.value)
   busy.value = false
-  if (err) {
-    error.value = friendlyRecruitmentError(err.message)
+  if (result.error) {
+    error.value = result.error
     return
   }
-  const set = (data as { set?: number } | null)?.set ?? ids.length
   dialog.value?.close()
-  emit('logged', set)
+  emit('logged', result.set)
 }
 </script>
 
@@ -92,17 +79,21 @@ async function submit(): Promise<void> {
     <form class="body" novalidate @submit.prevent="submit">
       <div class="eyebrow">{{ eyebrow }}</div>
       <h2 id="outreach-title">{{ title }}</h2>
-      <p class="hint">One entry in each timeline; the status moves with it.</p>
+      <p class="hint">One entry in each timeline. The status moves the application to its stage.</p>
 
-      <p v-if="mixed" class="error-note" role="alert" data-testid="outreach-mixed">Pick applications at the same stage.</p>
-      <p v-else-if="empty" class="error-note" role="alert" data-testid="outreach-empty">{{ noStatusesHint(stageLabel(stage)) }}</p>
+      <p v-if="!groups.length" class="error-note" role="alert" data-testid="outreach-empty">
+        No statuses yet. An admin adds them under Hiring → Labels.
+      </p>
       <template v-else>
         <fieldset class="options" :disabled="busy">
           <legend class="legend">Status</legend>
-          <label v-for="s in options" :key="s.key" class="option">
-            <input v-model="subStatusKey" type="radio" name="outreach-sub" :value="s.key" :data-testid="`outreach-sub-${s.key}`" />
-            <span>{{ s.label }}</span>
-          </label>
+          <div v-for="g in groups" :key="g.stageKey" class="group">
+            <div class="group-label">{{ g.stageLabel }}</div>
+            <label v-for="s in g.options" :key="s.key" class="option">
+              <input v-model="subStatusKey" type="radio" name="outreach-sub" :value="s.key" :data-testid="`outreach-sub-${s.key}`" />
+              <span>{{ s.label }}</span>
+            </label>
+          </div>
         </fieldset>
         <p v-if="warning" class="hint warning" role="note" data-testid="outreach-contact-hint">{{ warning }}</p>
         <div class="field">
@@ -137,6 +128,8 @@ h2 { font-size: 19px; margin: 10px 0 10px; }
 .hint { font-size: 11px; color: var(--muted); line-height: 1.6; margin-bottom: 16px; }
 .options { border: 0; padding: 0; margin: 0 0 16px; display: grid; gap: 10px; max-height: 320px; overflow-y: auto; }
 .legend { font-size: 12px; font-weight: 600; color: #4d5e57; margin-bottom: 4px; }
+.group { display: grid; gap: 8px; }
+.group-label { font-size: 11px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; margin-top: 4px; }
 .option { display: flex; align-items: center; gap: 9px; font-size: 13px; cursor: pointer; }
 .actions { display: flex; gap: 9px; justify-content: flex-end; margin-top: 14px; }
 .warning { color: var(--amber); }

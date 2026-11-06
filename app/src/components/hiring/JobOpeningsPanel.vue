@@ -168,7 +168,7 @@ async function removeJob(r: JobOpeningRow): Promise<void> {
 // PostgREST answers at most 1,000 rows per request; since the Zoho import
 // (0067) the holding carries several thousand applications, so one plain
 // select silently dropped the newest and every "in play" read low. Only the
-// rows that count are asked for (rejected / withdrawn count nowhere), in
+// rows that count are asked for (in play, or hired — the rest count nowhere), in
 // pages, in id order so a page boundary never skips or repeats a row. The
 // total per job — the rule for deleting — comes from the jobs query instead,
 // counted in the database, so this stays the smaller read.
@@ -176,8 +176,8 @@ function loadCountedApplications(): Promise<{ data: OpeningApplicationLite[]; er
   return pageAll<OpeningApplicationLite>((from, to) =>
     supabase
       .from('applications')
-      .select('id, job_id, stage_key')
-      .not('stage_key', 'in', '(rejected,withdrawn)')
+      .select('id, job_id, stage_key, in_play')
+      .or('in_play.eq.true,stage_key.eq.hired')
       .order('id')
       .range(from, to),
   )

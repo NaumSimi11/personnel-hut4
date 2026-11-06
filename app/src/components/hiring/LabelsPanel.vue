@@ -5,7 +5,9 @@ import RemoveStatusDialog from '@/components/hiring/RemoveStatusDialog.vue'
 import {
   KEY_PATTERN,
   MAX_LABEL_LENGTH,
+  OUTCOME_CHOICES,
   type LookupRow,
+  type Outcome,
   type SubStatusGroup,
   type SubStatusRow,
   canRetire,
@@ -15,6 +17,7 @@ import {
   labelChanged,
   nextSortOrder,
   normaliseLabel,
+  outcomeLabel,
   validateLabel,
 } from '@/lib/hiringLabels'
 
@@ -26,6 +29,9 @@ import {
  * saved — and removes one (plan 069): its applications move to another
  * status of the stage or stay where they are, and the status is deleted when
  * nothing ever used it, retired otherwise, so old timelines keep reading it.
+ * A new status needs its outcome (plan 075) — still in play, rejected or
+ * withdrew — which decides whether its applications count as open; once
+ * saved the outcome is shown, not edited.
  *
  * Admins only: both lookups carry an `admin_write` policy, so a non-admin's
  * write is refused by the database rather than by this panel.
@@ -37,6 +43,7 @@ const subStatuses = ref<SubStatusRow[]>([])
 const sources = ref<LookupRow[]>([])
 const drafts = ref<Record<string, string>>({})
 const newLabels = ref<Record<string, string>>({})
+const newOutcomes = ref<Record<string, Outcome | ''>>({})
 const loaded = ref(false)
 const savingId = ref<string | null>(null)
 const error = ref<string | null>(null)
@@ -69,6 +76,9 @@ function problemOf(table: Table, row: LookupRow): string | null {
 function addDraft(group: SubStatusGroup): string {
   return newLabels.value[group.stageKey] ?? ''
 }
+function addOutcome(group: SubStatusGroup): Outcome | '' {
+  return newOutcomes.value[group.stageKey] ?? ''
+}
 function addProblem(group: SubStatusGroup): string | null {
   const draft = addDraft(group)
   if (!draft.trim()) return null
@@ -88,7 +98,7 @@ function writeError(message: string, refusal: string): string {
 async function load(): Promise<void> {
   error.value = null
   const [subs, srcs] = await Promise.all([
-    supabase.from('application_sub_statuses').select('key, stage_key, label, sort_order, archived_at'),
+    supabase.from('application_sub_statuses').select('key, stage_key, label, sort_order, outcome, archived_at'),
     supabase.from('candidate_sources').select('key, label, sort_order').is('archived_at', null),
   ])
   if (subs.error || srcs.error) {
@@ -139,8 +149,9 @@ function reset(table: Table, row: LookupRow): void {
 
 async function add(group: SubStatusGroup): Promise<void> {
   const label = normaliseLabel(addDraft(group))
-  const problem = validateLabel(label) ?? duplicateLabel(label, stageRows(group.stageKey))
-  if (problem) {
+  const outcome = addOutcome(group)
+  const problem = validateLabel(label) ?? duplicateLabel(label, stageRows(group.stageKey)) ?? (outcome ? null : 'Pick what the status means for the application.')
+  if (problem || !outcome) {
     error.value = problem
     return
   }
@@ -155,6 +166,7 @@ async function add(group: SubStatusGroup): Promise<void> {
     stage_key: group.stageKey,
     label,
     sort_order: nextSortOrder(stageRows(group.stageKey)),
+    outcome,
     archived_at: null,
   }
   startWrite(`add:${group.stageKey}`)
@@ -166,6 +178,7 @@ async function add(group: SubStatusGroup): Promise<void> {
   }
   subStatuses.value = [...subStatuses.value, row]
   newLabels.value = { ...newLabels.value, [group.stageKey]: '' }
+  newOutcomes.value = { ...newOutcomes.value, [group.stageKey]: '' }
   notice.value = `Added “${label}” to ${group.stageLabel}. It can be picked from the next page load.`
 }
 
@@ -205,6 +218,7 @@ onMounted(load)
     <p class="hint">
       Name the statuses of every stage and the sources in your team's own words, add the ones you are missing,
       and remove the ones you no longer want — moving their applications to another status, or leaving them be. A
+      new status needs to say what it means: the application stays in play, or it was rejected, or the candidate withdrew. A
       rename changes only the wording — reports, filters and the Zoho import keep working, because they match on
       the key beside each name, never on the name.
     </p>
@@ -221,6 +235,7 @@ onMounted(load)
           <p v-if="!group.rows.length" class="hint">No statuses yet.</p>
           <div v-for="row in group.rows" :key="row.key" class="row" :data-testid="`label-row-${row.key}`">
             <code class="key">{{ row.key }}</code>
+            <span class="outcome" :class="`outcome-${row.outcome}`" :data-testid="`label-outcome-${row.key}`">{{ outcomeLabel(row.outcome) }}</span>
             <input
               class="input"
               type="text"
@@ -274,12 +289,25 @@ onMounted(load)
               :data-testid="`label-add-input-${group.stageKey}`"
               @input="newLabels = { ...newLabels, [group.stageKey]: ($event.target as HTMLInputElement).value }"
             />
+            <fieldset class="outcome-choice" :aria-label="`What a new status at ${group.stageLabel} means`">
+              <label v-for="o in OUTCOME_CHOICES" :key="o.value" class="outcome-option">
+                <input
+                  type="radio"
+                  :name="`outcome-${group.stageKey}`"
+                  :value="o.value"
+                  :checked="addOutcome(group) === o.value"
+                  :data-testid="`label-add-outcome-${group.stageKey}-${o.value}`"
+                  @change="newOutcomes = { ...newOutcomes, [group.stageKey]: o.value }"
+                />
+                <span>{{ o.label }}</span>
+              </label>
+            </fieldset>
             <div class="row-actions">
               <small v-if="addProblem(group)" class="problem">{{ addProblem(group) }}</small>
               <button
                 class="button"
                 type="submit"
-                :disabled="savingId !== null || !addDraft(group).trim() || !!addProblem(group)"
+                :disabled="savingId !== null || !addDraft(group).trim() || !addOutcome(group) || !!addProblem(group)"
                 :data-testid="`label-add-${group.stageKey}`"
               >
                 {{ savingId === `add:${group.stageKey}` ? 'Adding…' : 'Add' }}
@@ -359,6 +387,10 @@ h2 { margin: 0 0 12px; font-size: 15px; }
 .problem { font-size: 11px; color: var(--danger, #b3261e); }
 .add-row { margin: 0; }
 .kept { font-size: 11px; color: var(--muted); }
+.outcome { font-size: 11px; padding: 2px 8px; border-radius: 999px; background: #edf5ed; color: #3e744e; white-space: nowrap; }
+.outcome-rejected, .outcome-withdrew { background: #f3f1ec; color: var(--muted); }
+.outcome-choice { border: 0; padding: 0; margin: 0; display: flex; gap: 12px; flex-wrap: wrap; font-size: 12px; }
+.outcome-option { display: inline-flex; align-items: center; gap: 5px; cursor: pointer; }
 .retired { margin-top: 10px; font-size: 12px; color: var(--muted); }
 .retired summary { cursor: pointer; padding: 6px 0; }
 .retired-label { flex: 1 1 220px; min-width: 0; text-decoration: line-through; }

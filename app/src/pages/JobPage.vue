@@ -19,8 +19,18 @@ import JobInterviewsPanel from '@/components/JobInterviewsPanel.vue'
 import { criteriaFor, criteriaInput, type Criterion } from '@/lib/interviews'
 import { missingRecordMessage } from '@/lib/missingRecord'
 import StatusDialog, { type OutreachApplication } from '@/components/StatusDialog.vue'
-import { NOT_RESPONDING_DAYS, notResponding, type SubStatus, type SubStatusRow } from '@/lib/outreach'
-import { liveStatuses, reasonFor, statusFilterGroups, statusLabels } from '@/lib/stageStatuses'
+import { NOT_RESPONDING_DAYS, notResponding, type SubStatusRow } from '@/lib/outreach'
+import {
+  STAGES,
+  STAGE_LABEL,
+  closureLine,
+  firstOpenStatus,
+  noStatusesHint,
+  statusFilterGroups,
+  statusLabels,
+  type StageKey,
+} from '@/lib/stageStatuses'
+import { setApplicationStatus } from '@/lib/applicationStatus'
 import { todayDb } from '@/lib/compensation'
 import { PAGE_SIZE } from '@/lib/pageAll'
 import { friendlyDetachError } from '@/lib/detachApplication'
@@ -80,6 +90,9 @@ type ApplicationRow = {
   id: string
   stage_key: string
   sub_status_key: string | null
+  in_play: boolean
+  closed_at: string | null
+  closed_reason: string | null
   received_at: string
   employment_period_id: string | null
   next_action: string | null
@@ -128,7 +141,6 @@ const uploadCvsDialog = ref<InstanceType<typeof UploadCvsDialog> | null>(null)
 const pickFromPoolDialog = ref<InstanceType<typeof PickFromPoolDialog> | null>(null)
 const confirmHireDialog = ref<InstanceType<typeof AddEmployeeDialog> | null>(null)
 const rejectDialog = ref<InstanceType<typeof RejectApplicationDialog> | null>(null)
-const rejectTarget = ref<ApplicationRow | null>(null)
 const dialogs = useDialogStore()
 const channelsPanel = ref<InstanceType<typeof JobChannelsPanel> | null>(null)
 const activityPanel = ref<InstanceType<typeof JobActivityPanel> | null>(null)
@@ -162,7 +174,6 @@ const canEdit = computed(() => (job.value ? auth.can(job.value.company_id, 'jobs
 const canSource = computed(() => auth.isAdmin || auth.canAnywhere('candidates.source'))
 // A hint only: set_application_status decides (plan 068).
 const canReview = computed(() => (job.value ? auth.can(job.value.company_id, 'candidates.review') : false))
-const subStatuses = computed<SubStatus[]>(() => liveStatuses(subStatusRows.value))
 const subStatusLabels = computed<Record<string, string>>(() => statusLabels(subStatusRows.value))
 const subStatusGroups = computed(() => statusFilterGroups(subStatusRows.value))
 const visibleApplications = computed(() =>
@@ -182,7 +193,7 @@ function isNotResponding(a: ApplicationRow): boolean {
   // off", so the received_at fallback would flag rows wrongly: unknown, not flagged.
   if (!last && activityTruncated.value) return false
   return notResponding(
-    { stage_key: a.stage_key, sub_status_key: a.sub_status_key, last_activity_at: last, received_at: a.received_at, job_status: job.value?.status ?? '' },
+    { stage_key: a.stage_key, sub_status_key: a.sub_status_key, in_play: a.in_play, last_activity_at: last, received_at: a.received_at, job_status: job.value?.status ?? '' },
     todayDb(),
   )
 }
@@ -209,12 +220,10 @@ async function onLogged(): Promise<void> {
 }
 // Candidates with an open application here — the pool picker's "In pipeline".
 const inPipeline = computed(() =>
-  applications.value.flatMap((a) => (a.candidate && !isTerminal(a.stage_key) ? [a.candidate.id] : [])),
+  applications.value.flatMap((a) => (a.candidate && a.in_play ? [a.candidate.id] : [])),
 )
 const hiredCount = computed(() => applications.value.filter((a) => a.stage_key === 'hired').length)
-const activeCount = computed(
-  () => applications.value.filter((a) => !['hired', 'rejected', 'withdrawn'].includes(a.stage_key)).length,
-)
+const activeCount = computed(() => applications.value.filter((a) => a.in_play).length)
 const actionQueue = computed(() => candidateQueue(applications.value))
 const liveChannels = computed(() => channels.value.filter(isPublished).length)
 // A draft role has nothing in it yet, and four tiles reading zero say so less
@@ -241,14 +250,18 @@ const statusOptions = computed(() =>
 )
 const statusChoice = ref('')
 const headcount = computed(() => (job.value ? jobHeadcount(job.value) : 1))
-const atOfferCount = computed(() => applications.value.filter((a) => a.stage_key === 'offer').length)
+const atOfferCount = computed(() => applications.value.filter((a) => a.in_play && a.stage_key === 'offer').length)
 const withdrawBusy = ref(false)
 
+// The pipeline by stage counts who is still in play there (and every hire);
+// the rest — rejected, withdrawn, closed with the job — are counted once, as finished.
 const stageCounts = computed(() => {
-  const counts: Record<string, number> = {}
-  for (const a of applications.value) counts[a.stage_key] = (counts[a.stage_key] ?? 0) + 1
-  return counts
+  const counted = (s: StageKey) => applications.value.filter((a) => a.stage_key === s && (a.in_play || s === 'hired')).length
+  const byStage = STAGES.map((s) => ({ key: s, label: STAGE_LABEL[s], count: counted(s) }))
+  const finished = applications.value.filter((a) => !a.in_play && a.stage_key !== 'hired').length
+  return [...byStage, { key: 'finished', label: 'Finished', count: finished }].filter((c) => c.count > 0)
 })
+const inInterview = computed(() => stageCounts.value.find((c) => c.key === 'interview')?.count ?? 0)
 
 function jobBadgeClass(status: string): string {
   if (status === 'open') return 'green'
@@ -257,15 +270,16 @@ function jobBadgeClass(status: string): string {
   return ''
 }
 
-function stageBadgeClass(stage: string): string {
+function stageBadgeClass(stage: string, inPlay = true): string {
   if (stage === 'hired') return 'green'
+  if (!inPlay) return ''
   if (stage === 'offer') return 'amber'
-  if (stage === 'rejected') return ''
   return 'blue'
 }
 
-function isTerminal(stage: string): boolean {
-  return stage === 'hired' || stage === 'rejected' || stage === 'withdrawn'
+/** "Job closed — <reason> (<date>)" on a row its job's closing marked; its status is then locked. */
+function closureOf(a: ApplicationRow): string | null {
+  return closureLine(a.closed_at, a.closed_reason)
 }
 
 async function loadJob(): Promise<void> {
@@ -315,7 +329,7 @@ async function loadApplications(): Promise<void> {
   const { data, error: err } = await supabase
     .from('applications')
     .select(
-      `id, stage_key, sub_status_key, received_at, employment_period_id, next_action, next_action_due, source_key,
+      `id, stage_key, sub_status_key, in_play, closed_at, closed_reason, received_at, employment_period_id, next_action, next_action_due, source_key,
        source:candidate_sources(label),
        candidate:candidates(id, full_name, email, phone, do_not_contact, contact_again_after),
        owner:people!applications_owner_id_fkey(full_name),
@@ -371,14 +385,14 @@ async function loadLastActivity(): Promise<void> {
 async function loadSubStatuses(): Promise<void> {
   const { data, error: err } = await supabase
     .from('application_sub_statuses')
-    .select('key, stage_key, label, sort_order, archived_at')
+    .select('key, stage_key, label, sort_order, outcome, archived_at')
     .order('stage_key')
     .order('sort_order')
   if (err) {
     console.error('Sub-statuses load failed:', err.message)
     return
   }
-  subStatusRows.value = data ?? []
+  subStatusRows.value = (data ?? []) as SubStatusRow[]
 }
 
 async function loadChannels(): Promise<void> {
@@ -445,9 +459,9 @@ async function applyStatus(): Promise<void> {
 }
 
 /**
- * Everyone still in play on a filled job, withdrawn at once as "Job closed"
- * (withdraw_in_play, 0090). Asked first, naming how many and how many of
- * them have an offer out.
+ * Everyone still in play on a filled job, closed at once (withdraw_in_play,
+ * 0096): each keeps their status and gets the closure mark "Position
+ * filled.". Asked first, naming how many and how many have an offer out.
  */
 async function withdrawRest(): Promise<void> {
   if (!job.value) return
@@ -455,7 +469,7 @@ async function withdrawRest(): Promise<void> {
   const offers = atOfferCount.value
   const ok = await dialogs.confirmAction({
     title: `Withdraw the ${n} ${n === 1 ? 'candidate' : 'candidates'} still in play?`,
-    hint: `They move to Withdrawn · Job closed, with the reason "Position filled."${offers ? ` ${offers} of them ${offers === 1 ? 'has' : 'have'} an offer out.` : ''} The hires stay as they are.`,
+    hint: `They keep their status and are marked Job closed, with the reason "Position filled."${offers ? ` ${offers} of them ${offers === 1 ? 'has' : 'have'} an offer out.` : ''} The hires stay as they are.`,
     confirmLabel: 'Withdraw them',
     danger: true,
   })
@@ -524,57 +538,27 @@ async function deleteApplication(app: ApplicationRow): Promise<void> {
   }
 }
 
-async function updateStage(
-  app: ApplicationRow,
-  toStage: string,
-  body?: string,
-  extra: Record<string, string> = {},
-): Promise<void> {
+/** A quick move (plan 075): the stage's first open status, through the one door. */
+async function moveTo(app: ApplicationRow, stageKey: StageKey): Promise<void> {
   actionError.value = null
-  busyId.value = app.id
-  const { error: err } = await supabase
-    .from('applications')
-    .update({ stage_key: toStage, ...extra })
-    .eq('id', app.id)
-  if (!err) {
-    await supabase.from('application_events').insert({
-      application_id: app.id,
-      kind: 'stage_change',
-      from_stage_key: app.stage_key,
-      to_stage_key: toStage,
-      actor_id: auth.personId,
-      body: body ?? null,
-    })
+  const target = firstOpenStatus(subStatusRows.value, stageKey)
+  if (!target) {
+    actionError.value = noStatusesHint(STAGE_LABEL[stageKey])
+    return
   }
+  busyId.value = app.id
+  const result = await setApplicationStatus([app.id], target.key)
   busyId.value = null
-  if (err) {
-    actionError.value = friendlyCandidatesError(err.message)
+  if (result.error) {
+    actionError.value = result.error
     return
   }
   await loadApplications()
 }
 
-function moveToScreening(app: ApplicationRow): void {
-  void updateStage(app, 'screening')
-}
-function moveToInterview(app: ApplicationRow): void {
-  void updateStage(app, 'interview')
-}
-function prepareOffer(app: ApplicationRow): void {
-  void updateStage(app, 'offer')
-}
-// The same dialog and the same write as the application page (plan 068 D6):
-// a Rejected status, the reason on the row, and both in the timeline.
+// The same dialog as the application page: a Rejected status, set through the one door.
 function reject(app: ApplicationRow): void {
-  rejectTarget.value = app
-  rejectDialog.value?.open('reject', app.candidate?.full_name ?? '')
-}
-function onRejectDecided(payload: { note: string; status: SubStatus | null }): void {
-  const app = rejectTarget.value
-  if (!app) return
-  const reason = payload.status ? reasonFor(payload.status.label, payload.note) : payload.note
-  const status: Record<string, string> = payload.status ? { sub_status_key: payload.status.key } : {}
-  void updateStage(app, 'rejected', reason, { rejected_reason: reason, ...status })
+  rejectDialog.value?.open('reject', app.candidate?.full_name ?? '', [app.id])
 }
 
 function openConfirmHire(app: ApplicationRow): void {
@@ -703,7 +687,7 @@ onMounted(async () => {
               <p>{{ a.next_action || candidateNextStep(a.stage_key).title }}</p>
               <small>{{ a.owner?.full_name ?? 'Owner needed' }} &middot; {{ a.next_action_due ? `Due ${a.next_action_due}` : 'No due date set' }}</small>
             </div>
-            <span class="badge" :class="stageBadgeClass(a.stage_key)">{{ a.stage_key }}</span>
+            <span class="badge" :class="stageBadgeClass(a.stage_key, a.in_play)">{{ a.stage_key }}</span>
             <router-link class="button secondary small-btn" :to="{ name: 'application', params: { applicationId: a.id } }">{{ candidateNextStep(a.stage_key).label }}</router-link>
           </div>
         </section>
@@ -725,7 +709,7 @@ onMounted(async () => {
           </div>
           <div class="card metric-tile">
             <span class="metric-label">In interview</span>
-            <span class="metric-value">{{ stageCounts.interview ?? 0 }}</span>
+            <span class="metric-value">{{ inInterview }}</span>
           </div>
           <div class="card metric-tile">
             <span class="metric-label">Hired</span>
@@ -794,7 +778,7 @@ onMounted(async () => {
               <dt>Pipeline</dt>
               <dd>
                 <template v-if="applications.length">
-                  <span v-for="(n, stage) in stageCounts" :key="stage" class="stage-count">{{ stage }} {{ n }}</span>
+                  <span v-for="c in stageCounts" :key="c.key" class="stage-count">{{ c.label }} {{ c.count }}</span>
                 </template>
                 <template v-else>No candidates yet</template>
               </dd>
@@ -944,6 +928,7 @@ onMounted(async () => {
               v-if="canReview"
               class="select-app"
               type="checkbox"
+              :disabled="Boolean(closureOf(a))"
               :checked="selectedIds.includes(a.id)"
               :aria-label="`Select ${a.candidate?.full_name ?? 'application'}`"
               :data-testid="`select-app-${a.id}`"
@@ -964,9 +949,10 @@ onMounted(async () => {
               </small>
             </div>
             <span v-if="a.candidate?.do_not_contact" class="badge amber">Do not contact</span>
-            <span class="badge" :class="stageBadgeClass(a.stage_key)">{{ a.stage_key }}</span>
+            <span class="badge" :class="stageBadgeClass(a.stage_key, a.in_play)">{{ a.stage_key }}</span>
             <!-- Not a .badge: the E2E rows locate the stage badge by that class alone. -->
-            <span v-if="a.sub_status_key && subStatusLabels[a.sub_status_key]" class="sub-badge" data-testid="sub-badge">{{ subStatusLabels[a.sub_status_key] }}</span>
+            <span v-if="closureOf(a)" class="sub-badge" data-testid="closure-badge">{{ closureOf(a) }}</span>
+            <span v-else-if="a.sub_status_key && subStatusLabels[a.sub_status_key]" class="sub-badge" data-testid="sub-badge">{{ subStatusLabels[a.sub_status_key] }}</span>
             <span v-if="isNotResponding(a)" class="sub-badge amber" data-testid="not-responding-badge">Not responding</span>
             <div class="row-actions">
               <button
@@ -978,7 +964,15 @@ onMounted(async () => {
                 :data-testid="`delete-application-${a.id}`"
                 @click="deleteApplication(a)"
               >Delete application</button>
-              <button v-if="canReview" class="button secondary small-btn" type="button" :data-testid="`log-outreach-${a.id}`" @click="openOutreach([a])">
+              <button
+                v-if="canReview"
+                class="button secondary small-btn"
+                type="button"
+                :disabled="Boolean(closureOf(a)) || a.stage_key === 'hired'"
+                :title="closureOf(a) ? 'Reopen the job to set a status.' : undefined"
+                :data-testid="`log-outreach-${a.id}`"
+                @click="openOutreach([a])"
+              >
                 Set status
               </button>
               <router-link
@@ -988,20 +982,17 @@ onMounted(async () => {
               >
                 Open employee profile
               </router-link>
-              <template v-else-if="a.stage_key !== 'hired'">
-                <button v-if="a.stage_key === 'new'" class="button secondary small-btn" type="button" :disabled="busyId === a.id" @click="moveToScreening(a)">
-                  Move to screening
-                </button>
-                <button v-if="a.stage_key === 'screening'" class="button secondary small-btn" type="button" :disabled="busyId === a.id" @click="moveToInterview(a)">
+              <template v-else-if="a.in_play">
+                <button v-if="a.stage_key === 'screening'" class="button secondary small-btn" type="button" :disabled="busyId === a.id" @click="moveTo(a, 'interview')">
                   Move to interview
                 </button>
-                <button v-if="a.stage_key === 'interview'" class="button secondary small-btn" type="button" :disabled="busyId === a.id" @click="prepareOffer(a)">
+                <button v-if="a.stage_key === 'interview'" class="button secondary small-btn" type="button" :disabled="busyId === a.id" @click="moveTo(a, 'offer')">
                   Prepare offer
                 </button>
                 <button v-if="a.stage_key === 'offer'" class="button secondary small-btn" type="button" :disabled="busyId === a.id" @click="openConfirmHire(a)">
                   Confirm hire
                 </button>
-                <button v-if="!isTerminal(a.stage_key)" class="button secondary small-btn" type="button" :disabled="busyId === a.id" @click="reject(a)">
+                <button class="button secondary small-btn" type="button" :disabled="busyId === a.id" @click="reject(a)">
                   Reject
                 </button>
               </template>
@@ -1051,8 +1042,8 @@ onMounted(async () => {
       @created="loadApplications"
     />
     <AddEmployeeDialog ref="confirmHireDialog" @created="onHired" />
-    <RejectApplicationDialog ref="rejectDialog" :sub-statuses="subStatuses" @confirmed="onRejectDecided" />
-    <StatusDialog ref="statusDialog" :applications="outreachApplications" :sub-statuses="subStatuses" @logged="onLogged" />
+    <RejectApplicationDialog ref="rejectDialog" :rows="subStatusRows" @decided="loadApplications" />
+    <StatusDialog ref="statusDialog" :applications="outreachApplications" :rows="subStatusRows" @logged="onLogged" />
   </div>
 </template>
 

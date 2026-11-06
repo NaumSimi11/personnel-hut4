@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   KEY_PATTERN,
   MAX_LABEL_LENGTH,
+  OUTCOME_CHOICES,
   canRetire,
   duplicateLabel,
   groupByStage,
@@ -9,6 +10,7 @@ import {
   labelChanged,
   nextSortOrder,
   normaliseLabel,
+  outcomeLabel,
   validateLabel,
   type SubStatusRow,
 } from './hiringLabels'
@@ -163,5 +165,20 @@ describe('canRetire', () => {
   it('lets every other status go', () => {
     expect(canRetire('interested')).toBe(true)
     expect(canRetire('job_closed')).toBe(true)
+  })
+})
+
+describe('OUTCOME_CHOICES', () => {
+  it('offers the outcomes a new status may have, Hired left out', () => {
+    expect(OUTCOME_CHOICES).toEqual([
+      { value: 'open', label: 'Still in play' },
+      { value: 'rejected', label: 'Rejected' },
+      { value: 'withdrew', label: 'Withdrew' },
+    ])
+  })
+
+  it('names every outcome, Hired included, for the read-only tag', () => {
+    expect(outcomeLabel('hired')).toBe('Hired')
+    expect(outcomeLabel('open')).toBe('Still in play')
   })
 })

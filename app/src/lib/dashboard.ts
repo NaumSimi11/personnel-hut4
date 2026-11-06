@@ -212,7 +212,7 @@ export function openPositions(jobs: ReadonlyArray<JobLite>, apps: ReadonlyArray<
     .sort((a, b) => (b.daysOpen ?? -1) - (a.daysOpen ?? -1))
 }
 
-export type RecentApplicant = { id: string; name: string; position: string; company: string; stage: string; received_at: string }
+export type RecentApplicant = { id: string; name: string; position: string; company: string; stage: string; inPlay: boolean; received_at: string }
 
 export function recentApplicants(apps: ReadonlyArray<ApplicationLite>, limit = 5): RecentApplicant[] {
   return [...apps]
@@ -224,6 +224,7 @@ export function recentApplicants(apps: ReadonlyArray<ApplicationLite>, limit = 5
       position: a.job?.title ?? '—',
       company: a.job?.company?.name ?? '—',
       stage: a.stage_key,
+      inPlay: a.in_play,
       received_at: a.received_at,
     }))
 }

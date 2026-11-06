@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { supabase } from '@/lib/supabase'
-import type { SubStatusRow } from '@/lib/hiringLabels'
+import { outcomeLabel, type SubStatusRow } from '@/lib/hiringLabels'
 import { removalNotice, removalPlan, type RemovalResult, type StatusUsage } from '@/lib/statusRemoval'
 
 /**
@@ -10,7 +10,8 @@ import { removalNotice, removalPlan, type RemovalResult, type StatusUsage } from
  * — when some still carry it — where they go: another live status of the
  * same stage, or nowhere (they keep it, and it stops being offered).
  * `remove_sub_status` does the rest and decides delete or retire; its
- * refusals are shown as it phrases them.
+ * refusals are shown as it phrases them. A target whose outcome differs
+ * (plan 075) says so, because moving there opens or closes the applications.
  */
 
 const emit = defineEmits<{ removed: [notice: string] }>()
@@ -23,6 +24,16 @@ const choice = ref<'move' | 'leave'>('move')
 const moveTo = ref('')
 const busy = ref(false)
 const error = ref<string | null>(null)
+
+/** The warning when the target means something else: the moved applications open or close with it. */
+const crossesOutcome = computed(() => {
+  const target = targets.value.find((t) => t.key === moveTo.value)
+  if (!row.value || !target || target.outcome === row.value.outcome) return ''
+  return `This moves them from ${outcomeLabel(row.value.outcome)} to ${outcomeLabel(target.outcome)}.`
+})
+function targetLabel(t: SubStatusRow): string {
+  return row.value && t.outcome !== row.value.outcome ? `${t.label} (${outcomeLabel(t.outcome)})` : t.label
+}
 
 const plan = computed(() => (row.value && usage.value ? removalPlan(usage.value, row.value.label) : null))
 const canConfirm = computed(
@@ -85,7 +96,7 @@ async function confirm(): Promise<void> {
             <span>Move them to</span>
             <select v-model="moveTo" :disabled="choice !== 'move' || !targets.length" aria-label="Move them to" data-testid="remove-status-target">
               <option value="">Choose a status</option>
-              <option v-for="t in targets" :key="t.key" :value="t.key">{{ t.label }}</option>
+              <option v-for="t in targets" :key="t.key" :value="t.key">{{ targetLabel(t) }}</option>
             </select>
           </label>
           <p v-if="!targets.length" class="hint">This stage has no other status yet. Add one first, or leave them.</p>
@@ -102,6 +113,9 @@ async function confirm(): Promise<void> {
             Review them first
           </router-link>
         </fieldset>
+        <p v-if="plan.mode === 'move' && choice === 'move' && crossesOutcome" class="hint warning" data-testid="remove-status-outcome">
+          {{ crossesOutcome }}
+        </p>
         <p v-if="plan.mode === 'move' && choice === 'move'" class="hint">
           Each application's timeline records the move. It does not count as activity on the candidate.
         </p>
@@ -136,6 +150,7 @@ h2 { font-size: 19px; margin: 10px 0 10px; }
 .option { display: flex; align-items: center; gap: 9px; font-size: 13px; cursor: pointer; flex-wrap: wrap; }
 .option select { border: 1px solid var(--line); background: #fff; padding: 6px 8px; font-size: 12px; color: var(--ink); min-width: 0; max-width: 100%; }
 .review { font-size: 12px; color: var(--green); }
+.warning { color: var(--amber); }
 .actions { display: flex; gap: 9px; justify-content: flex-end; margin-top: 14px; }
 .danger { background: var(--red); border-color: var(--red); }
 .danger:hover { background: #8f3838; }

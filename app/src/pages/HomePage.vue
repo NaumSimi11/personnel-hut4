@@ -241,7 +241,7 @@ function loadPipelineApplications(): Promise<{ data: ApplicationLite[]; error: {
   return pageAll<ApplicationLite>((from, to) =>
     supabase
       .from('applications')
-      .select('id, job_id, stage_key, sub_status_key, received_at, candidate:candidates(full_name, last_activity_at), job:jobs!inner(title, status, company:companies(name))')
+      .select('id, job_id, stage_key, sub_status_key, in_play, received_at, candidate:candidates(full_name, last_activity_at), job:jobs!inner(title, status, company:companies(name))')
       .in('job.status', ['ready', 'open', 'on_hold'])
       .order('id')
       .range(from, to) as unknown as PromiseLike<{ data: ApplicationLite[] | null; error: { message: string } | null }>,
@@ -320,7 +320,8 @@ async function load(): Promise<void> {
          candidate:candidates(full_name),
          job:jobs(id, title, company:companies(name))`,
       )
-      .eq('stage_key', 'offer'),
+      .eq('stage_key', 'offer')
+      .eq('in_play', true),
     supabase
       .from('plans')
       .select(
@@ -335,7 +336,7 @@ async function load(): Promise<void> {
     loadLaterQueues(),
     loadSnapshot(),
     auth.personId ? supabase.from('applications').select('id, company_id, stage_key, next_action, next_action_due, candidate:candidates(full_name), job:jobs(title)')
-      .eq('owner_id', auth.personId).in('stage_key', ['new', 'screening', 'interview', 'offer']).order('next_action_due', { ascending: true }) : Promise.resolve({ data: [], error: null }),
+      .eq('owner_id', auth.personId).eq('in_play', true).order('next_action_due', { ascending: true }) : Promise.resolve({ data: [], error: null }),
     loadUpcomingInterviews(),
   ])
   const [compRes, docReviewRes, myReqRes, policyRes, ackRes, itRes, payrollRes, leaveRes, managerRes] = laterRes

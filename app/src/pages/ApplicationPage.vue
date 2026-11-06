@@ -16,14 +16,24 @@ import { contactBadge, type ContactRule } from '@/lib/candidatePool'
 import { todayDb } from '@/lib/compensation'
 import { answersFromRows, mergeAnswers, type AnswerRow } from '@/lib/screeningAnswers'
 import CandidateHandoffDialog, { type HandoffPayload } from '@/components/CandidateHandoffDialog.vue'
+import { setApplicationStatus } from '@/lib/applicationStatus'
+import { stageLabel } from '@/lib/dashboard'
 import { deliverNotifications, deliverySentence } from '@/lib/notificationsApi'
 import { candidateNextStep } from '@/lib/hiringJourney'
 import { criteriaFor } from '@/lib/interviews'
 import type { OfferTerms } from '@/lib/offers'
 import { missingRecordMessage } from '@/lib/missingRecord'
 import StatusDialog, { type OutreachApplication } from '@/components/StatusDialog.vue'
-import { notResponding, outreachLine, type SubStatus, type SubStatusRow } from '@/lib/outreach'
-import { liveStatuses, reasonFor, statusChangeLine, statusLabels } from '@/lib/stageStatuses'
+import { notResponding, outreachLine, type SubStatusRow } from '@/lib/outreach'
+import {
+  closureLine,
+  firstOpenStatus,
+  noStatusesHint,
+  statusChangeLine,
+  statusLabels,
+  statusesByOutcome,
+  type StageKey,
+} from '@/lib/stageStatuses'
 
 /**
  * One application, everything in one place (plan 018a): who the candidate
@@ -53,6 +63,9 @@ type Application = {
   company_id: string
   stage_key: string
   sub_status_key: string | null
+  in_play: boolean
+  closed_at: string | null
+  closed_reason: string | null
   updated_at: string
   owner_id: string | null
   next_action: string | null
@@ -90,12 +103,6 @@ type EventRow = {
   actor: { full_name: string } | null
 }
 
-const STAGE_NEXT: Record<string, { to: string; label: string }[]> = {
-  new: [{ to: 'screening', label: 'Move to screening' }],
-  screening: [{ to: 'interview', label: 'Move to interview' }],
-  interview: [{ to: 'offer', label: 'Prepare offer' }],
-}
-
 const route = useRoute()
 const auth = useAuthStore()
 const applicationId = route.params.applicationId as string
@@ -126,58 +133,69 @@ async function refreshQuestions(): Promise<void> {
   answerRows.value = mergeAnswers(parsed.questions, answersFromRows(answerRows.value))
 }
 
-function openHandoff(mode: 'assign' | 'start' | 'outcome'): void {
+function openHandoff(mode: 'assign' | 'outcome'): void {
   if (!application.value) return
-  handoffDialog.value?.open(mode, application.value.stage_key, {
+  handoffDialog.value?.open(mode, {
     ownerId: application.value.owner_id ?? '',
     nextAction: application.value.next_action ?? '',
     nextActionDue: application.value.next_action_due ?? '',
   })
 }
 
-/**
- * What a screening outcome of Reject writes beside the stage (plan 068 D6):
- * the reason — the note, else the status picked — and that status. Empty for
- * any other outcome.
- */
-function handoffRejection(payload: HandoffPayload): Record<string, string> {
-  if (payload.stage !== 'rejected') return {}
-  const status = subStatuses.value.find((s) => s.key === payload.subStatusKey)
-  if (!status) return { rejected_reason: payload.note }
-  return { rejected_reason: reasonFor(status.label, payload.note), sub_status_key: status.key }
+/** The status a screening outcome sets (plan 075): Interview's first open one, the Rejected one picked, or none. */
+function handoffStatus(payload: HandoffPayload): string {
+  if (payload.outcome === 'rejected') return payload.subStatusKey
+  if (payload.outcome === 'interview') {
+    const first = firstOpenStatus(subStatusRows.value, 'interview')
+    if (!first) throw new Error(noStatusesHint(stageLabel('interview')))
+    return first.key
+  }
+  return ''
 }
 
 async function saveHandoff(payload: HandoffPayload): Promise<void> {
   if (!application.value) throw new Error('Reload this application before continuing.')
   const current = application.value
-  const terminal = payload.stage === 'rejected'
-  const rejection = handoffRejection(payload)
-  if (current.stage_key === 'screening' && payload.stage === 'interview') {
+  const terminal = payload.outcome === 'rejected'
+  const statusKey = handoffStatus(payload)
+  if (payload.outcome === 'interview') {
     const missing = answerRows.value.find(r => !r.orphaned && r.question.required && !r.answer.trim())
     if (missing) throw new Error(`Answer the required question before proceeding: ${missing.question.prompt}`)
   }
   // Answers typed on the page travel with a screening outcome; an assignment edit leaves them alone.
+  // A rejection clears the assignment only once its status is set, below.
   const { data, error: err } = await supabase.from('applications').update({
-    stage_key: payload.stage,
-    owner_id: terminal ? null : payload.ownerId,
-    next_action: terminal ? null : payload.nextAction,
-    next_action_due: terminal ? null : payload.nextActionDue,
-    ...(payload.stage !== current.stage_key || terminal ? { screening_answers: answersFromRows(answerRows.value) } : {}),
-    ...rejection,
+    ...(terminal ? {} : { owner_id: payload.ownerId, next_action: payload.nextAction, next_action_due: payload.nextActionDue }),
+    ...(payload.outcome ? { screening_answers: answersFromRows(answerRows.value) } : {}),
   }).eq('id', current.id).eq('updated_at', current.updated_at).select('id, updated_at').maybeSingle()
   if (err) throw new Error(friendlyReview(err.message))
   if (!data) throw new Error('This candidate changed since you opened the page. Cancel, refresh the page, and review the latest assignment.')
-  const { error: eventErr } = await supabase.from('application_events').insert({
-    application_id: current.id, actor_id: auth.personId,
-    kind: payload.stage === current.stage_key ? 'note' : 'stage_change',
-    from_stage_key: current.stage_key, to_stage_key: payload.stage,
-    body: rejection.rejected_reason ?? (payload.note || `Assigned next action: ${payload.nextAction}; due ${payload.nextActionDue}.`),
-  })
+  // A status goes through the one door, which writes its own timeline entry; anything else is a note.
+  let eventFailed = false
+  if (statusKey) {
+    const result = await setApplicationStatus([current.id], statusKey, payload.note)
+    if (result.error) {
+      await load()
+      throw new Error(`The assignment was saved, but the status was not: ${result.error}`)
+    }
+    if (terminal) {
+      const { error: clearErr } = await supabase.from('applications')
+        .update({ owner_id: null, next_action: null, next_action_due: null }).eq('id', current.id)
+      if (clearErr) console.error('Clearing the assignment after a rejection failed:', clearErr.message)
+    }
+  } else {
+    const { error: eventErr } = await supabase.from('application_events').insert({
+      application_id: current.id, actor_id: auth.personId, kind: 'note',
+      body: payload.note || `Assigned next action: ${payload.nextAction}; due ${payload.nextActionDue}.`,
+    })
+    eventFailed = Boolean(eventErr)
+    if (eventErr) console.error('Handoff note insert failed:', eventErr.message)
+  }
   handoffNotice.value = terminal ? 'Screening outcome saved. Application closed.' : 'Assignment saved.'
   // The owner hears about it when they are newly assigned or the ask changed — not on every save.
-  const ownerChanged = payload.ownerId !== (current.owner_id ?? '') || payload.nextAction !== (current.next_action ?? '') || payload.stage !== current.stage_key
+  const ownerChanged = payload.ownerId !== (current.owner_id ?? '') || payload.nextAction !== (current.next_action ?? '') || Boolean(statusKey)
   if (!terminal && ownerChanged) handoffNotice.value += ' ' + deliverySentence(await deliverNotifications())
-  if (eventErr) handoffNotice.value += ' The timeline note could not be saved; the assignment and outcome were saved.'
+  if (eventFailed) handoffNotice.value += ' The timeline note could not be saved; the assignment was saved.'
   await load()
 }
 const answersSaving = ref(false)
@@ -203,7 +221,7 @@ const rejectDialog = ref<InstanceType<typeof RejectApplicationDialog> | null>(nu
 const confirmHireDialog = ref<InstanceType<typeof AddEmployeeDialog> | null>(null)
 const offerCard = ref<InstanceType<typeof ApplicationOfferCard> | null>(null)
 
-const guidance = computed(() => candidateNextStep(application.value?.stage_key ?? ''))
+const guidance = computed(() => candidateNextStep(application.value?.stage_key ?? '', application.value?.in_play ?? true))
 function focusSection(id: string): void {
   const section = document.getElementById(id)
   section?.scrollIntoView({ block: 'start' })
@@ -215,13 +233,15 @@ const criteria = computed(() => criteriaFor(application.value?.job?.scorecard_cr
 const canReview = computed(() =>
   application.value ? auth.can(application.value.company_id, 'candidates.review') : false,
 )
-const isTerminal = computed(() => ['hired', 'rejected', 'withdrawn'].includes(application.value?.stage_key ?? ''))
-const nextStages = computed(() => STAGE_NEXT[application.value?.stage_key ?? ''] ?? [])
+const isTerminal = computed(() => !(application.value?.in_play ?? true))
+// Closing the job marked it (plan 075): the mark shows where the status would, and no status is set until the job reopens.
+const closure = computed(() => (application.value ? closureLine(application.value.closed_at, application.value.closed_reason) : null))
+const statusLocked = computed(() => Boolean(closure.value) || application.value?.stage_key === 'hired')
 
 // Statuses (plan 054 at New and Screening, plan 068 at every stage): the
 // lookup labels the badge and the timeline — a retired status still reads —
 // and the newest event on this page judges "not responding" exactly as D3 does.
-const subStatuses = computed<SubStatus[]>(() => liveStatuses(subStatusRows.value))
+const rejectStatuses = computed(() => statusesByOutcome(subStatusRows.value, 'rejected'))
 const subStatusLabels = computed<Record<string, string>>(() => statusLabels(subStatusRows.value))
 const subStatusLabel = computed(() => subStatusLabels.value[application.value?.sub_status_key ?? ''] ?? '')
 const notRespondingNow = computed(() => {
@@ -229,7 +249,7 @@ const notRespondingNow = computed(() => {
   if (!a) return false
   const newest = events.value.reduce<string | null>((acc, e) => (acc && acc >= e.created_at ? acc : e.created_at), null)
   return notResponding(
-    { stage_key: a.stage_key, sub_status_key: a.sub_status_key, last_activity_at: newest, received_at: a.received_at, job_status: a.job?.status ?? '' },
+    { stage_key: a.stage_key, sub_status_key: a.sub_status_key, in_play: a.in_play, last_activity_at: newest, received_at: a.received_at, job_status: a.job?.status ?? '' },
     todayDb(),
   )
 })
@@ -263,10 +283,10 @@ const decisionInput = z.object({
   nextActionDue: z.union([z.literal(''), z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Choose a valid date.')]),
 })
 
-function stageBadgeClass(stage: string): string {
+function stageBadgeClass(stage: string, inPlay: boolean): string {
   if (stage === 'hired') return 'green'
+  if (!inPlay) return ''
   if (stage === 'offer') return 'amber'
-  if (stage === 'rejected' || stage === 'withdrawn') return ''
   return 'blue'
 }
 
@@ -295,7 +315,7 @@ async function load(): Promise<void> {
     supabase
       .from('applications')
       .select(
-        `id, job_id, company_id, stage_key, sub_status_key, updated_at, owner_id, next_action, next_action_due, source_channel_key, source_key,
+        `id, job_id, company_id, stage_key, sub_status_key, in_play, closed_at, closed_reason, updated_at, owner_id, next_action, next_action_due, source_channel_key, source_key,
          received_at, rejected_reason, withdrawn_reason, screening_answers, employment_period_id, custom,
          candidate:candidates(id, full_name, email, phone, linkedin_url, do_not_contact, do_not_contact_reason,
            contact_later, contact_again_after, custom),
@@ -405,7 +425,7 @@ async function saveDecision(): Promise<void> {
   const before = application.value
   application.value = { ...application.value, ...(data as Partial<Application>) }
   decisionSaved.value = true
-  const live = !['hired', 'rejected', 'withdrawn'].includes(before.stage_key)
+  const live = before.in_play
   const ownerChanged = data.owner_id !== before.owner_id || data.next_action !== before.next_action
   if (live && data.owner_id && ownerChanged) handoffNotice.value = 'Assignment saved. ' + deliverySentence(await deliverNotifications())
 }
@@ -434,54 +454,23 @@ async function addNote(): Promise<void> {
   await load()
 }
 
-async function changeStage(to: string, body?: string, extra: Record<string, unknown> = {}): Promise<void> {
+/** A quick move (plan 075): the stage's first open status, through the one door. */
+async function moveTo(stageKey: StageKey): Promise<void> {
   if (!application.value) return
   stageError.value = null
-  stageBusy.value = true
-  const from = application.value.stage_key
-  // Guard on the stage this screen last saw: a colleague who moved the
-  // application meanwhile makes this a no-op rather than a wrong transition.
-  const { data, error: err } = await supabase
-    .from('applications')
-    .update({ stage_key: to, ...extra })
-    .eq('id', application.value.id)
-    .eq('stage_key', from)
-    .select('id')
-    .maybeSingle()
-  if (err || !data) {
-    stageBusy.value = false
-    stageError.value = err
-      ? friendlyReview(err.message)
-      : 'This application changed since you opened it — reloading.'
-    if (!err) await load()
+  const target = firstOpenStatus(subStatusRows.value, stageKey)
+  if (!target) {
+    stageError.value = noStatusesHint(stageLabel(stageKey))
     return
   }
-  // The timeline entry feeds the recruitment report (interviewed, stale), so a
-  // failure here is shown rather than swallowed — the stage itself did move.
-  const { error: eventErr } = await supabase.from('application_events').insert({
-    application_id: application.value.id,
-    kind: 'stage_change',
-    from_stage_key: from,
-    to_stage_key: to,
-    body: body ?? null,
-    actor_id: auth.personId,
-  })
-  if (eventErr) {
-    stageError.value = `Stage moved, but the timeline entry could not be saved: ${eventErr.message}`
-    console.error('Stage-change event insert failed:', eventErr.message)
-  }
+  stageBusy.value = true
+  const result = await setApplicationStatus([application.value.id], target.key)
   stageBusy.value = false
+  if (result.error) {
+    stageError.value = result.error
+    return
+  }
   await load()
-}
-
-// The status chosen in the dialog rides with the stage move (0088's trigger
-// keeps it because it belongs to the stage arrived at); the reason is the
-// note, or the status itself when nothing more was written.
-function onDecided(payload: { mode: 'reject' | 'withdraw'; note: string; status: SubStatus | null }): void {
-  const reason = payload.status ? reasonFor(payload.status.label, payload.note) : payload.note
-  const status = payload.status ? { sub_status_key: payload.status.key } : {}
-  if (payload.mode === 'reject') void changeStage('rejected', reason, { rejected_reason: reason, ...status })
-  else void changeStage('withdrawn', reason, { withdrawn_reason: reason, ...status })
 }
 
 function openConfirmHire(): void {
@@ -507,13 +496,13 @@ function friendlyReview(message: string): string {
 async function loadSubStatuses(): Promise<void> {
   const { data, error: err } = await supabase
     .from('application_sub_statuses')
-    .select('key, stage_key, label, sort_order, archived_at')
+    .select('key, stage_key, label, sort_order, outcome, archived_at')
     .order('sort_order')
   if (err) {
     console.error('Sub-statuses load failed:', err.message)
     return
   }
-  subStatusRows.value = data ?? []
+  subStatusRows.value = (data ?? []) as SubStatusRow[]
 }
 
 onMounted(() => {
@@ -561,8 +550,9 @@ onMounted(() => {
           </p>
         </div>
         <div class="head-badges">
-          <span class="badge stage-badge" :class="stageBadgeClass(application.stage_key)">{{ application.stage_key }}</span>
-          <span v-if="subStatusLabel" class="badge sub-badge" data-testid="sub-badge">{{ subStatusLabel }}</span>
+          <span class="badge stage-badge" :class="stageBadgeClass(application.stage_key, application.in_play)">{{ application.stage_key }}</span>
+          <span v-if="closure" class="badge sub-badge" data-testid="closure-badge">{{ closure }}</span>
+          <span v-else-if="subStatusLabel" class="badge sub-badge" data-testid="sub-badge">{{ subStatusLabel }}</span>
           <span v-if="notRespondingNow" class="badge amber" data-testid="not-responding-badge">Not responding</span>
           <span
             v-if="contactRule"
@@ -584,8 +574,7 @@ onMounted(() => {
           <p v-if="!isTerminal && !application.owner">Assign an owner in Decision so this candidate has a clear point of contact.</p>
         </div>
         <template v-if="canReview && !isTerminal">
-          <button v-if="application.stage_key === 'new'" class="button" type="button" @click="openHandoff('start')">Start screening</button>
-          <button v-else-if="application.stage_key === 'screening'" class="button" type="button" @click="openHandoff('outcome')">Record screening outcome</button>
+          <button v-if="application.stage_key === 'screening'" class="button" type="button" @click="openHandoff('outcome')">Record screening outcome</button>
           <button v-else class="button" type="button" @click="focusSection(guidance.target)">{{ guidance.label }}</button>
           <button class="button secondary" type="button" @click="openHandoff('assign')">Edit assignment</button>
         </template>
@@ -696,6 +685,7 @@ onMounted(() => {
             :company-id="application.company_id"
             :can-review="canReview"
             :stage="application.stage_key"
+            :in-play="application.in_play"
           />
           </section>
 
@@ -768,7 +758,8 @@ onMounted(() => {
                   <button
                     class="button secondary small-btn"
                     type="button"
-                    :disabled="stageBusy"
+                    :disabled="stageBusy || statusLocked"
+                    :title="closure ? 'Reopen the job to set a status.' : undefined"
                     data-testid="log-outreach"
                     @click="statusDialog?.open()"
                   >
@@ -783,14 +774,13 @@ onMounted(() => {
                   </router-link>
                   <template v-else-if="!isTerminal">
                     <button
-                      v-for="a in nextStages.filter(s => s.to === 'offer')"
-                      :key="a.to"
+                      v-if="application.stage_key === 'interview'"
                       class="button secondary small-btn"
                       type="button"
                       :disabled="stageBusy"
-                      @click="changeStage(a.to)"
+                      @click="moveTo('offer')"
                     >
-                      {{ a.label }}
+                      Prepare offer
                     </button>
                     <button
                       v-if="application.stage_key === 'offer'"
@@ -805,7 +795,7 @@ onMounted(() => {
                       class="button secondary small-btn"
                       type="button"
                       :disabled="stageBusy"
-                      @click="rejectDialog?.open('reject', application.candidate?.full_name ?? '')"
+                      @click="rejectDialog?.open('reject', application.candidate?.full_name ?? '', [application.id])"
                     >
                       Reject
                     </button>
@@ -813,11 +803,12 @@ onMounted(() => {
                       class="button secondary small-btn"
                       type="button"
                       :disabled="stageBusy"
-                      @click="rejectDialog?.open('withdraw', application.candidate?.full_name ?? '')"
+                      @click="rejectDialog?.open('withdraw', application.candidate?.full_name ?? '', [application.id])"
                     >
                       Withdrawn
                     </button>
                   </template>
+                  <p v-else-if="closure" class="reason" data-testid="closure-line">{{ closure }}</p>
                   <p v-else-if="application.rejected_reason" class="reason">Rejected: {{ application.rejected_reason }}</p>
                   <p v-else-if="application.withdrawn_reason" class="reason">Withdrew: {{ application.withdrawn_reason }}</p>
                 </div>
@@ -832,10 +823,10 @@ onMounted(() => {
       ref="handoffDialog"
       :people="people"
       :save="saveHandoff"
-      :reject-statuses="subStatuses.filter((s) => s.stage_key === 'rejected')"
+      :reject-statuses="rejectStatuses"
     />
-    <RejectApplicationDialog ref="rejectDialog" :sub-statuses="subStatuses" @confirmed="onDecided" />
-    <StatusDialog ref="statusDialog" :applications="outreachApplications" :sub-statuses="subStatuses" @logged="load" />
+    <RejectApplicationDialog ref="rejectDialog" :rows="subStatusRows" @decided="load" />
+    <StatusDialog ref="statusDialog" :applications="outreachApplications" :rows="subStatusRows" @logged="load" />
     <AddEmployeeDialog ref="confirmHireDialog" @created="load" />
   </div>
 </template>

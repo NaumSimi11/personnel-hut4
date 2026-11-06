@@ -15,6 +15,7 @@ import { todayDb } from '@/lib/compensation'
 import { countOf, detachable, friendlyDetachError } from '@/lib/detachApplication'
 import { candidateDeletable, friendlyHardDeleteError } from '@/lib/hardDelete'
 import { missingRecordMessage } from '@/lib/missingRecord'
+import { closureLine } from '@/lib/stageStatuses'
 
 /**
  * The candidate's own record (plan 052): one person across every job —
@@ -61,6 +62,10 @@ type ApplicationRow = {
   id: string
   company_id: string
   stage_key: string
+  sub_status_key: string | null
+  in_play: boolean
+  closed_at: string | null
+  closed_reason: string | null
   received_at: string
   source_key: string | null
   /** Plan 060: what an undo has to look at before it is offered. */
@@ -190,10 +195,10 @@ function skillsFrom(text: string): string[] {
   return text.split(',').map((s) => s.trim()).filter((s) => s !== '')
 }
 
-function stageBadgeClass(stage: string): string {
+function stageBadgeClass(stage: string, inPlay: boolean): string {
   if (stage === 'hired') return 'green'
+  if (!inPlay) return ''
   if (stage === 'offer' || stage === 'interview') return 'amber'
-  if (stage === 'rejected' || stage === 'withdrawn') return ''
   return 'blue'
 }
 
@@ -205,6 +210,8 @@ function detachVerdict(a: ApplicationRow) {
   return detachable(
     {
       stage_key: a.stage_key,
+      sub_status_key: a.sub_status_key,
+      source_key: a.source_key,
       owner_id: a.owner_id,
       next_action: a.next_action,
       employment_period_id: a.employment_period_id,
@@ -264,7 +271,7 @@ async function load(): Promise<void> {
     supabase
       .from('applications')
       .select(
-        `id, company_id, stage_key, received_at, source_key, owner_id, next_action, employment_period_id, source_provider,
+        `id, company_id, stage_key, sub_status_key, in_play, closed_at, closed_reason, received_at, source_key, owner_id, next_action, employment_period_id, source_provider,
          application_events(count), interviews(count), offers(count), application_files(count),
          job:jobs(id, title, status, company:companies(name))`,
       )
@@ -493,7 +500,10 @@ onMounted(load)
                     <template v-if="a.source_key"> · via {{ sources.find((s) => s.key === a.source_key)?.label ?? a.source_key }}</template>
                   </small>
                 </div>
-                <span class="badge" :class="stageBadgeClass(a.stage_key)">{{ a.stage_key }}</span>
+                <span class="badge" :class="stageBadgeClass(a.stage_key, a.in_play)">{{ a.stage_key }}</span>
+                <span v-if="closureLine(a.closed_at, a.closed_reason)" class="badge" :data-testid="`candidate-closure-${a.id}`">
+                  {{ closureLine(a.closed_at, a.closed_reason) }}
+                </span>
                 <span v-if="a.job && a.job.status !== 'open'" class="badge" :data-testid="`candidate-job-status-${a.id}`">
                   job {{ a.job.status.replace('_', ' ') }}
                 </span>

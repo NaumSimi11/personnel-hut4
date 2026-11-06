@@ -300,6 +300,7 @@ export type Database = {
           archived_at: string | null
           key: string
           label: string
+          outcome: string
           sort_order: number
           stage_key: string
         }
@@ -307,6 +308,7 @@ export type Database = {
           archived_at?: string | null
           key: string
           label: string
+          outcome: string
           sort_order?: number
           stage_key: string
         }
@@ -314,6 +316,7 @@ export type Database = {
           archived_at?: string | null
           key?: string
           label?: string
+          outcome?: string
           sort_order?: number
           stage_key?: string
         }
@@ -330,11 +333,14 @@ export type Database = {
       applications: {
         Row: {
           candidate_id: string
+          closed_at: string | null
+          closed_reason: string | null
           company_id: string
           created_at: string
           custom: Json
           employment_period_id: string | null
           id: string
+          in_play: boolean
           job_id: string
           next_action: string | null
           next_action_due: string | null
@@ -353,11 +359,14 @@ export type Database = {
         }
         Insert: {
           candidate_id: string
+          closed_at?: string | null
+          closed_reason?: string | null
           company_id: string
           created_at?: string
           custom?: Json
           employment_period_id?: string | null
           id?: string
+          in_play?: boolean
           job_id: string
           next_action?: string | null
           next_action_due?: string | null
@@ -376,11 +385,14 @@ export type Database = {
         }
         Update: {
           candidate_id?: string
+          closed_at?: string | null
+          closed_reason?: string | null
           company_id?: string
           created_at?: string
           custom?: Json
           employment_period_id?: string | null
           id?: string
+          in_play?: boolean
           job_id?: string
           next_action?: string | null
           next_action_due?: string | null
@@ -5469,14 +5481,6 @@ export type Database = {
         Returns: Json
       }
       grant_access: { Args: { p: Json }; Returns: Json }
-      import_zoho_history: {
-        Args: { p_commit?: boolean; p_payload: Json }
-        Returns: Json
-      }
-      import_zoho_recruit: {
-        Args: { p_commit?: boolean; p_payload: Json }
-        Returns: Json
-      }
       issue_asset: { Args: { p_assignment_id: string }; Returns: Json }
       issue_kit_item: {
         Args: { p_asset_id?: string; p_index: number; p_request_id: string }

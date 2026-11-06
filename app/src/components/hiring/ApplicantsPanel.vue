@@ -4,9 +4,9 @@ import { useRoute } from 'vue-router'
 import { supabase } from '@/lib/supabase'
 import CompanyFilter from '@/components/CompanyFilter.vue'
 import { PIPELINE_STAGES } from '@/lib/dashboard'
-import { NOT_RESPONDING_FILTER, applicantRows, type ApplicantLite, type ApplicantRow } from '@/lib/hiringTabs'
+import { applicantRows, type ApplicantLite, type ApplicantRow } from '@/lib/hiringTabs'
 import { SUB_STATUS_STAGES, type SubStatusRow } from '@/lib/outreach'
-import { filterStagesFor, statusFilterGroups, statusLabels } from '@/lib/stageStatuses'
+import { NOT_RESPONDING_FILTER, filterStagesFor, statusFilterGroups, statusLabels } from '@/lib/stageStatuses'
 import { blockerCount, blockerWords, friendlyHardDeleteError } from '@/lib/hardDelete'
 import { FILE_BUCKET } from '@/lib/applicationFiles'
 import { useAuthStore } from '@/stores/auth'
@@ -26,10 +26,11 @@ import { useDialogStore } from '@/stores/dialogs'
  * the badge names a retired one too, and the status filter travels to the
  * query like the stage filter, narrowed to the chosen stage's statuses.
  * `?stage=` and `?status=` open the list already filtered — the Labels
- * page's "Review them first" (plan 069) links here that way.
+ * page's "Review them first" (plan 069) links here that way. Since plan 075
+ * "In progress" is `in_play`, a stage holds everyone who reached it, and a
+ * row its job's closing marked says so where its status would be.
  */
 const PAGE_CAP = 1000
-const CLOSED_STAGES = '(hired,rejected,withdrawn)'
 const CAPPED_NOTICE = 'Showing the newest 1,000 — narrow the filters to see older ones.'
 
 const loading = ref(true)
@@ -41,7 +42,7 @@ const applications = ref<ApplicantLite[]>([])
 const subStatusRows = ref<SubStatusRow[]>([])
 const subStatusLabels = computed<Record<string, string>>(() => statusLabels(subStatusRows.value))
 const route = useRoute()
-const STAGE_FILTERS = new Set(['live', 'all', NOT_RESPONDING_FILTER, 'withdrawn', ...PIPELINE_STAGES.map((s) => s.key)])
+const STAGE_FILTERS = new Set<string>(['live', 'all', NOT_RESPONDING_FILTER, ...PIPELINE_STAGES.map((s) => s.key)])
 function queryText(name: string): string {
   const raw = route.query[name]
   return typeof raw === 'string' ? raw : ''
@@ -60,10 +61,10 @@ const companies = computed(() => {
 })
 const rows = computed<ApplicantRow[]>(() => applicantRows(applications.value, { companyId: companyId.value, stage: stage.value, search: search.value }))
 
-function badgeClass(stageKey: string): string {
+function badgeClass(stageKey: string, inPlay: boolean): string {
   if (stageKey === 'hired') return 'green'
+  if (!inPlay) return ''
   if (stageKey === 'offer' || stageKey === 'interview') return 'amber'
-  if (stageKey === 'rejected' || stageKey === 'withdrawn') return ''
   return 'blue'
 }
 
@@ -114,14 +115,14 @@ async function load(): Promise<void> {
   let query = supabase
     .from('applications')
     .select(
-      `id, company_id, stage_key, sub_status_key, received_at, next_action, next_action_due,
+      `id, company_id, stage_key, sub_status_key, in_play, closed_at, closed_reason, received_at, next_action, next_action_due,
        application_files(count), interviews(count), offers(count),
        candidate:candidates(full_name, email, last_activity_at),
        job:jobs(id, title, status, company:companies(name)),
        owner:people!applications_owner_id_fkey(full_name)`,
     )
-  if (stageKey === 'live') query = query.not('stage_key', 'in', CLOSED_STAGES)
-  else if (stageKey === NOT_RESPONDING_FILTER) query = query.in('stage_key', [...SUB_STATUS_STAGES])
+  if (stageKey === 'live') query = query.eq('in_play', true)
+  else if (stageKey === NOT_RESPONDING_FILTER) query = query.eq('in_play', true).in('stage_key', [...SUB_STATUS_STAGES])
   else if (stageKey !== 'all') query = query.eq('stage_key', stageKey)
   if (status.value) query = query.eq('sub_status_key', status.value)
   const { data, error: err } = await query.order('received_at', { ascending: false }).limit(PAGE_CAP)
@@ -137,13 +138,13 @@ async function load(): Promise<void> {
 async function loadSubStatuses(): Promise<void> {
   const { data, error: err } = await supabase
     .from('application_sub_statuses')
-    .select('key, stage_key, label, sort_order, archived_at')
+    .select('key, stage_key, label, sort_order, outcome, archived_at')
     .order('sort_order')
   if (err) {
     console.error('Sub-statuses load failed:', err.message)
     return
   }
-  subStatusRows.value = data ?? []
+  subStatusRows.value = (data ?? []) as SubStatusRow[]
 }
 
 onMounted(() => {
@@ -174,7 +175,6 @@ watch(status, load)
             <option value="live">In progress</option>
             <option value="all">All stages</option>
             <option v-for="s in PIPELINE_STAGES" :key="s.key" :value="s.key">{{ s.label }}</option>
-            <option value="withdrawn">Withdrawn</option>
             <option :value="NOT_RESPONDING_FILTER">Not responding</option>
           </select>
         </label>
@@ -211,8 +211,9 @@ watch(status, load)
             <td>{{ r.position }}</td>
             <td>{{ r.company }}</td>
             <td>
-              <span class="badge" :class="badgeClass(r.stage)">{{ r.stageLabel }}</span>
-              <small v-if="r.subStatusKey && subStatusLabels[r.subStatusKey]" class="sub" data-testid="sub-badge">{{ subStatusLabels[r.subStatusKey] }}</small>
+              <span class="badge" :class="badgeClass(r.stage, r.inPlay)">{{ r.stageLabel }}</span>
+              <small v-if="r.closure" class="sub" data-testid="closure-badge">{{ r.closure }}</small>
+              <small v-else-if="r.subStatusKey && subStatusLabels[r.subStatusKey]" class="sub" data-testid="sub-badge">{{ subStatusLabels[r.subStatusKey] }}</small>
               <span v-if="r.notResponding" class="sub-badge amber" data-testid="not-responding-badge">Not responding</span>
             </td>
             <td>{{ r.received }}</td>

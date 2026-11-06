@@ -102,7 +102,8 @@ describe('dashboard', () => {
       2,
     )
     expect(rows.map((r) => r.id)).toEqual(['new', 'mid'])
-    expect(rows[0]).toMatchObject({ name: 'Cand', position: 'Role', stage: 'screening' })
+    expect(rows[0]).toMatchObject({ name: 'Cand', position: 'Role', stage: 'screening', inPlay: true })
+    expect(recentApplicants([app({ id: 'x', in_play: false })])[0]?.inPlay).toBe(false)
   })
 
   it('away today lists approved leave covering today, with the last day', () => {

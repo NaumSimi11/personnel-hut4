@@ -32,6 +32,19 @@ const RULE_KEYS: ReadonlySet<string> = new Set(['applied', 'sourced', 'contact_a
 export type LookupRow = { key: string; label: string; sort_order: number }
 /** What a status does to an application (0095): keeps it open, or closes it as rejected, withdrawn or hired. */
 export type Outcome = 'open' | 'rejected' | 'withdrew' | 'hired'
+const OUTCOME_LABEL: Record<Outcome, string> = {
+  open: 'Still in play',
+  rejected: 'Rejected',
+  withdrew: 'Withdrew',
+  hired: 'Hired',
+}
+/** What an admin may give a new status; "Hired" belongs to the hire alone. */
+export const OUTCOME_CHOICES: ReadonlyArray<{ value: Outcome; label: string }> = (['open', 'rejected', 'withdrew'] as const).map(
+  (value) => ({ value, label: OUTCOME_LABEL[value] }),
+)
+export function outcomeLabel(outcome: Outcome): string {
+  return OUTCOME_LABEL[outcome]
+}
 export type SubStatusRow = LookupRow & { stage_key: string; outcome: Outcome; archived_at: string | null }
 export type SubStatusGroup = { stageKey: string; stageLabel: string; rows: SubStatusRow[]; retired: SubStatusRow[] }
 

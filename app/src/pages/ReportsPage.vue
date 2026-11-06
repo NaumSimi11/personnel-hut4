@@ -5,6 +5,7 @@ import CompanyFilter from '@/components/CompanyFilter.vue'
 import RecruitmentTiming from '@/components/reports/RecruitmentTiming.vue'
 import { useAuthStore } from '@/stores/auth'
 import {
+  STAGE_HEADER,
   STAGE_ORDER,
   conversion,
   defaultRange,
@@ -31,16 +32,6 @@ const range = ref(defaultRange())
 const report = ref<RecruitmentReport | null>(null)
 const loading = ref(false)
 const error = ref<string | null>(null)
-
-const STAGE_LABELS: Record<(typeof STAGE_ORDER)[number], string> = {
-  new: 'New',
-  screening: 'Screening',
-  interview: 'Interview',
-  offer: 'Offer',
-  hired: 'Hired',
-  rejected: 'Rejected',
-  withdrawn: 'Withdrawn',
-}
 
 const kpiTiles = computed(() => {
   const k = report.value?.kpis
@@ -186,7 +177,7 @@ watch([companyId, () => range.value.from, () => range.value.to], load)
                   <th>Job</th>
                   <th>Status</th>
                   <th>Received</th>
-                  <th v-for="s in STAGE_ORDER" :key="s">{{ STAGE_LABELS[s] }}</th>
+                  <th v-for="s in STAGE_ORDER" :key="s">{{ STAGE_HEADER[s] }}</th>
                   <th>Hire rate</th>
                 </tr>
               </thead>

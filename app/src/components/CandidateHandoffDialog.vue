@@ -2,34 +2,48 @@
 import { computed, ref } from 'vue'
 import type { SubStatus } from '@/lib/outreach'
 
-/** `subStatusKey`: the Rejected status picked when the outcome is a rejection (plan 068), else ''. */
-export type HandoffPayload = { stage: string; ownerId: string; nextAction: string; nextActionDue: string; note: string; subStatusKey: string }
+/**
+ * Who acts next on an application, and — at Screening — what the screening
+ * decided. The page turns the outcome into a status (plan 075): Proceed sets
+ * Interview's first open status, Reject the Rejected status picked here,
+ * Follow up leaves the status alone.
+ */
+export type HandoffOutcome = 'interview' | 'screening' | 'rejected'
+/** `outcome` is null for an assignment edit; `subStatusKey` is the Rejected status picked, else ''. */
+export type HandoffPayload = {
+  outcome: HandoffOutcome | null
+  ownerId: string
+  nextAction: string
+  nextActionDue: string
+  note: string
+  subStatusKey: string
+}
+type Mode = 'assign' | 'outcome'
+
 const props = withDefaults(defineProps<{
   people: { id: string; full_name: string }[]
   save: (payload: HandoffPayload) => Promise<void>
   rejectStatuses?: SubStatus[]
 }>(), { rejectStatuses: () => [] })
 const dialog = ref<HTMLDialogElement | null>(null)
-const mode = ref<'assign' | 'start' | 'outcome'>('assign')
-const stage = ref('new')
-const outcome = ref('interview')
+const mode = ref<Mode>('assign')
+const outcome = ref<HandoffOutcome>('interview')
 const form = ref({ ownerId: '', nextAction: '', nextActionDue: '', note: '' })
 const rejectStatus = ref('')
 const busy = ref(false)
 const error = ref('')
-const title = computed(() => mode.value === 'start' ? 'Start screening' : mode.value === 'outcome' ? 'Record screening outcome' : 'Edit assignment')
+const title = computed(() => (mode.value === 'outcome' ? 'Record screening outcome' : 'Edit assignment'))
 const rejecting = computed(() => mode.value === 'outcome' && outcome.value === 'rejected')
 
-function open(next: typeof mode.value, currentStage: string, assignment: { ownerId: string; nextAction: string; nextActionDue: string }): void {
+function open(next: Mode, assignment: { ownerId: string; nextAction: string; nextActionDue: string }): void {
   mode.value = next
-  stage.value = currentStage
   outcome.value = 'interview'
   rejectStatus.value = ''
   // A new step gets its own due date; only an assignment edit keeps the current one.
   form.value = {
     ...assignment,
     note: '',
-    nextAction: next === 'start' ? assignment.nextAction || 'Phone screening' : next === 'outcome' ? 'Schedule interview' : assignment.nextAction,
+    nextAction: next === 'outcome' ? 'Schedule interview' : assignment.nextAction,
     nextActionDue: next === 'assign' ? assignment.nextActionDue : '',
   }
   error.value = ''
@@ -41,26 +55,29 @@ function changeOutcome(): void {
   form.value = { ...form.value, nextAction: outcome.value === 'interview' ? 'Schedule interview' : outcome.value === 'screening' ? 'Follow up on screening' : '', nextActionDue: '' }
 }
 
-async function submit(): Promise<void> {
-  error.value = ''
+function problem(): string {
   if (!rejecting.value && (!form.value.ownerId || !form.value.nextAction.trim() || !form.value.nextActionDue)) {
-    error.value = 'Choose an owner, a next action, and a due date.'; return
+    return 'Choose an owner, a next action, and a due date.'
   }
-  if (rejecting.value && props.rejectStatuses.length && !rejectStatus.value) {
-    error.value = 'Pick why the application is rejected.'; return
+  if (rejecting.value && !props.rejectStatuses.length) return 'No Rejected statuses yet. An admin adds them under Hiring → Labels.'
+  if (rejecting.value && !rejectStatus.value) return 'Pick why the application is rejected.'
+  // A rejection names its status, so its note may stay empty.
+  if (mode.value === 'outcome' && !rejecting.value && form.value.note.trim().length < 5) {
+    return 'Record a short screening outcome.'
   }
-  // A rejection that names its status may leave the note empty (plan 068 D6).
-  const statusSaysWhy = rejecting.value && Boolean(rejectStatus.value)
-  if (mode.value === 'outcome' && !statusSaysWhy && form.value.note.trim().length < 5) {
-    error.value = 'Record a short screening outcome or rejection reason.'; return
-  }
+  return ''
+}
+
+async function submit(): Promise<void> {
+  error.value = problem()
+  if (error.value) return
   busy.value = true
   try {
     await props.save({
       ...form.value,
       nextAction: form.value.nextAction.trim(),
       note: form.value.note.trim(),
-      stage: mode.value === 'start' ? 'screening' : mode.value === 'outcome' ? outcome.value : stage.value,
+      outcome: mode.value === 'outcome' ? outcome.value : null,
       subStatusKey: rejecting.value ? rejectStatus.value : '',
     })
     dialog.value?.close()
@@ -78,14 +95,14 @@ async function submit(): Promise<void> {
       <fieldset :disabled="busy">
         <template v-if="mode === 'outcome'">
           <div class="field"><label for="handoff-outcome">Outcome</label><select id="handoff-outcome" v-model="outcome" @change="changeOutcome"><option value="interview">Proceed to interview</option><option value="screening">Follow up</option><option value="rejected">Reject</option></select></div>
-          <div v-if="rejecting && rejectStatuses.length" class="field">
+          <div v-if="rejecting" class="field">
             <label for="handoff-reject-status">Status</label>
             <select id="handoff-reject-status" v-model="rejectStatus" data-testid="handoff-reject-status">
               <option value="">Choose why</option>
               <option v-for="s in rejectStatuses" :key="s.key" :value="s.key">{{ s.label }}</option>
             </select>
           </div>
-          <div class="field"><label for="handoff-note">Screening outcome / reason</label><textarea id="handoff-note" v-model="form.note" rows="4" maxlength="2000"></textarea></div>
+          <div class="field"><label for="handoff-note">{{ rejecting ? 'Anything to add? (optional)' : 'Screening outcome' }}</label><textarea id="handoff-note" v-model="form.note" rows="4" maxlength="2000"></textarea></div>
         </template>
         <template v-if="!rejecting">
           <div class="field"><label for="handoff-owner">Owner</label><select id="handoff-owner" v-model="form.ownerId"><option value="">Choose an owner</option><option v-for="p in people" :key="p.id" :value="p.id">{{ p.full_name }}</option></select></div>
@@ -94,7 +111,7 @@ async function submit(): Promise<void> {
         </template>
       </fieldset>
       <p v-if="error" class="error-note" role="alert">{{ error }}</p>
-      <div class="actions"><button class="button secondary" type="button" :disabled="busy" @click="dialog?.close()">Cancel</button><button class="button" type="submit" :disabled="busy">{{ busy ? 'Saving…' : mode === 'outcome' ? 'Save outcome and next step' : mode === 'start' ? 'Start screening' : 'Save assignment' }}</button></div>
+      <div class="actions"><button class="button secondary" type="button" :disabled="busy" @click="dialog?.close()">Cancel</button><button class="button" type="submit" :disabled="busy">{{ busy ? 'Saving…' : mode === 'outcome' ? 'Save outcome and next step' : 'Save assignment' }}</button></div>
     </form>
   </dialog>
 </template>

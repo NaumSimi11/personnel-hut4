@@ -2,11 +2,13 @@ import { describe, expect, it } from 'vitest'
 import {
   STAGES,
   STAGE_LABEL,
+  closureLine,
   contactHint,
+  firstOpenStatus,
   filterStagesFor,
   liveStatuses,
   noStatusesHint,
-  reasonFor,
+  pickableStatusGroups,
   statusChangeLine,
   statusEventTitle,
   statusFilterGroups,
@@ -124,16 +126,6 @@ describe('noStatusesHint', () => {
   })
 })
 
-describe('reasonFor', () => {
-  it('keeps the note as the reason when there is one', () => {
-    expect(reasonFor('Rejected by HR', '  Salary far apart. ')).toBe('Salary far apart.')
-  })
-
-  it('falls back to the status itself', () => {
-    expect(reasonFor('Rejected by HR', '   ')).toBe('Rejected by HR')
-  })
-})
-
 describe('filterStagesFor', () => {
   it('offers only statuses the list can show', () => {
     expect(filterStagesFor('live')).toEqual(['screening', 'interview', 'offer'])
@@ -156,5 +148,67 @@ describe('contactHint', () => {
   it('says nothing for any other status', () => {
     expect(contactHint('job_closed')).toBeNull()
     expect(contactHint('')).toBeNull()
+  })
+})
+
+describe('pickableStatusGroups', () => {
+  const pickable: SubStatusRow[] = [
+    ...rows,
+    { key: 'hired', stage_key: 'hired', outcome: 'hired', label: 'Hired', sort_order: 10, archived_at: null },
+    { key: 'rejected_by_hr', stage_key: 'interview', outcome: 'rejected', label: 'Rejected by HR', sort_order: 200, archived_at: null },
+  ]
+
+  it('groups every live status by stage, leaving out retired ones and Hired', () => {
+    expect(pickableStatusGroups(pickable)).toEqual([
+      { stageKey: 'screening', stageLabel: 'Screening', options: [{ key: 'contacted', label: 'In conversation' }] },
+      {
+        stageKey: 'interview',
+        stageLabel: 'Interview',
+        options: [
+          { key: 'interview_hr', label: 'Interview 1 – HR' },
+          { key: 'interview_stakeholders', label: 'Interview 2 – Stakeholders' },
+          { key: 'rejected_by_hr', label: 'Rejected by HR' },
+        ],
+      },
+      { stageKey: 'offer', stageLabel: 'Offered', options: [{ key: 'job_closed', label: 'Job closed' }] },
+    ])
+  })
+
+  it('narrows to one outcome when asked', () => {
+    expect(pickableStatusGroups(pickable, 'rejected')).toEqual([
+      { stageKey: 'interview', stageLabel: 'Interview', options: [{ key: 'rejected_by_hr', label: 'Rejected by HR' }] },
+    ])
+  })
+})
+
+describe('firstOpenStatus', () => {
+  const stageRows: SubStatusRow[] = [
+    { key: 'rejected_by_hr', stage_key: 'interview', outcome: 'rejected', label: 'Rejected by HR', sort_order: 5, archived_at: null },
+    { key: 'interview_scheduled', stage_key: 'interview', outcome: 'open', label: 'Interview-Scheduled', sort_order: 20, archived_at: null },
+    { key: 'interview_to_schedule', stage_key: 'interview', outcome: 'open', label: 'Interview-to-be-Scheduled', sort_order: 10, archived_at: null },
+    { key: 'old_first', stage_key: 'interview', outcome: 'open', label: 'Old', sort_order: 1, archived_at: '2026-10-01T00:00:00Z' },
+  ]
+
+  it('is the stage’s first live status that keeps the application open', () => {
+    expect(firstOpenStatus(stageRows, 'interview')?.key).toBe('interview_to_schedule')
+  })
+
+  it('is null when the stage has none', () => {
+    expect(firstOpenStatus(stageRows, 'offer')).toBeNull()
+  })
+})
+
+describe('closureLine', () => {
+  it('reads the reason and the day the job closed it', () => {
+    expect(closureLine('2026-11-06T09:30:00Z', 'Position filled.')).toBe('Job closed — Position filled (2026-11-06)')
+  })
+
+  it('leaves the reason out when there is none', () => {
+    expect(closureLine('2026-11-06T09:30:00Z', null)).toBe('Job closed (2026-11-06)')
+    expect(closureLine('2026-11-06T09:30:00Z', '  ')).toBe('Job closed (2026-11-06)')
+  })
+
+  it('is null for an application nothing closed', () => {
+    expect(closureLine(null, 'Position filled.')).toBeNull()
   })
 })

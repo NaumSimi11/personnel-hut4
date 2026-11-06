@@ -66,6 +66,14 @@ export function statusesByOutcome(rows: ReadonlyArray<SubStatusRow>, outcome: Ou
   return liveStatuses(rows.filter((r) => r.outcome === outcome))
 }
 
+/**
+ * The first live status of a stage that keeps the application in play — what
+ * a quick "Move to interview" or "Prepare offer" sets. Null when the stage has none.
+ */
+export function firstOpenStatus(rows: ReadonlyArray<SubStatusRow>, stageKey: string): SubStatus | null {
+  return liveStatuses(rows.filter((r) => r.stage_key === stageKey && r.outcome === 'open'))[0] ?? null
+}
+
 function labelOfStage(key: string): string {
   return (STAGE_LABEL as Record<string, string>)[key] ?? key
 }
@@ -85,6 +93,28 @@ export function statusFilterGroups(rows: ReadonlyArray<SubStatusRow>, stageKeys?
     stageLabel: labelOfStage(s),
     options: sorted.filter((r) => r.stage_key === s).map((r) => ({ key: r.key, label: displayLabel(r) })),
   }))
+}
+
+/**
+ * The status picker's groups: every live status by stage — picking one moves
+ * the application to its stage — or only those of one outcome (Reject,
+ * Withdraw). "Hired" is never offered: it is set by confirming the hire.
+ */
+export function pickableStatusGroups(rows: ReadonlyArray<SubStatusRow>, outcome?: Outcome): StatusFilterGroup[] {
+  return statusFilterGroups(
+    rows.filter((r) => r.archived_at === null && r.outcome !== 'hired' && (!outcome || r.outcome === outcome)),
+  )
+}
+
+/**
+ * "Job closed — Position filled (2026-11-06)": what an application its job's
+ * closing marked shows where its status would be. Null when nothing closed it.
+ */
+export function closureLine(closedAt: string | null, closedReason: string | null): string | null {
+  if (!closedAt) return null
+  const reason = (closedReason ?? '').trim().replace(/\.$/, '')
+  const day = closedAt.slice(0, 10)
+  return reason ? `Job closed — ${reason} (${day})` : `Job closed (${day})`
 }
 
 /**
@@ -124,9 +154,4 @@ export function statusEventTitle(stageKey: string): 'Outreach' | 'Status' {
 
 export function noStatusesHint(stage: string): string {
   return `No statuses at ${stage} yet. An admin adds them under Hiring → Labels.`
-}
-
-/** A reject or withdrawal records its reason: the note when written, else the status chosen. */
-export function reasonFor(statusLabel: string, note: string): string {
-  return note.trim() || statusLabel
 }

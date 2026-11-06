@@ -5,7 +5,10 @@ import { expect, test } from '@playwright/test'
  * Candidate review, part one (plan 018a): the candidate page gathers the
  * application's material — files in a private bucket behind signed links,
  * answers to the job's screening questions, notes and stage history — and
- * the decision panel records owner, next action and a reasoned rejection.
+ * the decision panel records owner, next action and a rejection. Since plan
+ * 075 the rejection is a status picked in the Reject picker ("Rejected by
+ * HR"), set through set_application_status: the application keeps the stage
+ * it reached and stops being in play.
  * Seeds a job with questions and one application with the service client;
  * cleans up rows and objects before and after.
  */
@@ -123,7 +126,9 @@ test('candidate page: files behind signed links, screening answers, decision, no
   await expect(page).toHaveURL(new RegExp(`/hiring/applications/${applicationId}$`))
   await expect(page.getByRole('heading', { name: CANDIDATE_NAME })).toBeVisible()
   await expect(page.getByText(CANDIDATE_EMAIL)).toBeVisible()
-  await expect(page.locator('.stage-badge')).toHaveText('new')
+  // A careers application lands on Screening / New.
+  await expect(page.locator('.stage-badge')).toHaveText('screening')
+  await expect(page.getByTestId('sub-badge')).toHaveText('New')
 
   // Files: upload a CV; it lists with size and a download that works only when signed.
   // Two files cards sit on the page since 052 (this application's and the candidate's);
@@ -165,15 +170,16 @@ test('candidate page: files behind signed links, screening answers, decision, no
     { question_id: 'q-eligible', answer: 'yes' },
   ])
 
-  // One guided action saves the stage, owner and deadline together.
-  await page.getByRole('button', { name: 'Start screening', exact: true }).click()
-  const handoff = page.getByRole('dialog', { name: 'Start screening' })
-  await handoff.getByRole('button', { name: 'Start screening', exact: true }).click()
+  // One guided action saves the owner and deadline together.
+  await page.getByRole('button', { name: 'Edit assignment' }).click()
+  const handoff = page.getByRole('dialog', { name: 'Edit assignment' })
+  await handoff.locator('#handoff-action').fill('')
+  await handoff.getByRole('button', { name: 'Save assignment' }).click()
   await expect(handoff.getByRole('alert')).toBeVisible()
   await handoff.locator('#handoff-owner').selectOption({ label: 'Naum Simidjioski' })
   await handoff.locator('#handoff-action').fill('Phone screen')
   await handoff.locator('#handoff-due').fill('2026-10-01')
-  await handoff.getByRole('button', { name: 'Start screening', exact: true }).click()
+  await handoff.getByRole('button', { name: 'Save assignment' }).click()
   await expect(page.locator('.stage-badge')).toHaveText('screening')
   // The owner was notified in the app by the database; email delivery reports its state honestly.
   await expect(page.getByRole('status')).toContainText(/Assignment saved\. Notified/)
@@ -209,28 +215,44 @@ test('candidate page: files behind signed links, screening answers, decision, no
   await timeline.getByRole('button', { name: 'Add note' }).click()
   await expect(timeline.locator('.event-row', { hasText: 'Strong warehouse background' })).toBeVisible()
 
-  // Stage move from the panel, then a rejection with a required reason.
+  // Proceeding sets Interview's first open status, then a rejection is a status picked in the Reject picker.
   await page.getByRole('button', { name: 'Record screening outcome' }).click()
   await page.getByRole('dialog').locator('#handoff-note').fill('Screening passed; arrange technical interview.')
   await page.getByRole('dialog').locator('#handoff-due').fill('2030-01-22')
   await page.getByRole('dialog').getByRole('button', { name: 'Save outcome and next step' }).click()
   await expect(page.locator('.stage-badge')).toHaveText('interview')
+  await expect(page.getByTestId('sub-badge')).toHaveText('Interview-to-be-Scheduled')
   await page.locator('.decision-panel').getByRole('button', { name: 'Reject', exact: true }).click()
-  const dialog = page.getByRole('dialog')
+  const dialog = page.getByTestId('reject-dialog')
+  // Only statuses whose outcome is Rejected are offered; nothing picked is refused.
+  await expect(dialog.getByTestId('reject-status-rejected_by_hr')).toBeVisible()
+  await expect(dialog.getByTestId('reject-status-candidate_withdrew')).toHaveCount(0)
   await dialog.getByRole('button', { name: 'Reject application' }).click()
-  await expect(dialog.getByText('Give the reason')).toBeVisible()
+  await expect(dialog.getByText('Pick why the application is rejected.')).toBeVisible()
+  await dialog.getByTestId('reject-status-rejected_by_hr').check()
   await dialog.locator('#reject-reason').fill('Not enough scheduling experience for this role.')
   await dialog.getByRole('button', { name: 'Reject application' }).click()
-  await expect(page.locator('.stage-badge')).toHaveText('rejected')
-  await expect(timeline.locator('.event-row', { hasText: 'interview → rejected' })).toBeVisible()
-  await expect(timeline.locator('.event-row', { hasText: 'Not enough scheduling experience' })).toBeVisible()
+  await expect(dialog).not.toBeVisible()
+  await expect(page.locator('.stage-badge')).toHaveText('interview')
+  await expect(page.getByTestId('sub-badge')).toHaveText('Rejected by HR')
+  await expect(
+    timeline.locator('.event-row', { hasText: 'Status: Interview-to-be-Scheduled → Rejected by HR · Not enough scheduling experience' }),
+  ).toBeVisible()
 
-  const { data: rejected } = await db.from('applications').select('stage_key, rejected_reason, next_action').eq('id', applicationId).single()
-  expect(rejected?.stage_key).toBe('rejected')
-  expect(rejected?.rejected_reason).toBe('Not enough scheduling experience for this role.')
+  const { data: rejected } = await db
+    .from('applications')
+    .select('stage_key, sub_status_key, in_play, rejected_reason, next_action')
+    .eq('id', applicationId)
+    .single()
+  expect(rejected?.stage_key).toBe('interview')
+  expect(rejected?.sub_status_key).toBe('rejected_by_hr')
+  expect(rejected?.in_play).toBe(false)
+  expect(rejected?.rejected_reason).toBe('Rejected by HR')
   expect(rejected?.next_action).toBe('Schedule interview')
 
-  // Back on the job, the row shows the owner and the terminal stage.
+  // Back on the job, the row shows the owner and the status.
   await page.getByRole('link', { name: '← Back to the job' }).click()
-  await expect(page.locator('.application-row', { hasText: CANDIDATE_NAME })).toContainText('Naum Simidjioski')
+  const jobRow = page.locator('.application-row', { hasText: CANDIDATE_NAME })
+  await expect(jobRow).toContainText('Naum Simidjioski')
+  await expect(jobRow.getByTestId('sub-badge')).toHaveText('Rejected by HR')
 })

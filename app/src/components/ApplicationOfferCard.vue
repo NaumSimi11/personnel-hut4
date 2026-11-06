@@ -38,7 +38,11 @@ type Offer = {
   approver: { full_name: string } | null
 }
 
-const props = defineProps<{ applicationId: string; companyId: string; canReview: boolean; stage: string }>()
+/** `inPlay` false: rejected, withdrawn, hired or closed with its job — no new offer is drafted. */
+const props = withDefaults(
+  defineProps<{ applicationId: string; companyId: string; canReview: boolean; stage: string; inPlay?: boolean }>(),
+  { inPlay: true },
+)
 const emit = defineEmits<{ accepted: [terms: OfferTerms] }>()
 
 const auth = useAuthStore()
@@ -58,7 +62,7 @@ const form = ref<OfferTermsForm>(termsFromOffer(null))
 const can = (cap: string) => auth.can(props.companyId, cap)
 const live = computed(() => offers.value.find((o) => !['declined', 'withdrawn'].includes(o.status)) ?? null)
 const history = computed(() => offers.value.filter((o) => o.id !== live.value?.id))
-const canDraft = computed(() => props.canReview && !live.value && ['interview', 'offer'].includes(props.stage))
+const canDraft = computed(() => props.canReview && props.inPlay && !live.value && ['interview', 'offer'].includes(props.stage))
 
 function actionsFor(o: Offer) {
   return offerActions(o, auth.personId, can)
@@ -256,8 +260,9 @@ defineExpose({ reload: load, liveTerms: () => (live.value ? terms(live.value) : 
 
     <div v-if="loading" class="empty">Loading offer…</div>
     <div v-else-if="!live && !editing" class="empty">
-      <template v-if="['interview', 'offer'].includes(stage)">No offer drafted yet.</template>
-      <template v-else-if="stage === 'hired'">Hired — the accepted offer is in the history below.</template>
+      <template v-if="stage === 'hired'">Hired — the accepted offer is in the history below.</template>
+      <template v-else-if="!inPlay">This application is closed, so no offer is drafted.</template>
+      <template v-else-if="['interview', 'offer'].includes(stage)">No offer drafted yet.</template>
       <template v-else>An offer can be drafted once the candidate reaches the interview stage.</template>
     </div>
     <div v-else-if="live" class="offer-body">

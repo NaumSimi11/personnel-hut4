@@ -52,7 +52,7 @@ function emptyCounts(): Record<BoardColumnKey, number> {
   return { screening: 0, interview: 0, offer: 0, hired: 0, closed: 0 }
 }
 
-/** One row per job anybody applied to, busiest first; a job the viewer cannot read keeps its row, untitled. */
+/** One row per job anybody applied to, busiest first; a job the viewer cannot read has no row. */
 export function jobBoard(summary: HiringSummary, jobs: ReadonlyArray<JobLite>, today: string): BoardRow[] {
   const known = new Map(jobs.map((j) => [j.id, j]))
   const rows = new Map<string, BoardRow>()
@@ -60,15 +60,16 @@ export function jobBoard(summary: HiringSummary, jobs: ReadonlyArray<JobLite>, t
     const column = columnOf(r.stage_key, r.in_play)
     if (!column) continue
     const job = known.get(r.job_id)
+    if (!job) continue
     const row = rows.get(r.job_id) ?? {
       jobId: r.job_id,
-      title: job?.title ?? '—',
-      company: job?.company?.name ?? '—',
+      title: job.title,
+      company: job.company?.name ?? '—',
       counts: emptyCounts(),
       total: 0,
       inPlay: 0,
       furthest: null,
-      daysOpen: daysSince(job?.opened_at, today),
+      daysOpen: daysSince(job.opened_at, today),
     }
     rows.set(r.job_id, {
       ...row,

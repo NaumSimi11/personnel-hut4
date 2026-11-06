@@ -14,7 +14,7 @@ begin;
 -- the companies where the caller holds candidates.view:
 --   by_job         applications on ready/open/on_hold jobs, per job, stage and in_play
 --   not_responding applications app.not_responding flags (the report's rule)
---   recent         the five newest applications still in play
+--   recent         the five newest applications still in play, on those same live jobs
 create or replace function public.hiring_summary() returns jsonb
 language plpgsql stable security definer set search_path = public as $$
 declare
@@ -59,6 +59,7 @@ begin
         join public.jobs j on j.id = a.job_id
         join public.companies co on co.id = a.company_id
        where a.company_id = any (v_visible) and a.in_play
+         and j.status in ('ready', 'open', 'on_hold')
        order by a.received_at desc, a.id
        limit 5
     ) r;
@@ -87,8 +88,7 @@ begin
      group by a.job_id;
 end $$;
 
-revoke all on function public.hiring_summary() from public;
-revoke all on function public.opening_counts(uuid[]) from public;
+revoke all on function public.hiring_summary(), public.opening_counts(uuid[]) from public, anon;
 grant execute on function public.hiring_summary() to authenticated;
 grant execute on function public.opening_counts(uuid[]) to authenticated;
 

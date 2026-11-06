@@ -32,7 +32,7 @@ describe('jobBoard', () => {
   })
 
   it('marks the furthest stage anyone has reached, never the closed column', () => {
-    const rows = jobBoard(summaryOf([row('a', 'screening'), row('a', 'offer'), row('b', 'interview', false), row('c', 'hired')]), [], '2026-09-24')
+    const rows = jobBoard(summaryOf([row('a', 'screening'), row('a', 'offer'), row('b', 'interview', false), row('c', 'hired')]), [job('a', 'A'), job('b', 'B'), job('c', 'C')], '2026-09-24')
     const furthest = Object.fromEntries(rows.map((r) => [r.jobId, r.furthest]))
     expect(furthest).toEqual({ a: 'offer', b: null, c: 'hired' })
   })
@@ -45,9 +45,9 @@ describe('jobBoard', () => {
     expect(rows[1]!.daysOpen).toBeNull()
   })
 
-  it('has no row for a job nobody applied to, and an untitled one for a job the viewer cannot read', () => {
+  it('has no row for a job nobody applied to, and none for a job the viewer cannot read', () => {
     expect(jobBoard(summaryOf([]), [job('x', 'X')], '2026-09-24')).toEqual([])
-    expect(jobBoard(summaryOf([row('ghost', 'screening')]), [], '2026-09-24')[0]).toMatchObject({ title: '—', company: '—' })
+    expect(jobBoard(summaryOf([row('ghost', 'screening')]), [], '2026-09-24')).toEqual([])
   })
 })
 

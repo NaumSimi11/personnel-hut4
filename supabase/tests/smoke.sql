@@ -9140,6 +9140,12 @@ begin
 end $$;
 reset role;
 drop table zz97_expected;
+do $$
+begin
+  assert not has_function_privilege('anon', 'public.hiring_summary()', 'execute'), '0097-summary: anon cannot run hiring_summary';
+  assert not has_function_privilege('anon', 'public.opening_counts(uuid[])', 'execute'), '0097-summary: anon cannot run opening_counts';
+  assert has_function_privilege('authenticated', 'public.hiring_summary()', 'execute'), '0097-summary: authenticated can run hiring_summary';
+end $$;
 -- Someone with no candidates.view anywhere (Omar) sees empty counts.
 set app.test_uid = '00000000-0000-0000-0000-000000000003';
 set role authenticated;

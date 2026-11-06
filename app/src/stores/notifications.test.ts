@@ -93,6 +93,7 @@ describe('notifications bell', () => {
     store.stop()
     expect(fakeDocument.listeners.size).toBe(0)
     await vi.advanceTimersByTimeAsync(0)
+    // The mocked count is 3: had the late answer been applied, unread would be 3.
     expect(store.unread).toBe(0)
   })
 })

@@ -130,6 +130,7 @@ const matching = ref(0)
 const queueRows = ref<ApplicationRow[]>([])
 const hiredRows = ref<ApplicationRow[]>([])
 const loadingMore = ref(false)
+const listLoading = ref(false)
 const hasMore = computed(() => applications.value.length < matching.value)
 const channels = ref<ChannelLite[]>([])
 const loading = ref(true)
@@ -365,8 +366,10 @@ async function loadList(): Promise<void> {
   const ticket = listGate.next()
   appError.value = null
   loadingMore.value = false
+  listLoading.value = true
   const page = await fetchApplicationPage(0)
   if (!listGate.isCurrent(ticket)) return
+  listLoading.value = false
   if (page.error) {
     appError.value = 'Could not load applications. Check your access and connection.'
     console.error('Applications load failed:', page.error.message)
@@ -382,7 +385,7 @@ async function loadList(): Promise<void> {
 }
 
 async function loadMoreApplications(): Promise<void> {
-  if (loadingMore.value || !hasMore.value) return
+  if (listLoading.value || loadingMore.value || !hasMore.value) return
   const ticket = listGate.snapshot()
   loadingMore.value = true
   appError.value = null
@@ -1079,7 +1082,7 @@ onMounted(async () => {
           </div>
           <div v-if="hasMore" class="load-more">
             <span>Showing {{ applications.length }} of {{ matching }}</span>
-            <button class="button secondary" type="button" :disabled="loadingMore" data-testid="load-more-applications" @click="loadMoreApplications">
+            <button class="button secondary" type="button" :disabled="loadingMore || listLoading" data-testid="load-more-applications" @click="loadMoreApplications">
               {{ loadingMore ? 'Loading…' : 'Load more' }}
             </button>
           </div>

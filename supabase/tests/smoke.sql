@@ -6159,7 +6159,8 @@ begin
     = 'Headcount withdrawn for the year.', 'nor overwrite the reason';
 end $$;
 
--- 4. Reopening clears the job's stamp; the people who were told keep their status.
+-- 4. Reopening clears the job's stamp; the applications its closure marked return
+--    to play with their status (0096), the finished ones stay finished.
 do $$
 begin
   update public.jobs set status = 'open' where id = '70000000-0000-0000-0000-000000000711';
@@ -6169,6 +6170,18 @@ begin
   assert (select count(*) from public.applications
            where job_id = '70000000-0000-0000-0000-000000000711' and sub_status_key in ('applied', 'interview_to_schedule')) = 3,
     'reopening does not change anybody''s status';
+  assert (select count(*) from public.applications
+           where job_id = '70000000-0000-0000-0000-000000000711' and in_play and closed_at is null) = 3
+     and (select count(*) from public.applications
+           where job_id = '70000000-0000-0000-0000-000000000711' and not in_play
+             and id in ('90000000-0000-0000-0000-000000000714', '90000000-0000-0000-0000-000000000715')) = 2,
+    'reopening returns the three marked to play; the hire and the rejection stay finished';
+  assert (select count(*) from public.application_events
+           where application_id in ('90000000-0000-0000-0000-000000000711', '90000000-0000-0000-0000-000000000712',
+                                    '90000000-0000-0000-0000-000000000713')
+             and kind = 'status_change' and body = 'Job reopened.'
+             and actor_id = '20000000-0000-0000-0000-000000000005') = 3,
+    'one Job reopened event each, the caller as actor';
   -- ...and closing again re-stamps it, so the columns and the status never disagree.
   update public.jobs set status = 'closed' where id = '70000000-0000-0000-0000-000000000711';
   assert (select closed_at is not null and closed_by = '20000000-0000-0000-0000-000000000005'
@@ -8930,11 +8943,16 @@ set role authenticated;
 do $$
 declare r jsonb;
 begin
-  r := public.withdraw_in_play('70000000-0000-0000-0000-000000000963', null);
+  r := public.withdraw_in_play('70000000-0000-0000-0000-000000000963', '  Role went to an internal move. ');
   assert r = '{"withdrawn": 1}'::jsonb, '0096-e: withdraw_in_play: ' || r::text;
-  assert (select sub_status_key = 'contacted' and closed_reason = 'Position filled.' and not in_play
+  assert (select sub_status_key = 'contacted' and closed_reason = 'Role went to an internal move.' and not in_play
             from public.applications where id = '90000000-0000-0000-0000-000000000966'),
-    '0096-e: withdraw_in_play puts the same mark';
+    '0096-e: withdraw_in_play puts the mark, status untouched, the typed reason trimmed';
+  assert (select count(*) from public.application_events
+           where application_id = '90000000-0000-0000-0000-000000000966' and kind = 'status_change'
+             and body = 'Role went to an internal move.'
+             and actor_id = '20000000-0000-0000-0000-000000000005') = 1,
+    '0096-e: the closure event carries the trimmed reason and the caller (Bea) as actor';
   r := public.withdraw_in_play('70000000-0000-0000-0000-000000000963', null);
   assert r = '{"withdrawn": 0}'::jsonb, '0096-e: nobody left: ' || r::text;
   -- 0096-g again, on a filled job.
@@ -8971,6 +8989,11 @@ end $$;
 -- 0096-j: create_employee refuses an application that is not in play.
 do $$
 begin
+  -- ...961 is at the offer stage (0096-a) and carries the closure mark (0096-b):
+  -- only "not in play" can refuse it.
+  assert (select stage_key = 'offer' and closed_at is not null and not in_play
+            from public.applications where id = '90000000-0000-0000-0000-000000000961'),
+    '0096-j: fixture is an offer-stage application with the closure mark';
   begin
     perform public.create_employee(jsonb_build_object(
       'application_id', '90000000-0000-0000-0000-000000000961', 'full_name', 'Smoke 0096 1',
@@ -8979,6 +9002,39 @@ begin
   exception when raise_exception then
     assert sqlerrm = 'Only applications at the offer stage can be confirmed as hires.', '0096-j: message: ' || sqlerrm;
   end;
+end $$;
+
+reset role;
+set app.test_uid = '';
+-- 0096-l: reopening a job lifts the closure mark, except where the candidate
+-- already has another application in play on the job (the reopen still succeeds).
+insert into public.jobs (id, company_id, title, status, custom) values
+  ('70000000-0000-0000-0000-000000000964', '10000000-0000-0000-0000-00000000000b', 'Smoke 0096 reopen', 'closed', '{}');
+insert into public.applications (id, job_id, company_id, candidate_id, stage_key, sub_status_key, closed_at, closed_reason) values
+  ('90000000-0000-0000-0000-00000000096c', '70000000-0000-0000-0000-000000000964', '10000000-0000-0000-0000-00000000000b',
+   '80000000-0000-0000-0000-000000000961', 'interview', 'interview_hr', now(), 'Budget cut'),
+  ('90000000-0000-0000-0000-00000000096d', '70000000-0000-0000-0000-000000000964', '10000000-0000-0000-0000-00000000000b',
+   '80000000-0000-0000-0000-000000000962', 'interview', 'interview_hr', now(), 'Budget cut');
+insert into public.applications (id, job_id, company_id, candidate_id, stage_key, sub_status_key) values
+  ('90000000-0000-0000-0000-00000000096e', '70000000-0000-0000-0000-000000000964', '10000000-0000-0000-0000-00000000000b',
+   '80000000-0000-0000-0000-000000000961', 'screening', 'contacted');
+do $$
+begin
+  update public.jobs set status = 'open' where id = '70000000-0000-0000-0000-000000000964';
+  assert (select in_play and closed_at is null and closed_reason is null and sub_status_key = 'interview_hr'
+            from public.applications where id = '90000000-0000-0000-0000-00000000096d'),
+    '0096-l: a marked row returns to play with its status';
+  assert (select not in_play and closed_at is not null and closed_reason = 'Budget cut'
+            from public.applications where id = '90000000-0000-0000-0000-00000000096c'),
+    '0096-l: a row whose candidate is in play elsewhere on the job stays marked';
+  assert (select status from public.jobs where id = '70000000-0000-0000-0000-000000000964') = 'open',
+    '0096-l: the reopen itself succeeded';
+  assert (select count(*) from public.application_events
+           where application_id in ('90000000-0000-0000-0000-00000000096c', '90000000-0000-0000-0000-00000000096d')
+             and body = 'Job reopened.' and actor_id is null) = 1
+     and exists (select 1 from public.application_events
+                  where application_id = '90000000-0000-0000-0000-00000000096d' and body = 'Job reopened.'),
+    '0096-l: one Job reopened event, for the reopened row only (no caller: null actor)';
 end $$;
 
 -- 0096-k: removing a status moves the withdrawn_reason by outcome, the way it

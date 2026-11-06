@@ -14,6 +14,9 @@
 --   applications still in play and leaves their status alone (the user's
 --   decision, 2026-11-05). One helper, app.close_in_play, does it for all
 --   three.
+-- * Reopening the job (status leaves closed or filled) lifts that mark again,
+--   app.reopen_job_applications, unless the candidate has another application
+--   in play on the job.
 -- * The Zoho importers and the old status mappers are dropped; the CSV
 --   import (a later migration) replaces them.
 --
@@ -62,6 +65,35 @@ begin
   select count(*) into v_n from ev;
   return v_n;
 end $$;
+
+-- ------------------------------------------------------- reopening a job
+-- When a job leaves closed or filled, the applications its closure marked
+-- come back into play with their status. One status_change event each
+-- ('Job reopened.'). A row whose candidate meanwhile has another application
+-- in play on the job stays marked: the reopen never fails over it.
+create or replace function app.reopen_job_applications() returns trigger
+language plpgsql security definer set search_path = public as $$
+declare v_a record;
+begin
+  if old.status in ('closed', 'filled') and new.status not in ('closed', 'filled') then
+    for v_a in select a.id, a.stage_key, a.sub_status_key from public.applications a
+                where a.job_id = new.id and a.closed_at is not null
+                order by a.received_at, a.id loop
+      begin
+        update public.applications set closed_at = null, closed_reason = null where id = v_a.id;
+        insert into public.application_events
+          (application_id, actor_id, kind, body, from_stage_key, to_stage_key, from_sub_status_key, to_sub_status_key)
+        values (v_a.id, app.current_person_id(), 'status_change', 'Job reopened.',
+                v_a.stage_key, v_a.stage_key, v_a.sub_status_key, v_a.sub_status_key);
+      exception when unique_violation then
+        null;  -- another application of this candidate is in play on the job
+      end;
+    end loop;
+  end if;
+  return new;
+end $$;
+create trigger t5_reopen_applications after update of status on public.jobs
+  for each row execute function app.reopen_job_applications();
 
 -- ------------------------------------------------------------ fill on hire
 -- 0090, plus the closure mark: the hire that fills the job closes the rest
@@ -1002,5 +1034,6 @@ end $$;
 -- create or replace keeps each function's grants; only the new helper needs
 -- closing off.
 revoke all on function app.close_in_play(uuid, uuid, text) from public;
+revoke all on function app.reopen_job_applications() from public;
 
 commit;

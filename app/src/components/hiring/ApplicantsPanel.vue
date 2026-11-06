@@ -14,6 +14,7 @@ import { useDialogStore } from '@/stores/dialogs'
 import { useHiringLookupsStore } from '@/stores/hiringLookups'
 import { LIST_PAGE } from '@/lib/pageAll'
 import { likePattern } from '@/lib/likePattern'
+import { createRequestGate } from '@/lib/requestGate'
 
 /**
  * The prototype's "Applicants" tab (plan 044): every application across
@@ -123,7 +124,7 @@ const COLUMNS = `id, company_id, stage_key, sub_status_key, in_play, closed_at, 
 /** One window of the list; the stage, status and name filters all run in the query. */
 function fetchPage(from: number) {
   const stageKey = stage.value
-  let query = supabase.from('applications').select(COLUMNS, { count: 'exact' }) // bounded: paged by .range below
+  let query = supabase.from('applications').select(COLUMNS, { count: 'exact' })
   if (stageKey === 'live') query = query.eq('in_play', true)
   else if (stageKey === NOT_RESPONDING_FILTER) query = query.eq('in_play', true).in('stage_key', [...SUB_STATUS_STAGES])
   else if (stageKey !== 'all') query = query.eq('stage_key', stageKey)
@@ -133,10 +134,16 @@ function fetchPage(from: number) {
   return query.order('received_at', { ascending: false }).order('id').range(from, from + LIST_PAGE - 1)
 }
 
+// A newer load (or a filter change) retires the answers still on the way.
+const gate = createRequestGate()
+
 async function load(): Promise<void> {
+  const ticket = gate.next()
   loading.value = true
+  loadingMore.value = false
   error.value = null
   const { data, count, error: err } = await fetchPage(0)
+  if (!gate.isCurrent(ticket)) return
   loading.value = false
   if (err) {
     error.value = 'Could not load the applicants.'
@@ -148,9 +155,11 @@ async function load(): Promise<void> {
 }
 
 async function loadMore(): Promise<void> {
-  if (loadingMore.value || !hasMore.value) return
+  if (loading.value || loadingMore.value || !hasMore.value) return
+  const ticket = gate.snapshot()
   loadingMore.value = true
   const { data, count, error: err } = await fetchPage(applications.value.length)
+  if (!gate.isCurrent(ticket)) return
   loadingMore.value = false
   if (err) {
     error.value = 'Could not load more applicants.'

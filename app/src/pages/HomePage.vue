@@ -308,14 +308,15 @@ async function load(): Promise<void> {
       )
       .eq('status', 'submitted'),
     supabase
-      .from('applications') // bounded: only the offers still out, one row each
+      .from('applications')
       .select(
         `id,
          candidate:candidates(full_name),
          job:jobs(id, title, company:companies(name))`,
       )
       .eq('stage_key', 'offer')
-      .eq('in_play', true),
+      .eq('in_play', true)
+      .limit(LIST_PAGE),
     supabase
       .from('plans')
       .select(

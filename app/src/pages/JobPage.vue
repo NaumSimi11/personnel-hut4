@@ -34,6 +34,7 @@ import {
 import { setApplicationStatus } from '@/lib/applicationStatus'
 import { todayDb } from '@/lib/compensation'
 import { LIST_PAGE } from '@/lib/pageAll'
+import { createRequestGate } from '@/lib/requestGate'
 import { useHiringLookupsStore } from '@/stores/hiringLookups'
 import { friendlyDetachError } from '@/lib/detachApplication'
 import {
@@ -126,6 +127,8 @@ const lookups = useHiringLookupsStore()
 const counts = ref({ in_play: 0, hired: 0, total: 0 })
 const stageInPlay = ref<Record<string, number>>({})
 const matching = ref(0)
+const queueRows = ref<ApplicationRow[]>([])
+const hiredRows = ref<ApplicationRow[]>([])
 const loadingMore = ref(false)
 const hasMore = computed(() => applications.value.length < matching.value)
 const channels = ref<ChannelLite[]>([])
@@ -219,7 +222,7 @@ watch(notRespondingOnly, () => {
   const visible = new Set(visibleApplications.value.map((a) => a.id))
   selectedIds.value = selectedIds.value.filter((id) => visible.has(id))
 })
-watch(subStatusFilter, () => void loadApplications())
+watch(subStatusFilter, () => void loadList())
 
 function openOutreach(rows: ApplicationRow[]): void {
   outreachTarget.value = rows
@@ -236,7 +239,7 @@ const inPipeline = computed(() =>
 )
 const hiredCount = computed(() => counts.value.hired)
 const activeCount = computed(() => counts.value.in_play)
-const actionQueue = computed(() => candidateQueue(applications.value))
+const actionQueue = computed(() => candidateQueue(queueRows.value))
 const liveChannels = computed(() => channels.value.filter(isPublished).length)
 // A draft role has nothing in it yet, and four tiles reading zero say so less
 // clearly than the status card above them already does.
@@ -349,10 +352,21 @@ async function fetchApplicationPage(from: number) {
   return query.order('created_at', { ascending: true }).order('id').range(from, from + LIST_PAGE - 1)
 }
 
-/** First window again (after a filter or a change), plus the header counts. */
+// A newer list load (a filter change, an action) retires answers still on the way.
+const listGate = createRequestGate()
+
+/** Everything the page shows about applications: the list window, header counts, Overview lists. */
 async function loadApplications(): Promise<void> {
+  await Promise.all([loadList(), loadCounts(), loadOverviewLists()])
+}
+
+/** First window of the list again (after a filter or a change). */
+async function loadList(): Promise<void> {
+  const ticket = listGate.next()
   appError.value = null
-  const [page] = await Promise.all([fetchApplicationPage(0), loadCounts()])
+  loadingMore.value = false
+  const page = await fetchApplicationPage(0)
+  if (!listGate.isCurrent(ticket)) return
   if (page.error) {
     appError.value = 'Could not load applications. Check your access and connection.'
     console.error('Applications load failed:', page.error.message)
@@ -363,14 +377,17 @@ async function loadApplications(): Promise<void> {
   // A row that is no longer on this job leaves the selection with it.
   selectedIds.value = selectedIds.value.filter((id) => applications.value.some((a) => a.id === id))
   lastActivity.value = {}
-  await loadLastActivity(applications.value.map((a) => a.id))
+  activityTruncated.value = false
+  await loadLastActivity(applications.value.map((a) => a.id), ticket)
 }
 
 async function loadMoreApplications(): Promise<void> {
   if (loadingMore.value || !hasMore.value) return
+  const ticket = listGate.snapshot()
   loadingMore.value = true
   appError.value = null
   const page = await fetchApplicationPage(applications.value.length)
+  if (!listGate.isCurrent(ticket)) return
   loadingMore.value = false
   if (page.error) {
     appError.value = 'Could not load more applications. Check your connection and try again.'
@@ -380,7 +397,28 @@ async function loadMoreApplications(): Promise<void> {
   const rows = (page.data ?? []) as unknown as ApplicationRow[]
   applications.value = [...applications.value, ...rows]
   matching.value = page.count ?? matching.value
-  await loadLastActivity(rows.map((a) => a.id))
+  await loadLastActivity(rows.map((a) => a.id), ticket)
+}
+
+/** Overview's action queue and hired list: their own bounded queries, not the paged list. */
+async function loadOverviewLists(): Promise<void> {
+  const [queue, hired] = await Promise.all([
+    supabase
+      .from('applications')
+      .select(APPLICATION_COLUMNS)
+      .eq('job_id', jobId)
+      .eq('in_play', true)
+      .order('next_action_due', { ascending: true, nullsFirst: false })
+      .order('id')
+      .limit(LIST_PAGE),
+    supabase.from('applications').select(APPLICATION_COLUMNS).eq('job_id', jobId).eq('stage_key', 'hired').order('id').limit(LIST_PAGE),
+  ])
+  if (queue.error || hired.error) {
+    console.error('Overview lists load failed:', (queue.error ?? hired.error)?.message)
+    return
+  }
+  queueRows.value = (queue.data ?? []) as unknown as ApplicationRow[]
+  hiredRows.value = (hired.data ?? []) as unknown as ApplicationRow[]
 }
 
 /** opening_counts for the header, and who is in play at each open stage (head-only counts). */
@@ -412,7 +450,7 @@ async function loadCounts(): Promise<void> {
  * Asked for the ids just loaded (a window of 50), newest first and capped at 1,000 rows: a full page means the
  * result may be a prefix, and the fallback above stops applying (isNotResponding).
  */
-async function loadLastActivity(ids: string[]): Promise<void> {
+async function loadLastActivity(ids: string[], ticket: number): Promise<void> {
   if (!ids.length) return
   const since = new Date(`${todayDb()}T00:00:00Z`)
   since.setUTCDate(since.getUTCDate() - NOT_RESPONDING_DAYS)
@@ -423,6 +461,7 @@ async function loadLastActivity(ids: string[]): Promise<void> {
     .gte('created_at', since.toISOString())
     .order('created_at', { ascending: false })
     .limit(ACTIVITY_CAP)
+  if (!listGate.isCurrent(ticket)) return
   if (err) {
     console.error('Application activity load failed:', err.message)
     return
@@ -733,7 +772,7 @@ onMounted(async () => {
         </section>
         <section v-if="hiredCount" class="card journey-queue" aria-label="Hired candidates">
           <div class="card-head"><div><h2>Hired &middot; continue to onboarding</h2><p>Review each new colleague's preparations and employee record.</p></div></div>
-          <div v-for="a in applications.filter(a => a.stage_key === 'hired')" :key="a.id" class="journey-candidate">
+          <div v-for="a in hiredRows" :key="a.id" class="journey-candidate">
             <div><strong>{{ a.candidate?.full_name ?? 'New colleague' }}</strong><p>Hire confirmed</p></div>
             <router-link class="button secondary small-btn" :to="{ name: 'application', params: { applicationId: a.id } }">View onboarding handoff</router-link>
           </div>
@@ -958,7 +997,7 @@ onMounted(async () => {
             </label>
             <label class="filter check">
               <input v-model="notRespondingOnly" type="checkbox" data-testid="filter-not-responding" />
-              <span>Not responding only</span>
+              <span>Not responding only (among loaded)</span>
             </label>
             <span v-if="selectedIds.length" class="selection-note" data-testid="selection-count">{{ selectedIds.length }} selected</span>
           </div>

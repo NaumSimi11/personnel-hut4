@@ -31,16 +31,20 @@ export const useNotificationsStore = defineStore('notifications', () => {
   const loaded = ref(false)
   const unread = ref(0)
   let timer: ReturnType<typeof setInterval> | null = null
+  // Bumped by stop(): a count that resolves after sign-out must not repaint the bell.
+  let session = 0
 
   const tabVisible = () => document.visibilityState === 'visible'
 
   /** How many unread, unarchived notifications are mine: a count only, no rows. */
   async function refreshUnread(): Promise<void> {
+    const mine = session
     const { count, error } = await supabase
       .from('notifications')
       .select('id', { count: 'exact', head: true })
       .is('read_at', null)
       .is('archived_at', null)
+    if (mine !== session) return
     if (error) {
       console.error('Unread count failed:', error.message)
       return
@@ -113,6 +117,7 @@ export const useNotificationsStore = defineStore('notifications', () => {
     document.addEventListener('visibilitychange', onVisibilityChange)
   }
   function stop(): void {
+    session += 1
     if (timer) clearInterval(timer)
     timer = null
     document.removeEventListener('visibilitychange', onVisibilityChange)

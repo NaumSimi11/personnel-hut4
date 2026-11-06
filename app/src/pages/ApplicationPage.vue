@@ -318,7 +318,7 @@ async function load(): Promise<void> {
   error.value = null
   const [appRes, eventsRes, peopleRes, channelsRes] = await Promise.all([
     supabase
-      .from('applications') // bounded: one application, by id
+      .from('applications')
       .select(
         `id, job_id, company_id, stage_key, sub_status_key, in_play, closed_at, closed_reason, updated_at, owner_id, next_action, next_action_due, source_channel_key, source_key,
          received_at, rejected_reason, withdrawn_reason, screening_answers, employment_period_id, custom,

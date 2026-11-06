@@ -259,7 +259,7 @@ async function load(): Promise<void> {
   void lookups.ensure()
   const [candidateRes, appsRes] = await Promise.all([
     supabase
-      .from('candidates') // bounded: one candidate, by id
+      .from('candidates')
       .select(
         `id, full_name, email, phone, linkedin_url, current_title, current_employer, location, skills, summary,
          referred_by, source_key, provider, provider_ref, sourced_by, created_at, archived_at,
@@ -272,7 +272,7 @@ async function load(): Promise<void> {
       .eq('id', candidateId)
       .maybeSingle(),
     supabase
-      .from('applications') // bounded: one candidate's own applications
+      .from('applications')
       .select(
         `id, company_id, stage_key, sub_status_key, in_play, closed_at, closed_reason, received_at, source_key, owner_id, next_action, employment_period_id, source_provider,
          application_events(count), interviews(count), offers(count), application_files(count),

@@ -84,4 +84,15 @@ describe('notifications bell', () => {
     expect(from).toHaveBeenCalledTimes(1)
     store.stop()
   })
+
+  it('removes the visibility listener on stop and ignores a count that lands after it', async () => {
+    setVisibility('visible')
+    const store = useNotificationsStore()
+    store.start()
+    expect(fakeDocument.listeners.size).toBe(1)
+    store.stop()
+    expect(fakeDocument.listeners.size).toBe(0)
+    await vi.advanceTimersByTimeAsync(0)
+    expect(store.unread).toBe(0)
+  })
 })

@@ -13,8 +13,24 @@ export type RestorePlan = { uploads: RestoreUpload[]; skipped: RestoreSkip[] }
 
 const orNull = (v: string | undefined): string | null => (v === undefined || v === '' ? null : v)
 
+/**
+ * The Zoho Candidate ID (ZR_…_CAND) of a backup candidate. The old import
+ * keyed candidates by Zoho's internal id (provider_ref "Zrecruit_…") and kept
+ * the display id in custom.zoho.display_id; the new import keys by the
+ * display id. '' for a manual candidate (no provider_ref).
+ */
+export function zohoCandidateId(c: CsvRow): string {
+  if ((c.provider_ref ?? '') === '') return ''
+  try {
+    const displayId = (JSON.parse(c.custom || '{}') as { zoho?: { display_id?: unknown } }).zoho?.display_id
+    return typeof displayId === 'string' && displayId !== '' ? displayId : c.provider_ref
+  } catch {
+    return c.provider_ref
+  }
+}
+
 export function planRestore(oldCandidates: CsvRow[], oldFiles: CsvRow[], newIdByRef: ReadonlyMap<string, string>): RestorePlan {
-  const refByOldId = new Map(oldCandidates.map((c) => [c.id, c.provider_ref ?? '']))
+  const refByOldId = new Map(oldCandidates.map((c) => [c.id, zohoCandidateId(c)]))
   const uploads: RestoreUpload[] = []
   const skipped: RestoreSkip[] = []
   for (const f of oldFiles) {

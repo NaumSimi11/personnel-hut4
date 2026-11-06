@@ -2,8 +2,17 @@ import { describe, expect, it } from 'vitest'
 import { parseCsv } from './csv.js'
 import { planRestore } from './restoreFiles.js'
 
+// The backup's shape: the old import keyed Zoho candidates by Zoho's internal
+// id (provider_ref "Zrecruit_…"); the display id the new import uses
+// (ZR_…_CAND) sits in custom.zoho.display_id.
+const zoho = (displayId: string) => `"{""zoho"": {""display_id"": ""${displayId}""}}"`
 const candidates = parseCsv(
-  ['id,full_name,provider,provider_ref', 'c-zoho,A,zoho_recruit,ZR_1_CAND', 'c-manual,B,manual,', 'c-gone,C,zoho_recruit,ZR_9_CAND'].join('\n'),
+  [
+    'id,full_name,provider,provider_ref,custom',
+    `c-zoho,A,zoho_recruit,Zrecruit_101,${zoho('ZR_1_CAND')}`,
+    'c-manual,B,manual,,{}',
+    `c-gone,C,zoho_recruit,Zrecruit_109,${zoho('ZR_9_CAND')}`,
+  ].join('\n'),
 )
 const fileHeader = 'id,candidate_id,kind,storage_path,original_name,mime_type,size_bytes,uploaded_by,extracted_text,provider,provider_ref,created_at'
 const files = parseCsv(

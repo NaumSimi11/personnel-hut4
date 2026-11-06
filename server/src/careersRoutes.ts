@@ -174,7 +174,7 @@ export async function registerCareersRoutes(app: FastifyInstance): Promise<void>
         // column is not unique): one open application per person per role.
         const { data: priorApps } = await db
           .from('applications')
-          .select('stage_key, candidate:candidates!inner(email)')
+          .select('in_play, candidate:candidates!inner(email)')
           .eq('job_id', job.id)
           .eq('candidate.email', input.email)
         if (isDuplicateApplication(priorApps ?? [])) {

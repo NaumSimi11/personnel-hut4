@@ -129,9 +129,9 @@ describe('publicCompany / publicBrief', () => {
 })
 
 describe('isDuplicateApplication', () => {
-  it('is true only for a non-terminal application to the same job', () => {
-    expect(isDuplicateApplication([{ stage_key: 'new' }])).toBe(true)
-    expect(isDuplicateApplication([{ stage_key: 'rejected' }, { stage_key: 'withdrawn' }])).toBe(false)
+  it('is true only when an application to the same job is still in play', () => {
+    expect(isDuplicateApplication([{ in_play: false }])).toBe(false)
+    expect(isDuplicateApplication([{ in_play: false }, { in_play: true }])).toBe(true)
     expect(isDuplicateApplication([])).toBe(false)
   })
 })

@@ -207,11 +207,9 @@ export function summaryOf(description: string | null, max = 200): string {
 
 // ----------------------------------------------------------------- duplicates
 
-const TERMINAL = new Set(['hired', 'rejected', 'withdrawn'])
-
 /** The same person applying again for a role they are still in the running for. */
-export function isDuplicateApplication(existing: { stage_key: string }[]): boolean {
-  return existing.some((a) => !TERMINAL.has(a.stage_key))
+export function isDuplicateApplication(existing: { in_play: boolean }[]): boolean {
+  return existing.some((a) => a.in_play)
 }
 
 /** What the candidate gets back — enough to quote, not an internal id. */

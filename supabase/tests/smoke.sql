@@ -9150,4 +9150,64 @@ drop table kit_0094_owners;
 delete from public.grant_capabilities where grant_id = '40000000-0000-0000-0000-000000000003'
    and capability_key in ('it.view', 'it.assign', 'it.complete');
 
+-- ================================================================ 0095
+-- Zoho's four stages and 37 statuses, each with an outcome; in_play and the
+-- closure mark (plan 075).
+do $$
+declare v_a uuid; v_b uuid; v_c uuid;
+  j constant uuid := '70000000-0000-0000-0000-000000000951';
+  c constant uuid := '80000000-0000-0000-0000-000000000951';
+  co constant uuid := '10000000-0000-0000-0000-00000000000a';
+begin
+  assert (select count(*) from public.application_sub_statuses) = 37, '37 statuses';
+  assert (select string_agg(key, ',' order by sort_order) from public.application_stages) = 'screening,interview,offer,hired',
+    'four stages';
+
+  insert into public.jobs (id, company_id, title, status) values (j, co, 'Smoke 0095 role', 'open');
+  insert into public.candidates (id, full_name, email) values (c, 'Smoke Zoho', 'smoke-0095@example.test');
+
+  -- 0095-a: defaults
+  insert into public.applications (job_id, company_id, candidate_id) values (j, co, c) returning id into v_a;
+  assert (select stage_key = 'screening' and sub_status_key = 'applied' and in_play from public.applications where id = v_a),
+    '0095-a: no stage means screening / applied / in play';
+  update public.applications set stage_key = 'interview', sub_status_key = 'rejected_general' where id = v_a;
+  -- 0095-b: a rejected status takes the application out of play
+  assert (select not in_play from public.applications where id = v_a), '0095-b: rejected is out of play';
+
+  -- 0095-c: the same candidate and job can apply again; a third while the second is in play cannot
+  insert into public.applications (job_id, company_id, candidate_id, source_key) values (j, co, c, 'head_hunt') returning id into v_b;
+  assert (select sub_status_key = 'sourced' and in_play from public.applications where id = v_b), '0095-a: head_hunt starts at sourced';
+  begin
+    insert into public.applications (job_id, company_id, candidate_id) values (j, co, c);
+    assert false, '0095-c: a third in-play application must be refused';
+  exception when unique_violation then null;
+  end;
+
+  -- 0095-b: closed_at takes an open one out of play
+  update public.applications set closed_at = now() where id = v_b;
+  assert (select not in_play from public.applications where id = v_b), '0095-b: closed_at takes it out of play';
+  update public.applications set closed_at = null where id = v_b;
+  assert (select in_play from public.applications where id = v_b), 'and clearing it puts it back';
+
+  -- 0095-d: an outcome in use cannot change; an unused one can
+  begin
+    update public.application_sub_statuses set outcome = 'open' where key = 'rejected_general';
+    assert false, '0095-d: outcome change on a used status must be refused';
+  exception when sqlstate '22023' then
+    assert sqlerrm = '"Rejected" is in use — its outcome cannot change.', 'message: ' || sqlerrm;
+  end;
+  update public.application_sub_statuses set outcome = 'rejected' where key = 'rejected_by_hr';
+  -- a rule key cannot be retired
+  begin
+    update public.application_sub_statuses set archived_at = now() where key = 'applied';
+    assert false, 'the rule key applied cannot be retired';
+  exception when check_violation then null;
+  end;
+
+  delete from public.applications where job_id = j;
+  delete from public.application_events where body is not null and application_id in (v_a, v_b);
+  delete from public.jobs where id = j;
+  delete from public.candidates where id = c;
+end $$;
+
 select 'SMOKE TESTS PASSED' as result;

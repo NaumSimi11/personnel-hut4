@@ -53,7 +53,17 @@ const ENTRY_BREAK = /\r?\n[ \t]*\r?\n(?=\[\d{4}-\d{2}-\d{2} \d{2}:\d{2}\] )/
 const cell = (r: CsvRow, column: string): string => (r[column] ?? '').trim()
 const blank = (value: string): string | null => (value === '' ? null : value)
 /** Zoho lists several recruiters in one cell ("; " or ", "); the first one owns the application. */
-const firstName = (value: string): string | null => blank(value.split(/[;,]/).map((n) => n.trim()).find((n) => n !== '') ?? '')
+/**
+ * Zoho writes a hire date as "2024-04-12 00:00"; the import wants the day.
+ * Anything else is passed on as written, so the import refuses it rather
+ * than this guessing.
+ */
+const hiredDay = (value: string): string | null => {
+  const day = /^(\d{4}-\d{2}-\d{2})(?: 00:00)?$/.exec(value.trim())
+  return day ? day[1] : blank(value)
+}
+
+const firstName =(value: string): string | null => blank(value.split(/[;,]/).map((n) => n.trim()).find((n) => n !== '') ?? '')
 
 /** The notes log of one application: entries split on blank lines, newest first. */
 export function splitNotesLog(log: string, tz: string): ParsedNote[] {
@@ -135,7 +145,7 @@ function buildJobRow(r: CsvRow, jobColumns: string[], ctx: Ctx): JobRow | null {
     sub_status_key: statusKey,
     received_at: stamp(ctx, ref, 'Associated On', cell(r, 'Associated On')) ?? stamp(ctx, ref, 'Candidate Last Activity', cell(r, 'Candidate Last Activity')),
     status_at: stamp(ctx, ref, 'Status Last Updated', cell(r, 'Status Last Updated')),
-    hired_date: blank(cell(r, 'Hired Date')),
+    hired_date: hiredDay(cell(r, 'Hired Date')),
     owner_name: firstName(cell(r, 'Assigned Recruiter(s)')),
     custom: { zoho: zohoColumns(r, jobColumns, [COL.ignored, COL.notesLog]) },
   }

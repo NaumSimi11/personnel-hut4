@@ -101,6 +101,14 @@ describe('buildJobViewPayload problems', () => {
     expect(r.payload.candidates).toEqual([])
   })
 
+  it('keeps only the date of a Hired Date written with a time, as the real export does', () => {
+    const r = buildJobViewPayload(
+      csv(line({ 'Candidate ID': '9', 'Full Name': 'X', 'Job Opening ID': 'JO-9', 'Status for this Job': 'Hired', 'Hired Date': '2024-04-12 00:00' })),
+      { tz: TZ },
+    )
+    expect(r.payload.applications[0].hired_date).toBe('2024-04-12')
+  })
+
   it('reports an unknown source', () => {
     const r = buildJobViewPayload(csv(line({ 'Candidate ID': '9', 'Full Name': 'X', Source: 'Pigeon' })), { tz: TZ })
     expect(r.problems).toHaveLength(1)

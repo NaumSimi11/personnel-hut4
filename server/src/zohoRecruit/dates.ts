@@ -127,3 +127,10 @@ export function longDate(iso: string, tz: string): string {
   const w = wallClockOf(new Date(iso), tz)
   return `${String(w.day).padStart(2, '0')} ${MONTHS[w.month - 1]} ${w.year}`
 }
+
+/** `YYYY-MM-DD HH:MM` — the Candidate-Job View stamps, local to `tz`. */
+export function parseLocalMinute(value: string, tz: string): string | null {
+  const m = /^(\d{4})-(\d{2})-(\d{2}) (\d{2}):(\d{2})$/.exec(value.trim())
+  if (!m) return null
+  return toIso({ year: Number(m[1]), month: Number(m[2]), day: Number(m[3]), hour: Number(m[4]), minute: Number(m[5]), second: 0 }, tz)
+}

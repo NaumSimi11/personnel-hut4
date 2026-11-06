@@ -3,6 +3,7 @@ import {
   longDate,
   parseEducationMonth,
   parseIsoDate,
+  parseLocalMinute,
   parseUsDate,
   parseUsDateTime,
   parseSqlDateTime,
@@ -114,5 +115,18 @@ describe('longDate', () => {
     expect(longDate('2024-03-12T23:30:00.000Z', TZ)).toBe('13 Mar 2024')
     // zero-padded like the SQL fallback's to_char(…, 'DD Mon YYYY')
     expect(longDate('2024-03-05T09:15:00.000Z', TZ)).toBe('05 Mar 2024')
+  })
+})
+
+describe('parseLocalMinute', () => {
+  it('reads a local YYYY-MM-DD HH:MM as UTC', () => {
+    expect(parseLocalMinute('2023-02-13 15:38', TZ)).toBe('2023-02-13T14:38:00.000Z')
+    expect(parseLocalMinute('2023-07-13 15:38', TZ)).toBe('2023-07-13T13:38:00.000Z')
+  })
+  it('returns null for blanks and other shapes', () => {
+    expect(parseLocalMinute('', TZ)).toBeNull()
+    expect(parseLocalMinute('2023-02-13', TZ)).toBeNull()
+    expect(parseLocalMinute('2023-02-13 15:38:00', TZ)).toBeNull()
+    expect(parseLocalMinute('2023-02-30 15:38', TZ)).toBeNull()
   })
 })

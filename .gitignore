@@ -17,6 +17,7 @@ playwright-report/
 .zoho-review*.json
 .zoho-report*.json
 .zoho-history*.json
+.zoho-job-view*.json
 server/public/
 supabase/.temp/
 
@@ -27,6 +28,9 @@ popis-import-review*.json
 # The Zoho Recruit export: 3,611 candidates and their CVs, never committed.
 docs/Data_001/
 docs/Attachments_001/
+
+# Personal Zoho exports kept beside the repo.
+file/
 
 # Subagent-driven-development scratch (ledger, briefs, review packages).
 .superpowers/

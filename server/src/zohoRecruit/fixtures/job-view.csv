@@ -1,0 +1,11 @@
+﻿Candidate ID,Full Name,Email,Mobile / Phone,LinkedIn,Skill Set,Source,Candidate Owner,Overall Candidate Status,Overall Candidate Stage,Tags,Candidate Last Activity,Job Opening ID,Job Title,Job Opening Status,Hiring Manager,Assigned Recruiter(s),Status for this Job,Department,Status for this job,Stage for this Job,Associated On,Status Last Updated,Hired Date,Hired By,Interviews (count),Last Interview,Review Ratings,Notes for this Job (count),Latest Job Note Date,Latest Job Note,Job Notes Log (newest first)
+1001,Ana Primerova,Ana.Primerova@example.com,+389 70 000 001,https://linkedin.example/ana,"Python, SQL",Head Hunt,Boris Probni,,,,2024-08-08 11:25,JO-1,Data Analyst,,Mila Test,Boris Probni,Interview-Scheduled,,IGNORED,,2024-07-30 10:00,2024-08-08 11:25,,,,,,2,,,"[2024-08-08 11:25] Call – Ana Testova:
+Called, will think about it.
+
+[2024-08-01 09:05] Email – Boris Probni:
+Sent the job description."
+1001,Ana Primerova,Ana.Primerova@example.com,,,,Head Hunt,,,,,,JO-2,BI Lead,,,,NEVER to be contacted again,,,,2023-02-13 15:38,2023-03-01 09:00,,,,,,,,,
+1001,Ana Primerova,,,,,Head Hunt,,,,,,JO-3,BI Lead,,,,Contact in Future,,,,2023-05-01 09:00,,,,,,,,,,
+1002,Vlado Izmislen,not an email,,,,Added by User,,,,,2024-01-02 08:00,JO-1,Data Analyst,,,,Not contacted,,,,,2024-01-03 08:00,,,,,,,,,
+1003,Cvetka Lazna,,,,,CareerSite,,,,,2024-03-04 12:30,,,,,,,,,,,,,,,,,,,,
+1004,Darko Fiktiven,,,,,Employee Referral,,,,,,JO-4,Accountant,,,,Hired,,,,2022-10-10 10:10,2022-12-01 10:10,2022-12-01,,,,,,,,

@@ -4,6 +4,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/stores/auth'
 import { useDialogStore } from '@/stores/dialogs'
+import { useHiringLookupsStore } from '@/stores/hiringLookups'
 import CandidateFilesCard from '@/components/CandidateFilesCard.vue'
 import CandidateNotesCard from '@/components/CandidateNotesCard.vue'
 import ContactRuleDialog from '@/components/ContactRuleDialog.vue'
@@ -114,7 +115,8 @@ const candidateId = route.params.candidateId as string
 
 const candidate = ref<Candidate | null>(null)
 const applications = ref<ApplicationRow[]>([])
-const sources = ref<{ key: string; label: string }[]>([])
+const lookups = useHiringLookupsStore()
+const sources = computed(() => lookups.sources.filter((s) => !s.archived_at))
 const loading = ref(true)
 const error = ref<string | null>(null)
 const actionError = ref<string | null>(null)
@@ -254,9 +256,10 @@ function educationLine(e: Education): string {
 async function load(): Promise<void> {
   loading.value = true
   error.value = null
-  const [candidateRes, appsRes, sourcesRes] = await Promise.all([
+  void lookups.ensure()
+  const [candidateRes, appsRes] = await Promise.all([
     supabase
-      .from('candidates')
+      .from('candidates') // bounded: one candidate, by id
       .select(
         `id, full_name, email, phone, linkedin_url, current_title, current_employer, location, skills, summary,
          referred_by, source_key, provider, provider_ref, sourced_by, created_at, archived_at,
@@ -269,7 +272,7 @@ async function load(): Promise<void> {
       .eq('id', candidateId)
       .maybeSingle(),
     supabase
-      .from('applications')
+      .from('applications') // bounded: one candidate's own applications
       .select(
         `id, company_id, stage_key, sub_status_key, in_play, closed_at, closed_reason, received_at, source_key, owner_id, next_action, employment_period_id, source_provider,
          application_events(count), interviews(count), offers(count), application_files(count),
@@ -277,7 +280,6 @@ async function load(): Promise<void> {
       )
       .eq('candidate_id', candidateId)
       .order('received_at', { ascending: false }),
-    supabase.from('candidate_sources').select('key, label').is('archived_at', null).order('sort_order'),
   ])
   if (candidateRes.error || !candidateRes.data) {
     error.value = missingRecordMessage({
@@ -290,10 +292,8 @@ async function load(): Promise<void> {
     return
   }
   if (appsRes.error) console.error('Candidate applications load failed:', appsRes.error.message)
-  if (sourcesRes.error) console.error('Candidate sources load failed:', sourcesRes.error.message)
   candidate.value = candidateRes.data as unknown as Candidate
   applications.value = (appsRes.data ?? []) as unknown as ApplicationRow[]
-  sources.value = sourcesRes.data ?? []
   form.value = formFrom(candidate.value)
   loading.value = false
 }

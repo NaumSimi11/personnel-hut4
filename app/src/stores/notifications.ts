@@ -1,11 +1,13 @@
-import { computed, ref } from 'vue'
+import { ref } from 'vue'
 import { defineStore } from 'pinia'
 import { supabase } from '@/lib/supabase'
 
 /**
  * My notifications (plan 043): what happened that concerns me — read from
  * the rows the database created (RLS: my own only). The bell shows the
- * unread count; the page lists them; reading, archiving, restoring and
+ * unread count, a head-only count taken every minute while the tab is
+ * visible (egress: no rows travel); the 100-row list loads only when the
+ * Notifications page opens; the page lists them; reading, archiving, restoring and
  * deleting (plan 071) are function calls so the table stays read-only from
  * the client. The bell and the page's first two lists leave archived ones out.
  */
@@ -27,9 +29,24 @@ const POLL_MS = 60_000
 export const useNotificationsStore = defineStore('notifications', () => {
   const items = ref<NotificationRow[]>([])
   const loaded = ref(false)
+  const unread = ref(0)
   let timer: ReturnType<typeof setInterval> | null = null
 
-  const unread = computed(() => items.value.filter((n) => !n.read_at).length)
+  const tabVisible = () => document.visibilityState === 'visible'
+
+  /** How many unread, unarchived notifications are mine: a count only, no rows. */
+  async function refreshUnread(): Promise<void> {
+    const { count, error } = await supabase
+      .from('notifications')
+      .select('id', { count: 'exact', head: true })
+      .is('read_at', null)
+      .is('archived_at', null)
+    if (error) {
+      console.error('Unread count failed:', error.message)
+      return
+    }
+    unread.value = count ?? 0
+  }
 
   async function load(): Promise<void> {
     const { data, error } = await supabase
@@ -44,6 +61,7 @@ export const useNotificationsStore = defineStore('notifications', () => {
     }
     items.value = (data ?? []) as NotificationRow[]
     loaded.value = true
+    void refreshUnread()
   }
 
   async function markRead(ids?: string[]): Promise<void> {
@@ -54,6 +72,7 @@ export const useNotificationsStore = defineStore('notifications', () => {
     }
     const at = new Date().toISOString()
     items.value = items.value.map((n) => (!ids || ids.includes(n.id) ? { ...n, read_at: n.read_at ?? at } : n))
+    void refreshUnread()
   }
 
   /** Archive picked ones of mine, or (no ids) every read one; then reload. Returns how many. */
@@ -80,17 +99,27 @@ export const useNotificationsStore = defineStore('notifications', () => {
     return (data as number | null) ?? 0
   }
 
+  function onVisibilityChange(): void {
+    if (tabVisible()) void refreshUnread()
+  }
+
+  /** Count now and every POLL_MS, but only while the tab is on screen. */
   function start(): void {
     if (timer) return
-    void load()
-    timer = setInterval(() => void load(), POLL_MS)
+    if (tabVisible()) void refreshUnread()
+    timer = setInterval(() => {
+      if (tabVisible()) void refreshUnread()
+    }, POLL_MS)
+    document.addEventListener('visibilitychange', onVisibilityChange)
   }
   function stop(): void {
     if (timer) clearInterval(timer)
     timer = null
+    document.removeEventListener('visibilitychange', onVisibilityChange)
     items.value = []
+    unread.value = 0
     loaded.value = false
   }
 
-  return { items, unread, loaded, load, markRead, archive, restore, remove, start, stop }
+  return { items, unread, loaded, load, refreshUnread, markRead, archive, restore, remove, start, stop }
 })

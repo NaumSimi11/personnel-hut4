@@ -3,6 +3,7 @@ import { computed, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/stores/auth'
+import { useHiringLookupsStore } from '@/stores/hiringLookups'
 import CompanyFilter from '@/components/CompanyFilter.vue'
 import { longDate } from '@/lib/candidatePool'
 import { todayDb } from '@/lib/compensation'
@@ -35,7 +36,8 @@ const router = useRouter()
 const auth = useAuthStore()
 const dialog = ref<HTMLDialogElement | null>(null)
 const jobs = ref<JobOption[]>([])
-const sources = ref<SourceOption[]>([])
+const lookups = useHiringLookupsStore()
+const sources = computed<SourceOption[]>(() => lookups.sources.filter((s) => !s.archived_at))
 const companyId = ref('')
 const jobId = ref('')
 const sourceKey = ref(DEFAULT_SOURCE)
@@ -69,23 +71,19 @@ async function open(): Promise<void> {
   sourceKey.value = DEFAULT_SOURCE
   dialog.value?.showModal()
   loading.value = true
-  const [jobsRes, sourcesRes] = await Promise.all([
-    supabase
-      .from('jobs')
-      .select('id, title, status, company_id, company:companies(name)')
-      .in('status', OPEN_TO_CANDIDATES)
-      .order('title'),
-    supabase.from('candidate_sources').select('key, label').is('archived_at', null).order('sort_order'),
-  ])
+  void lookups.ensure()
+  const jobsRes = await supabase
+    .from('jobs')
+    .select('id, title, status, company_id, company:companies(name)')
+    .in('status', OPEN_TO_CANDIDATES)
+    .order('title')
   loading.value = false
   if (jobsRes.error) {
     error.value = 'Could not load the jobs. Check your access and connection.'
     console.error('Jobs load failed:', jobsRes.error.message)
     return
   }
-  if (sourcesRes.error) console.error('Candidate sources load failed:', sourcesRes.error.message)
   jobs.value = ((jobsRes.data ?? []) as unknown as JobOption[]).filter((j) => auth.can(j.company_id, 'candidates.review'))
-  sources.value = sourcesRes.data ?? []
 }
 defineExpose({ open })
 

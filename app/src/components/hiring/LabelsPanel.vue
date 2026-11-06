@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { supabase } from '@/lib/supabase'
+import { useHiringLookupsStore } from '@/stores/hiringLookups'
 import RemoveStatusDialog from '@/components/hiring/RemoveStatusDialog.vue'
 import {
   KEY_PATTERN,
@@ -39,6 +40,7 @@ import {
 
 type Table = 'application_sub_statuses' | 'candidate_sources'
 
+const lookups = useHiringLookupsStore()
 const subStatuses = ref<SubStatusRow[]>([])
 const sources = ref<LookupRow[]>([])
 const drafts = ref<Record<string, string>>({})
@@ -97,18 +99,16 @@ function writeError(message: string, refusal: string): string {
 
 async function load(): Promise<void> {
   error.value = null
-  const [subs, srcs] = await Promise.all([
-    supabase.from('application_sub_statuses').select('key, stage_key, label, sort_order, outcome, archived_at'),
-    supabase.from('candidate_sources').select('key, label, sort_order').is('archived_at', null),
-  ])
-  if (subs.error || srcs.error) {
-    error.value = 'Could not load the hiring labels.'
-    console.error('Hiring labels load failed:', subs.error?.message ?? srcs.error?.message)
+  await lookups.refresh()
+  if (lookups.error) {
+    error.value = lookups.error
     loaded.value = true
     return
   }
-  subStatuses.value = (subs.data ?? []) as SubStatusRow[]
-  sources.value = ((srcs.data ?? []) as LookupRow[]).sort((a, b) => a.sort_order - b.sort_order || a.key.localeCompare(b.key))
+  subStatuses.value = [...lookups.statuses]
+  sources.value = lookups.sources
+    .filter((s) => !s.archived_at)
+    .sort((a, b) => a.sort_order - b.sort_order || a.key.localeCompare(b.key))
   drafts.value = {}
   loaded.value = true
 }
@@ -140,6 +140,7 @@ async function save(table: Table, row: LookupRow): Promise<void> {
     sources.value = sources.value.map((r) => (r.key === row.key ? { ...r, label: next } : r))
   }
   drafts.value = { ...drafts.value, [id]: next }
+  void lookups.refresh()
   notice.value = `Renamed “${row.label}” to “${next}”. Everyone sees the new name from their next page load.`
 }
 
@@ -177,6 +178,7 @@ async function add(group: SubStatusGroup): Promise<void> {
     return
   }
   subStatuses.value = [...subStatuses.value, row]
+  void lookups.refresh()
   newLabels.value = { ...newLabels.value, [group.stageKey]: '' }
   newOutcomes.value = { ...newOutcomes.value, [group.stageKey]: '' }
   notice.value = `Added “${label}” to ${group.stageLabel}. It can be picked from the next page load.`
@@ -207,6 +209,7 @@ async function restore(row: SubStatusRow): Promise<void> {
     return
   }
   subStatuses.value = subStatuses.value.map((r) => (r.key === row.key ? { ...r, archived_at: null } : r))
+  void lookups.refresh()
   notice.value = `Restored “${row.label}”. It can be picked again.`
 }
 

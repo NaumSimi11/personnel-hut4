@@ -3,6 +3,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/stores/auth'
+import { useHiringLookupsStore } from '@/stores/hiringLookups'
 import CompanyFilter from '@/components/CompanyFilter.vue'
 import AddCandidateDialog from '@/components/AddCandidateDialog.vue'
 import SourceToJobDialog from '@/components/SourceToJobDialog.vue'
@@ -48,7 +49,8 @@ const loading = ref(true)
 const loadingMore = ref(false)
 const error = ref<string | null>(null)
 const companies = ref<{ id: string; name: string }[]>([])
-const sources = ref<SourceOption[]>([])
+const lookups = useHiringLookupsStore()
+const sources = computed<SourceOption[]>(() => lookups.sources.filter((s) => !s.archived_at))
 const addDialog = ref<InstanceType<typeof AddCandidateDialog> | null>(null)
 const sourceDialog = ref<InstanceType<typeof SourceToJobDialog> | null>(null)
 const sourceTarget = ref<PoolRow | null>(null)
@@ -96,14 +98,10 @@ async function load(page: number): Promise<void> {
 }
 
 async function loadLookups(): Promise<void> {
-  const [companiesRes, sourcesRes] = await Promise.all([
-    supabase.from('companies').select('id, name').is('archived_at', null).order('name'),
-    supabase.from('candidate_sources').select('key, label').is('archived_at', null).order('sort_order'),
-  ])
+  void lookups.ensure()
+  const companiesRes = await supabase.from('companies').select('id, name').is('archived_at', null).order('name')
   if (companiesRes.error) console.error('Companies load failed:', companiesRes.error.message)
-  if (sourcesRes.error) console.error('Candidate sources load failed:', sourcesRes.error.message)
   companies.value = (companiesRes.data ?? []).filter((c) => auth.can(c.id, 'candidates.view'))
-  sources.value = sourcesRes.data ?? []
 }
 
 // ------------------------------------------------------------ the cells

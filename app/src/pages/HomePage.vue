@@ -42,6 +42,7 @@ import RecruitmentSnapshot from '@/components/home/RecruitmentSnapshot.vue'
 import CelebratePanel from '@/components/home/CelebratePanel.vue'
 import AwayToday from '@/components/home/AwayToday.vue'
 import SetupGapsBanner from '@/components/home/SetupGapsBanner.vue'
+import { LIST_PAGE } from '@/lib/pageAll'
 
 /**
  * Home (blueprint §7.1, plan 044): headline numbers by what the viewer may
@@ -307,7 +308,7 @@ async function load(): Promise<void> {
       )
       .eq('status', 'submitted'),
     supabase
-      .from('applications')
+      .from('applications') // bounded: only the offers still out, one row each
       .select(
         `id,
          candidate:candidates(full_name),
@@ -329,7 +330,7 @@ async function load(): Promise<void> {
     loadLaterQueues(),
     loadSnapshot(),
     auth.personId ? supabase.from('applications').select('id, company_id, stage_key, next_action, next_action_due, candidate:candidates(full_name), job:jobs(title)')
-      .eq('owner_id', auth.personId).eq('in_play', true).order('next_action_due', { ascending: true }) : Promise.resolve({ data: [], error: null }),
+      .eq('owner_id', auth.personId).eq('in_play', true).order('next_action_due', { ascending: true }).limit(LIST_PAGE) : Promise.resolve({ data: [], error: null }),
     loadUpcomingInterviews(),
   ])
   const [compRes, docReviewRes, myReqRes, policyRes, ackRes, itRes, payrollRes, leaveRes, managerRes] = laterRes

@@ -9,7 +9,7 @@ const auth = useAuthStore()
 const router = useRouter()
 const notifications = useNotificationsStore()
 
-// The bell: my unread notifications, refreshed every minute while signed in.
+// The bell: my unread count, polled every minute while the tab is visible.
 onMounted(() => notifications.start())
 onUnmounted(() => notifications.stop())
 

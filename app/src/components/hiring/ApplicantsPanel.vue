@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { supabase } from '@/lib/supabase'
 import CompanyFilter from '@/components/CompanyFilter.vue'
@@ -11,14 +11,18 @@ import { blockerCount, blockerWords, friendlyHardDeleteError } from '@/lib/hardD
 import { FILE_BUCKET } from '@/lib/applicationFiles'
 import { useAuthStore } from '@/stores/auth'
 import { useDialogStore } from '@/stores/dialogs'
+import { useHiringLookupsStore } from '@/stores/hiringLookups'
+import { LIST_PAGE } from '@/lib/pageAll'
+import { likePattern } from '@/lib/likePattern'
 
 /**
  * The prototype's "Applicants" tab (plan 044): every application across
  * every job the viewer may see, newest first, with company, stage and a
  * search over name, position and email. Adding a candidate stays on the
  * job (a candidate always applies to a role) — "Open job" takes you there.
- * The stage filter travels to the query and the list is capped (plan 052):
- * PostgREST would otherwise cut the imported history at 1,000 rows silently.
+ * The stage filter and the name search travel to the query, and the list
+ * loads LIST_PAGE rows at a time with "Load more" (egress: never the whole
+ * imported history in one read).
  * Since plan 054 the stage cell carries the sub-status and "Not responding",
  * judged over the loaded rows from the candidate's last activity (see
  * outreachRowOf); "Not responding" in the stage filter is that judgement
@@ -30,8 +34,7 @@ import { useDialogStore } from '@/stores/dialogs'
  * "In progress" is `in_play`, a stage holds everyone who reached it, and a
  * row its job's closing marked says so where its status would be.
  */
-const PAGE_CAP = 1000
-const CAPPED_NOTICE = 'Showing the newest 1,000 — narrow the filters to see older ones.'
+const SEARCH_DEBOUNCE_MS = 300
 
 const loading = ref(true)
 const auth = useAuthStore()
@@ -39,7 +42,10 @@ const dialogs = useDialogStore()
 const error = ref<string | null>(null)
 const busyId = ref<string | null>(null)
 const applications = ref<ApplicantLite[]>([])
-const subStatusRows = ref<SubStatusRow[]>([])
+const lookups = useHiringLookupsStore()
+const subStatusRows = computed<SubStatusRow[]>(() => lookups.statuses)
+const total = ref(0)
+const loadingMore = ref(false)
 const subStatusLabels = computed<Record<string, string>>(() => statusLabels(subStatusRows.value))
 const route = useRoute()
 const STAGE_FILTERS = new Set<string>(['live', 'all', NOT_RESPONDING_FILTER, ...PIPELINE_STAGES.map((s) => s.key)])
@@ -52,14 +58,14 @@ const stage = ref(STAGE_FILTERS.has(queryText('stage')) ? queryText('stage') : '
 const status = ref(queryText('status'))
 const statusGroups = computed(() => statusFilterGroups(subStatusRows.value, filterStagesFor(stage.value)))
 const search = ref('')
-const capped = computed(() => applications.value.length === PAGE_CAP)
+const hasMore = computed(() => applications.value.length < total.value)
 
 const companies = computed(() => {
   const seen = new Map<string, string>()
   applications.value.forEach((a) => seen.set(a.company_id, a.job?.company?.name ?? '—'))
   return [...seen].map(([id, name]) => ({ id, name })).sort((a, b) => a.name.localeCompare(b.name))
 })
-const rows = computed<ApplicantRow[]>(() => applicantRows(applications.value, { companyId: companyId.value, stage: stage.value, search: search.value }))
+const rows = computed<ApplicantRow[]>(() => applicantRows(applications.value, { companyId: companyId.value, stage: stage.value, search: '' }))
 
 function badgeClass(stageKey: string, inPlay: boolean): string {
   if (stageKey === 'hired') return 'green'
@@ -108,24 +114,29 @@ async function removeApplication(r: ApplicantRow): Promise<void> {
   await load()
 }
 
-async function load(): Promise<void> {
-  loading.value = true
-  error.value = null
-  const stageKey = stage.value
-  let query = supabase
-    .from('applications')
-    .select(
-      `id, company_id, stage_key, sub_status_key, in_play, closed_at, closed_reason, received_at, next_action, next_action_due,
+const COLUMNS = `id, company_id, stage_key, sub_status_key, in_play, closed_at, closed_reason, received_at, next_action, next_action_due,
        application_files(count), interviews(count), offers(count),
-       candidate:candidates(full_name, email, last_activity_at),
+       candidate:candidates!inner(full_name, email, last_activity_at),
        job:jobs(id, title, status, company:companies(name)),
-       owner:people!applications_owner_id_fkey(full_name)`,
-    )
+       owner:people!applications_owner_id_fkey(full_name)`
+
+/** One window of the list; the stage, status and name filters all run in the query. */
+function fetchPage(from: number) {
+  const stageKey = stage.value
+  let query = supabase.from('applications').select(COLUMNS, { count: 'exact' }) // bounded: paged by .range below
   if (stageKey === 'live') query = query.eq('in_play', true)
   else if (stageKey === NOT_RESPONDING_FILTER) query = query.eq('in_play', true).in('stage_key', [...SUB_STATUS_STAGES])
   else if (stageKey !== 'all') query = query.eq('stage_key', stageKey)
   if (status.value) query = query.eq('sub_status_key', status.value)
-  const { data, error: err } = await query.order('received_at', { ascending: false }).limit(PAGE_CAP)
+  const term = search.value.trim()
+  if (term) query = query.ilike('candidate.full_name', likePattern(term))
+  return query.order('received_at', { ascending: false }).order('id').range(from, from + LIST_PAGE - 1)
+}
+
+async function load(): Promise<void> {
+  loading.value = true
+  error.value = null
+  const { data, count, error: err } = await fetchPage(0)
   loading.value = false
   if (err) {
     error.value = 'Could not load the applicants.'
@@ -133,22 +144,34 @@ async function load(): Promise<void> {
     return
   }
   applications.value = (data ?? []) as unknown as ApplicantLite[]
+  total.value = count ?? applications.value.length
 }
 
-async function loadSubStatuses(): Promise<void> {
-  const { data, error: err } = await supabase
-    .from('application_sub_statuses')
-    .select('key, stage_key, label, sort_order, outcome, archived_at')
-    .order('sort_order')
+async function loadMore(): Promise<void> {
+  if (loadingMore.value || !hasMore.value) return
+  loadingMore.value = true
+  const { data, count, error: err } = await fetchPage(applications.value.length)
+  loadingMore.value = false
   if (err) {
-    console.error('Sub-statuses load failed:', err.message)
+    error.value = 'Could not load more applicants.'
+    console.error('Applicants load-more failed:', err.message)
     return
   }
-  subStatusRows.value = (data ?? []) as SubStatusRow[]
+  applications.value = [...applications.value, ...((data ?? []) as unknown as ApplicantLite[])]
+  total.value = count ?? total.value
 }
 
+let searchTimer: ReturnType<typeof setTimeout> | null = null
+watch(search, () => {
+  if (searchTimer) clearTimeout(searchTimer)
+  searchTimer = setTimeout(() => void load(), SEARCH_DEBOUNCE_MS)
+})
+onBeforeUnmount(() => {
+  if (searchTimer) clearTimeout(searchTimer)
+})
+
 onMounted(() => {
-  void loadSubStatuses()
+  void lookups.ensure()
   void load()
 })
 // A status of another stage cannot match: clearing it reloads through its own watcher.
@@ -168,7 +191,7 @@ watch(status, load)
         <p>Everyone in a pipeline, wherever they applied. Open a candidate to move them on.</p>
       </div>
       <div class="filters">
-        <input v-model="search" class="search" type="search" placeholder="Search name, role, email" aria-label="Search applicants" />
+        <input v-model="search" class="search" type="search" placeholder="Search name" aria-label="Search applicants" />
         <CompanyFilter v-model="companyId" :companies="companies" all-label="All companies" />
         <label class="stage-filter">
           <select v-model="stage" aria-label="Stage">
@@ -192,7 +215,6 @@ watch(status, load)
     <div v-else-if="loading" class="empty">Loading applicants…</div>
     <div v-else-if="!rows.length" class="empty">No applicants match. Add candidates or upload CVs from a job.</div>
     <div v-else class="table-wrap">
-      <p v-if="capped" class="capped-note" role="status" data-testid="applicants-capped">{{ CAPPED_NOTICE }}</p>
       <table>
         <thead>
           <tr>
@@ -240,6 +262,12 @@ watch(status, load)
           </tr>
         </tbody>
       </table>
+      <div v-if="hasMore" class="load-more">
+        <span>Showing {{ applications.length }} of {{ total }}</span>
+        <button class="button secondary" type="button" :disabled="loadingMore" data-testid="applicants-load-more" @click="loadMore">
+          {{ loadingMore ? 'Loading…' : 'Load more' }}
+        </button>
+      </div>
     </div>
   </div>
 </template>
@@ -247,7 +275,7 @@ watch(status, load)
 <style scoped>
 .filters { display: flex; gap: 10px; flex-wrap: wrap; align-items: end; }
 .search, .stage-filter select { border: 1px solid var(--line); background: #fff; padding: 8px 10px; font-size: 12px; color: var(--ink); min-width: 180px; }
-.capped-note { margin: 0; padding: 10px 24px; font-size: 12px; color: var(--muted); background: #fafbf9; border-bottom: 1px solid var(--line); }
+.load-more { display: flex; align-items: center; justify-content: center; gap: 12px; padding: 14px 24px; font-size: 12px; color: var(--muted); }
 table { width: 100%; border-collapse: collapse; font-size: 12px; }
 th { text-align: left; font-size: 11px; font-weight: 550; color: var(--muted); padding: 10px 24px; border-bottom: 1px solid var(--line); }
 td { padding: 12px 24px; border-bottom: 1px solid var(--line); vertical-align: middle; }

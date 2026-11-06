@@ -5,6 +5,7 @@ import { supabase } from '@/lib/supabase'
 import type { Json } from '@/types/database'
 import { friendlyRecruitmentError } from '@/lib/jobWorkspace'
 import type { CandidateMatch } from '@/lib/candidatePool'
+import { useHiringLookupsStore } from '@/stores/hiringLookups'
 import CandidateMatches from '@/components/CandidateMatches.vue'
 
 /**
@@ -33,7 +34,8 @@ const EMPTY_FORM = { fullName: '', email: '', phone: '', linkedinUrl: '', curren
 
 const dialog = ref<HTMLDialogElement | null>(null)
 const form = ref({ ...EMPTY_FORM })
-const sources = ref<Source[]>([])
+const lookups = useHiringLookupsStore()
+const sources = computed<Source[]>(() => lookups.sources.filter((s) => !s.archived_at))
 const matches = ref<CandidateMatch[] | null>(null)
 const error = ref<string | null>(null)
 const busy = ref(false)
@@ -57,22 +59,9 @@ function open(): void {
   matches.value = null
   form.value = { ...EMPTY_FORM }
   dialog.value?.showModal()
-  if (poolMode.value) void loadSources()
+  if (poolMode.value) void lookups.ensure()
 }
 defineExpose({ open })
-
-async function loadSources(): Promise<void> {
-  const { data, error: err } = await supabase
-    .from('candidate_sources')
-    .select('key, label')
-    .is('archived_at', null)
-    .order('sort_order')
-  if (err) {
-    console.error('Candidate sources load failed:', err.message)
-    return
-  }
-  sources.value = (data ?? []) as Source[]
-}
 
 function submit(): void {
   void save({})

@@ -33,7 +33,8 @@ import {
 } from '@/lib/stageStatuses'
 import { setApplicationStatus } from '@/lib/applicationStatus'
 import { todayDb } from '@/lib/compensation'
-import { PAGE_SIZE } from '@/lib/pageAll'
+import { LIST_PAGE } from '@/lib/pageAll'
+import { useHiringLookupsStore } from '@/stores/hiringLookups'
 import { friendlyDetachError } from '@/lib/detachApplication'
 import {
   currentStep,
@@ -119,6 +120,14 @@ const jobId = route.params.jobId as string
 
 const job = ref<Job | null>(null)
 const applications = ref<ApplicationRow[]>([])
+const lookups = useHiringLookupsStore()
+// The header numbers come from the database (opening_counts, 0097), not from
+// the page of rows loaded below; `matching` is how many rows the filter finds.
+const counts = ref({ in_play: 0, hired: 0, total: 0 })
+const stageInPlay = ref<Record<string, number>>({})
+const matching = ref(0)
+const loadingMore = ref(false)
+const hasMore = computed(() => applications.value.length < matching.value)
 const channels = ref<ChannelLite[]>([])
 const loading = ref(true)
 const error = ref<string | null>(null)
@@ -150,11 +159,12 @@ const activityPanel = ref<InstanceType<typeof JobActivityPanel> | null>(null)
 // event per application, the filters over the list, and the rows ticked for
 // a bulk set.
 const statusDialog = ref<InstanceType<typeof StatusDialog> | null>(null)
-const subStatusRows = ref<SubStatusRow[]>([])
+const subStatusRows = computed<SubStatusRow[]>(() => lookups.statuses)
 const lastActivity = ref<Record<string, string>>({})
 // The activity query came back at its cap, so rows missing from it may simply
 // have been cut off — their activity is unknown (see loadLastActivity).
 const activityTruncated = ref(false)
+const ACTIVITY_CAP = 1000
 const subStatusFilter = ref('')
 const notRespondingOnly = ref(false)
 const selectedIds = ref<string[]>([])
@@ -177,10 +187,10 @@ const canSource = computed(() => auth.isAdmin || auth.canAnywhere('candidates.so
 const canReview = computed(() => (job.value ? auth.can(job.value.company_id, 'candidates.review') : false))
 const subStatusLabels = computed<Record<string, string>>(() => statusLabels(subStatusRows.value))
 const subStatusGroups = computed(() => statusFilterGroups(subStatusRows.value))
+// The status filter runs in the query (loadApplications); "not responding"
+// is judged here over the rows loaded so far, from their last activity.
 const visibleApplications = computed(() =>
-  applications.value.filter(
-    (a) => (!subStatusFilter.value || a.sub_status_key === subStatusFilter.value) && (!notRespondingOnly.value || isNotResponding(a)),
-  ),
+  applications.value.filter((a) => !notRespondingOnly.value || isNotResponding(a)),
 )
 const selectedApplications = computed(() => applications.value.filter((a) => selectedIds.value.includes(a.id)))
 const outreachApplications = computed<OutreachApplication[]>(() =>
@@ -205,10 +215,11 @@ function toggleSelected(id: string, checked: boolean): void {
 
 // Change a filter and the rows it hides leave the selection with them, so the
 // dialog can never log an application the recruiter cannot see.
-watch([subStatusFilter, notRespondingOnly], () => {
+watch(notRespondingOnly, () => {
   const visible = new Set(visibleApplications.value.map((a) => a.id))
   selectedIds.value = selectedIds.value.filter((id) => visible.has(id))
 })
+watch(subStatusFilter, () => void loadApplications())
 
 function openOutreach(rows: ApplicationRow[]): void {
   outreachTarget.value = rows
@@ -223,8 +234,8 @@ async function onLogged(): Promise<void> {
 const inPipeline = computed(() =>
   applications.value.flatMap((a) => (a.candidate && a.in_play ? [a.candidate.id] : [])),
 )
-const hiredCount = computed(() => applications.value.filter((a) => a.stage_key === 'hired').length)
-const activeCount = computed(() => applications.value.filter((a) => a.in_play).length)
+const hiredCount = computed(() => counts.value.hired)
+const activeCount = computed(() => counts.value.in_play)
 const actionQueue = computed(() => candidateQueue(applications.value))
 const liveChannels = computed(() => channels.value.filter(isPublished).length)
 // A draft role has nothing in it yet, and four tiles reading zero say so less
@@ -237,7 +248,7 @@ const step = computed(() =>
   currentStep({
     status: job.value?.status ?? 'draft',
     channels: channels.value,
-    applications: applications.value.length,
+    applications: counts.value.total,
     hired: hiredCount.value,
   }),
 )
@@ -251,15 +262,15 @@ const statusOptions = computed(() =>
 )
 const statusChoice = ref('')
 const headcount = computed(() => (job.value ? jobHeadcount(job.value) : 1))
-const atOfferCount = computed(() => applications.value.filter((a) => a.in_play && a.stage_key === 'offer').length)
+const atOfferCount = computed(() => stageInPlay.value.offer ?? 0)
 const withdrawBusy = ref(false)
 
 // The pipeline by stage counts who is still in play there (and every hire);
 // the rest — rejected, withdrawn, closed with the job — are counted once, as finished.
 const stageCounts = computed(() => {
-  const counted = (s: StageKey) => applications.value.filter((a) => a.stage_key === s && (a.in_play || s === 'hired')).length
+  const counted = (s: StageKey) => (s === 'hired' ? counts.value.hired : (stageInPlay.value[s] ?? 0))
   const byStage = STAGES.map((s) => ({ key: s, label: STAGE_LABEL[s], count: counted(s) }))
-  const finished = applications.value.filter((a) => !a.in_play && a.stage_key !== 'hired').length
+  const finished = Math.max(0, counts.value.total - counts.value.in_play - counts.value.hired)
   return [...byStage, { key: 'finished', label: 'Finished', count: finished }].filter((c) => c.count > 0)
 })
 const inInterview = computed(() => stageCounts.value.find((c) => c.key === 'interview')?.count ?? 0)
@@ -325,28 +336,69 @@ function removeCriterion(index: number): void {
   criteriaDraft.value = criteriaDraft.value.filter((_, i) => i !== index)
 }
 
-async function loadApplications(): Promise<void> {
-  appError.value = null
-  const { data, error: err } = await supabase
-    .from('applications')
-    .select(
-      `id, stage_key, sub_status_key, in_play, closed_at, closed_reason, received_at, employment_period_id, next_action, next_action_due, source_key,
+const APPLICATION_COLUMNS = `id, stage_key, sub_status_key, in_play, closed_at, closed_reason, received_at, employment_period_id, next_action, next_action_due, source_key,
        source:candidate_sources(label),
        candidate:candidates(id, full_name, email, phone, do_not_contact, contact_again_after),
        owner:people!applications_owner_id_fkey(full_name),
-       employment_period:employment_periods!applications_employment_period_id_fkey(person_id)`,
-    )
-    .eq('job_id', jobId)
-    .order('created_at', { ascending: true })
-  if (err) {
+       employment_period:employment_periods!applications_employment_period_id_fkey(person_id)`
+
+/** One window of this job's applications; the status filter runs here, in the query. */
+async function fetchApplicationPage(from: number) {
+  let query = supabase.from('applications').select(APPLICATION_COLUMNS, { count: 'exact' }).eq('job_id', jobId)
+  if (subStatusFilter.value) query = query.eq('sub_status_key', subStatusFilter.value)
+  return query.order('created_at', { ascending: true }).order('id').range(from, from + LIST_PAGE - 1)
+}
+
+/** First window again (after a filter or a change), plus the header counts. */
+async function loadApplications(): Promise<void> {
+  appError.value = null
+  const [page] = await Promise.all([fetchApplicationPage(0), loadCounts()])
+  if (page.error) {
     appError.value = 'Could not load applications. Check your access and connection.'
-    console.error('Applications load failed:', err.message)
+    console.error('Applications load failed:', page.error.message)
     return
   }
-  applications.value = (data ?? []) as ApplicationRow[]
+  applications.value = (page.data ?? []) as unknown as ApplicationRow[]
+  matching.value = page.count ?? applications.value.length
   // A row that is no longer on this job leaves the selection with it.
   selectedIds.value = selectedIds.value.filter((id) => applications.value.some((a) => a.id === id))
-  await loadLastActivity()
+  lastActivity.value = {}
+  await loadLastActivity(applications.value.map((a) => a.id))
+}
+
+async function loadMoreApplications(): Promise<void> {
+  if (loadingMore.value || !hasMore.value) return
+  loadingMore.value = true
+  appError.value = null
+  const page = await fetchApplicationPage(applications.value.length)
+  loadingMore.value = false
+  if (page.error) {
+    appError.value = 'Could not load more applications. Check your connection and try again.'
+    console.error('Applications load-more failed:', page.error.message)
+    return
+  }
+  const rows = (page.data ?? []) as unknown as ApplicationRow[]
+  applications.value = [...applications.value, ...rows]
+  matching.value = page.count ?? matching.value
+  await loadLastActivity(rows.map((a) => a.id))
+}
+
+/** opening_counts for the header, and who is in play at each open stage (head-only counts). */
+async function loadCounts(): Promise<void> {
+  const openStages = STAGES.filter((s) => s !== 'hired')
+  const [summary, ...perStage] = await Promise.all([
+    supabase.rpc('opening_counts', { p_job_ids: [jobId] }),
+    ...openStages.map((s) =>
+      supabase.from('applications').select('id', { count: 'exact', head: true }).eq('job_id', jobId).eq('in_play', true).eq('stage_key', s),
+    ),
+  ])
+  if (summary.error) {
+    console.error('Opening counts load failed:', summary.error.message)
+    return
+  }
+  const row = ((summary.data ?? []) as { in_play: number; hired: number; total: number }[])[0]
+  counts.value = { in_play: row?.in_play ?? 0, hired: row?.hired ?? 0, total: row?.total ?? 0 }
+  stageInPlay.value = Object.fromEntries(openStages.map((s, i) => [s, perStage[i].count ?? 0]))
 }
 
 /**
@@ -357,43 +409,31 @@ async function loadApplications(): Promise<void> {
  * falls back to received_at, which gives D3's answer — its older events, if
  * any, never postdate its receipt.
  *
- * Newest first and capped at PostgREST's 1,000 rows: a full page means the
+ * Asked for the ids just loaded (a window of 50), newest first and capped at 1,000 rows: a full page means the
  * result may be a prefix, and the fallback above stops applying (isNotResponding).
  */
-async function loadLastActivity(): Promise<void> {
+async function loadLastActivity(ids: string[]): Promise<void> {
+  if (!ids.length) return
   const since = new Date(`${todayDb()}T00:00:00Z`)
   since.setUTCDate(since.getUTCDate() - NOT_RESPONDING_DAYS)
   const { data, error: err } = await supabase
     .from('application_events')
-    .select('application_id, created_at, application:applications!inner(job_id)')
-    .eq('application.job_id', jobId)
+    .select('application_id, created_at')
+    .in('application_id', ids)
     .gte('created_at', since.toISOString())
     .order('created_at', { ascending: false })
-    .limit(PAGE_SIZE)
+    .limit(ACTIVITY_CAP)
   if (err) {
     console.error('Application activity load failed:', err.message)
     return
   }
-  activityTruncated.value = (data ?? []).length === PAGE_SIZE
-  const newest = new Map<string, string>()
+  activityTruncated.value = activityTruncated.value || (data ?? []).length === ACTIVITY_CAP
+  const newest = new Map<string, string>(Object.entries(lastActivity.value))
   for (const e of data ?? []) {
     const prev = newest.get(e.application_id)
     if (!prev || prev < e.created_at) newest.set(e.application_id, e.created_at)
   }
   lastActivity.value = Object.fromEntries(newest)
-}
-
-async function loadSubStatuses(): Promise<void> {
-  const { data, error: err } = await supabase
-    .from('application_sub_statuses')
-    .select('key, stage_key, label, sort_order, outcome, archived_at')
-    .order('stage_key')
-    .order('sort_order')
-  if (err) {
-    console.error('Sub-statuses load failed:', err.message)
-    return
-  }
-  subStatusRows.value = (data ?? []) as SubStatusRow[]
 }
 
 async function loadChannels(): Promise<void> {
@@ -529,7 +569,6 @@ async function deleteApplication(app: ApplicationRow): Promise<void> {
       actionError.value = friendlyDetachError(err.message)
       return
     }
-    applications.value = applications.value.filter((a) => a.id !== app.id)
     selectedIds.value = selectedIds.value.filter((id) => id !== app.id)
     await loadApplications()
   } catch {
@@ -586,7 +625,7 @@ async function onHired(): Promise<void> {
  * simply refusing, because the way out is the Delete on each row above.
  */
 async function removeJob(): Promise<void> {
-  if (!job.value || applications.value.length > 0) return
+  if (!job.value || counts.value.total > 0) return
   const ok = await dialogs.confirmAction({
     title: `Delete ${job.value.title}?`,
     hint: 'Its applicant list is empty, so nothing is lost. This cannot be undone — close it instead if you only want it out of the way.',
@@ -623,7 +662,7 @@ function friendlyCandidatesError(message: string): string {
 onMounted(async () => {
   loading.value = true
   await loadJob()
-  if (job.value) await Promise.all([loadApplications(), loadChannels(), loadSubStatuses()])
+  if (job.value) await Promise.all([loadApplications(), loadChannels(), lookups.ensure()])
   loading.value = false
 })
 </script>
@@ -662,7 +701,7 @@ onMounted(async () => {
           @click="selectTab(tab.id)"
         >
           {{ tab.label }}
-          <span v-if="tab.id === 'applications' && applications.length" class="count">{{ applications.length }}</span>
+          <span v-if="tab.id === 'applications' && counts.total" class="count">{{ counts.total }}</span>
         </button>
       </div>
 
@@ -741,9 +780,9 @@ onMounted(async () => {
               <button
                 class="button secondary small-btn danger-text"
                 type="button"
-                :disabled="statusBusy || applications.length > 0"
-                :title="applications.length > 0
-                  ? `${applications.length} application${applications.length === 1 ? '' : 's'} on this job. Delete them first, from the list below.`
+                :disabled="statusBusy || counts.total > 0"
+                :title="counts.total > 0
+                  ? `${counts.total} application${counts.total === 1 ? '' : 's'} on this job. Delete them first, from the list below.`
                   : 'Nothing was ever received for this job, so it can go.'"
                 data-testid="job-delete"
                 @click="removeJob"
@@ -778,7 +817,7 @@ onMounted(async () => {
             <div>
               <dt>Pipeline</dt>
               <dd>
-                <template v-if="applications.length">
+                <template v-if="counts.total">
                   <span v-for="c in stageCounts" :key="c.key" class="stage-count">{{ c.label }} {{ c.count }}</span>
                 </template>
                 <template v-else>No candidates yet</template>
@@ -905,7 +944,7 @@ onMounted(async () => {
         </div>
         <p v-if="appError" class="error-note" role="alert" style="margin: 16px 24px">{{ appError }}</p>
         <p v-if="actionError" class="error-note" role="alert" style="margin: 16px 24px">{{ actionError }}</p>
-        <div v-if="!applications.length" class="empty">No candidates yet. Add one to start the pipeline.</div>
+        <div v-if="!counts.total" class="empty">No candidates yet. Add one to start the pipeline.</div>
         <div v-else>
           <div class="filter-row">
             <label class="filter">
@@ -998,6 +1037,12 @@ onMounted(async () => {
                 </button>
               </template>
             </div>
+          </div>
+          <div v-if="hasMore" class="load-more">
+            <span>Showing {{ applications.length }} of {{ matching }}</span>
+            <button class="button secondary" type="button" :disabled="loadingMore" data-testid="load-more-applications" @click="loadMoreApplications">
+              {{ loadingMore ? 'Loading…' : 'Load more' }}
+            </button>
           </div>
         </div>
       </div>
@@ -1138,6 +1183,14 @@ textarea {
 textarea[readonly] { background: #fafbf9; }
 .success-note { margin: 12px 0 0; font-size: 12px; color: #3e744e; }
 .actions { display: flex; justify-content: flex-end; margin-top: 14px; }
+.load-more {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 16px 24px;
+  color: var(--muted, #667085);
+}
 .application-row {
   display: flex;
   align-items: center;

@@ -4,6 +4,7 @@ import { useRoute } from 'vue-router'
 import { z } from 'zod'
 import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/stores/auth'
+import { useHiringLookupsStore } from '@/stores/hiringLookups'
 import ApplicationFilesCard from '@/components/ApplicationFilesCard.vue'
 import ApplicationInterviewsCard from '@/components/ApplicationInterviewsCard.vue'
 import ApplicationOfferCard from '@/components/ApplicationOfferCard.vue'
@@ -114,7 +115,7 @@ const onboardingGaps = computed(() => onboarding.value?.plan_tasks.filter(t => t
 const events = ref<EventRow[]>([])
 const people = ref<{ id: string; full_name: string }[]>([])
 const channelLabels = ref<Record<string, string>>({})
-const sourceLabels = ref<Record<string, string>>({})
+const sourceLabels = computed<Record<string, string>>(() => Object.fromEntries(lookups.sources.map((s) => [s.key, s.label])))
 const loading = ref(true)
 const error = ref<string | null>(null)
 
@@ -218,7 +219,8 @@ const stageBusy = ref(false)
 const stageError = ref<string | null>(null)
 
 const statusDialog = ref<InstanceType<typeof StatusDialog> | null>(null)
-const subStatusRows = ref<SubStatusRow[]>([])
+const lookups = useHiringLookupsStore()
+const subStatusRows = computed<SubStatusRow[]>(() => lookups.statuses)
 
 const rejectDialog = ref<InstanceType<typeof RejectApplicationDialog> | null>(null)
 const confirmHireDialog = ref<InstanceType<typeof AddEmployeeDialog> | null>(null)
@@ -314,9 +316,9 @@ function eventLabel(e: EventRow): string {
 async function load(): Promise<void> {
   loading.value = true
   error.value = null
-  const [appRes, eventsRes, peopleRes, channelsRes, sourcesRes] = await Promise.all([
+  const [appRes, eventsRes, peopleRes, channelsRes] = await Promise.all([
     supabase
-      .from('applications')
+      .from('applications') // bounded: one application, by id
       .select(
         `id, job_id, company_id, stage_key, sub_status_key, in_play, closed_at, closed_reason, updated_at, owner_id, next_action, next_action_due, source_channel_key, source_key,
          received_at, rejected_reason, withdrawn_reason, screening_answers, employment_period_id, custom,
@@ -337,7 +339,6 @@ async function load(): Promise<void> {
       .order('created_at', { ascending: false }),
     supabase.from('people').select('id, full_name').order('full_name'),
     supabase.from('channels').select('key, label'),
-    supabase.from('candidate_sources').select('key, label'),
   ])
   if (appRes.error || !appRes.data) {
     error.value = missingRecordMessage({
@@ -362,7 +363,6 @@ async function load(): Promise<void> {
   events.value = (eventsRes.data ?? []) as EventRow[]
   people.value = peopleRes.data ?? []
   channelLabels.value = Object.fromEntries((channelsRes.data ?? []).map((c) => [c.key, c.label]))
-  sourceLabels.value = Object.fromEntries((sourcesRes.data ?? []).map((s) => [s.key, s.label]))
 
   const questions = salvageQuestions(application.value.job?.screening_questions).questions
   answerRows.value = mergeAnswers(questions, application.value.screening_answers)
@@ -496,22 +496,10 @@ function friendlyReview(message: string): string {
   return friendlyRecruitmentError(message)
 }
 
-async function loadSubStatuses(): Promise<void> {
-  const { data, error: err } = await supabase
-    .from('application_sub_statuses')
-    .select('key, stage_key, label, sort_order, outcome, archived_at')
-    .order('sort_order')
-  if (err) {
-    console.error('Sub-statuses load failed:', err.message)
-    return
-  }
-  subStatusRows.value = (data ?? []) as SubStatusRow[]
-}
-
 onMounted(() => {
   void load()
-  // The sub-status lookup never changes while the page is open: once, not on every reload.
-  void loadSubStatuses()
+  // The status and source lookups load once per session (the hiring lookups store).
+  void lookups.ensure()
 })
 </script>
 

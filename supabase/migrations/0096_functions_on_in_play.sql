@@ -39,21 +39,27 @@ drop function app.zoho_sub_status(text);
 
 -- ------------------------------------------------------- the closure mark
 -- The applications of one job still in play get closed_at and the reason,
--- each with one status_change event (status unchanged, so from = to). The
--- event first, while the row is still in play. Returns how many it marked.
+-- each with one status_change event (status unchanged, so from = to), all in
+-- one statement. Returns how many it marked.
 create or replace function app.close_in_play(p_job_id uuid, p_actor uuid, p_reason text) returns int
 language plpgsql security definer set search_path = public as $$
 declare v_n int;
 begin
-  insert into public.application_events
-    (application_id, actor_id, kind, body, from_stage_key, to_stage_key, from_sub_status_key, to_sub_status_key)
-    select a.id, p_actor, 'status_change', p_reason, a.stage_key, a.stage_key, a.sub_status_key, a.sub_status_key
-      from public.applications a
-     where a.job_id = p_job_id and a.in_play;
-  get diagnostics v_n = row_count;
-  update public.applications
-     set closed_at = now(), closed_reason = p_reason
-   where job_id = p_job_id and in_play;
+  -- One statement, so the events and the marks cannot disagree under
+  -- concurrency: an event is written for exactly the rows marked.
+  with u as (
+    update public.applications a
+       set closed_at = now(), closed_reason = p_reason
+     where a.job_id = p_job_id and a.in_play
+    returning a.id, a.stage_key, a.sub_status_key
+  ), ev as (
+    insert into public.application_events
+      (application_id, actor_id, kind, body, from_stage_key, to_stage_key, from_sub_status_key, to_sub_status_key)
+      select u.id, p_actor, 'status_change', p_reason, u.stage_key, u.stage_key, u.sub_status_key, u.sub_status_key
+        from u
+    returning 1
+  )
+  select count(*) into v_n from ev;
   return v_n;
 end $$;
 
@@ -182,6 +188,7 @@ declare
   v_id uuid;
   v_app record;
   v_status record;
+  v_job_status text;
   v_n int := 0;
   v_constraint text;
 begin
@@ -229,6 +236,15 @@ begin
     if v_app.closed_at is not null then
       raise exception 'This job was closed on %. Reopen the job first.', to_char(v_app.closed_at, 'YYYY-MM-DD')
         using errcode = '22023';
+    end if;
+    -- A row already rejected or withdrawn when its job closed never got the
+    -- closure mark; it must not be reopened under a closed or filled job.
+    if v_status.outcome = 'open' then
+      select j.status into v_job_status from public.applications a2
+        join public.jobs j on j.id = a2.job_id where a2.id = v_app.id;
+      if v_job_status in ('closed', 'filled') then
+        raise exception 'This job is %. Reopen the job first.', v_job_status using errcode = '22023';
+      end if;
     end if;
     -- Any other status would move a hire out of Hired.
     if v_app.old_outcome = 'hired' then

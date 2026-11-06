@@ -9210,4 +9210,152 @@ begin
   delete from public.candidates where id = c;
 end $$;
 
+-- ================================================================ 0096
+-- Every function reads in_play / outcome (plan 075): a picked status moves its
+-- application to that status's stage; closing or filling a job puts the
+-- closure mark on the candidates still in play and never relabels them.
+insert into public.jobs (id, company_id, title, status, custom) values
+  ('70000000-0000-0000-0000-000000000961', '10000000-0000-0000-0000-00000000000b', 'Smoke 0096 close', 'open', '{}'),
+  ('70000000-0000-0000-0000-000000000962', '10000000-0000-0000-0000-00000000000b', 'Smoke 0096 fill', 'open', '{}'),
+  ('70000000-0000-0000-0000-000000000963', '10000000-0000-0000-0000-00000000000b', 'Smoke 0096 withdraw', 'open', '{}');
+insert into public.candidates (id, full_name)
+select ('80000000-0000-0000-0000-00000000096' || n)::uuid, 'Smoke 0096 ' || n from unnest(array['1','2','3','4','5','6','7']) n;
+insert into public.applications (id, job_id, company_id, candidate_id, stage_key, sub_status_key) values
+  ('90000000-0000-0000-0000-000000000961', '70000000-0000-0000-0000-000000000961', '10000000-0000-0000-0000-00000000000b', '80000000-0000-0000-0000-000000000961', 'screening', null),
+  ('90000000-0000-0000-0000-000000000962', '70000000-0000-0000-0000-000000000961', '10000000-0000-0000-0000-00000000000b', '80000000-0000-0000-0000-000000000962', 'interview', 'interview_hr'),
+  ('90000000-0000-0000-0000-000000000963', '70000000-0000-0000-0000-000000000961', '10000000-0000-0000-0000-00000000000b', '80000000-0000-0000-0000-000000000963', 'interview', 'rejected_general'),
+  ('90000000-0000-0000-0000-000000000964', '70000000-0000-0000-0000-000000000962', '10000000-0000-0000-0000-00000000000b', '80000000-0000-0000-0000-000000000964', 'offer', 'offer_made'),
+  ('90000000-0000-0000-0000-000000000965', '70000000-0000-0000-0000-000000000962', '10000000-0000-0000-0000-00000000000b', '80000000-0000-0000-0000-000000000965', 'screening', 'contacted'),
+  ('90000000-0000-0000-0000-000000000966', '70000000-0000-0000-0000-000000000963', '10000000-0000-0000-0000-00000000000b', '80000000-0000-0000-0000-000000000966', 'screening', null);
+
+-- open_application inserts with no stage, so a new application lands on the default.
+do $$
+declare v uuid;
+begin
+  v := app.open_application('80000000-0000-0000-0000-000000000967', '70000000-0000-0000-0000-000000000963', 'careers_page', false);
+  assert (select stage_key = 'screening' and sub_status_key = 'applied' and in_play from public.applications where id = v),
+    '0096: open_application lands on Screening / New';
+  delete from public.applications where id = v;
+end $$;
+
+-- As Bea (Company HR in B).
+set app.test_uid = '00000000-0000-0000-0000-000000000005';
+set role authenticated;
+do $$
+declare
+  r jsonb;
+  e record;
+  a1 constant uuid := '90000000-0000-0000-0000-000000000961';
+  a2 constant uuid := '90000000-0000-0000-0000-000000000962';
+  a3 constant uuid := '90000000-0000-0000-0000-000000000963';
+  a5 constant uuid := '90000000-0000-0000-0000-000000000965';
+  a6 constant uuid := '90000000-0000-0000-0000-000000000966';
+begin
+  -- 0096-a: the status's own stage becomes the row's stage, in one stage_change event.
+  r := public.set_application_status(array[a1], 'offer_made', 'ok');
+  assert r = '{"set": 1}'::jsonb, '0096-a: one set: ' || r::text;
+  assert (select stage_key = 'offer' and sub_status_key = 'offer_made' and in_play
+            from public.applications where id = a1), '0096-a: moved to Offered / Offer-Made';
+  select * into e from public.application_events where application_id = a1 order by created_at desc, id limit 1;
+  assert e.kind = 'stage_change' and e.from_stage_key = 'screening' and e.to_stage_key = 'offer'
+     and e.from_sub_status_key = 'applied' and e.to_sub_status_key = 'offer_made' and e.body = 'ok',
+    '0096-a: the stage_change event carries both stages and both statuses';
+  -- A status of the same stage is a status_change; within screening it is outreach.
+  perform public.set_application_status(array[a2], 'interview_feedback_due', null);
+  select * into e from public.application_events where application_id = a2 order by created_at desc, id limit 1;
+  assert e.kind = 'status_change' and e.from_stage_key = 'interview' and e.to_stage_key = 'interview'
+     and e.to_sub_status_key = 'interview_feedback_due' and e.body is null, '0096-a: same stage is a status_change';
+  perform public.set_application_status(array[a6], 'contacted', 'Called');
+  select * into e from public.application_events where application_id = a6 order by created_at desc, id limit 1;
+  assert e.kind = 'outreach' and e.to_sub_status_key = 'contacted', '0096-a: screening to screening is outreach';
+
+  -- 0096-b: closing with withdraw marks the two in play, keeps their status, leaves the rejected one alone.
+  r := public.close_jobs(array['70000000-0000-0000-0000-000000000961'::uuid], 'Budget cut', true);
+  assert r = '{"closed": 1, "already_closed": 0, "withdrawn": 2}'::jsonb, '0096-b: ' || r::text;
+  assert (select sub_status_key = 'offer_made' and stage_key = 'offer' and closed_at is not null
+                 and closed_reason = 'Budget cut' and not in_play from public.applications where id = a1),
+    '0096-b: status untouched, closure mark set, out of play';
+  assert (select sub_status_key = 'interview_feedback_due' and closed_reason = 'Budget cut' and not in_play
+            from public.applications where id = a2), '0096-b: the interview one too';
+  assert (select closed_at is null and closed_reason is null from public.applications where id = a3),
+    '0096-b: a rejected application is not marked';
+  -- (one transaction, so both of a1's events share created_at: pick by body)
+  select * into e from public.application_events where application_id = a1 and body = 'Budget cut';
+  assert e.kind = 'status_change' and e.from_sub_status_key = 'offer_made' and e.to_sub_status_key = 'offer_made',
+    '0096-b: one status_change event with the reason';
+  assert (select count(*) from public.application_events where application_id in (a1, a2, a3) and body = 'Budget cut') = 2,
+    '0096-b: one event per marked application';
+
+  -- 0096-c: a closed application cannot take a status.
+  begin
+    perform public.set_application_status(array[a1], 'to_be_offered', null);
+    assert false, '0096-c: a closed application took a status';
+  exception when sqlstate '22023' then
+    assert sqlerrm = format('This job was closed on %s. Reopen the job first.', to_char(current_date, 'YYYY-MM-DD')),
+      '0096-c: message: ' || sqlerrm;
+  end;
+
+  -- 0096-d: Hired is never picked.
+  begin
+    perform public.set_application_status(array[a5], 'hired', null);
+    assert false, '0096-d: hired was set as a status';
+  exception when sqlstate '22023' then
+    assert sqlerrm = 'Hire through the offer — "Hired" is set when the offer is accepted.', '0096-d: message: ' || sqlerrm;
+  end;
+end $$;
+reset role;
+
+-- 0096-e: the hire that fills the job marks the rest "Position filled."
+update public.applications set stage_key = 'hired' where id = '90000000-0000-0000-0000-000000000964';
+do $$
+begin
+  assert (select status from public.jobs where id = '70000000-0000-0000-0000-000000000962') = 'filled', '0096-e: job filled';
+  assert (select sub_status_key = 'contacted' and closed_at is not null and closed_reason = 'Position filled.' and not in_play
+            from public.applications where id = '90000000-0000-0000-0000-000000000965'),
+    '0096-e: the other candidate keeps Contacted and gets the closure mark';
+  assert (select count(*) from public.application_events
+           where application_id = '90000000-0000-0000-0000-000000000965'
+             and kind = 'status_change' and body = 'Position filled.') = 1,
+    '0096-e: one status_change event';
+  assert (select sub_status_key = 'hired' and closed_at is null from public.applications
+           where id = '90000000-0000-0000-0000-000000000964'), '0096-e: the hire is not marked';
+end $$;
+
+set role authenticated;
+do $$
+declare r jsonb;
+begin
+  r := public.withdraw_in_play('70000000-0000-0000-0000-000000000963', null);
+  assert r = '{"withdrawn": 1}'::jsonb, '0096-e: withdraw_in_play: ' || r::text;
+  assert (select sub_status_key = 'contacted' and closed_reason = 'Position filled.' and not in_play
+            from public.applications where id = '90000000-0000-0000-0000-000000000966'),
+    '0096-e: withdraw_in_play puts the same mark';
+  r := public.withdraw_in_play('70000000-0000-0000-0000-000000000963', null);
+  assert r = '{"withdrawn": 0}'::jsonb, '0096-e: nobody left: ' || r::text;
+end $$;
+reset role;
+set app.test_uid = '';
+
+-- 0096-f: no live function compares, assigns or lists the old stage keys.
+do $$
+declare v_left text;
+begin
+  assert not exists (select 1 from public.application_stages where key in ('new', 'rejected', 'withdrawn')),
+    '0096-f: the old stages are gone, so any write of them would fail';
+  select string_agg(n.nspname || '.' || p.proname, ', ') into v_left
+    from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+   where n.nspname in ('public', 'app')
+     and p.prosrc ~* concat_ws('|',
+           'stage_key\s*(=|<>|!=|:=|,)\s*''(new|rejected|withdrawn)''',
+           '''(new|rejected|withdrawn)''\s*(=|<>|!=)\s*[a-z_.]*stage_key',
+           'stage_key\s+(not\s+)?in\s*\([^)]*''(new|rejected|withdrawn)''',
+           'array\s*\[[^]]*''(new|rejected|withdrawn)''[^]]*\][^;]{0,40}stage');
+  assert v_left is null, '0096-f: still on the old stages: ' || coalesce(v_left, '');
+end $$;
+
+delete from public.application_events where application_id::text like '90000000-0000-0000-0000-00000000096_';
+delete from public.applications where id::text like '90000000-0000-0000-0000-00000000096_';
+delete from public.candidates where id::text like '80000000-0000-0000-0000-00000000096_';
+delete from public.jobs where id::text like '70000000-0000-0000-0000-00000000096_';
+
 select 'SMOKE TESTS PASSED' as result;

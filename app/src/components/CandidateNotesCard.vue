@@ -10,6 +10,7 @@ import {
   canRemoveNote,
   listCandidateNotes,
   noteActor,
+  noteJob,
   noteKindLabel,
   removeCandidateNote,
   type CandidateNoteRow,
@@ -132,7 +133,7 @@ onMounted(() => load(0))
       <div v-for="n in notes" :key="n.id" class="note-row" :data-testid="`note-${n.id}`">
         <div class="note-head">
           <span class="badge" :class="n.kind === 'note' ? 'blue' : ''">{{ noteKindLabel(n.kind) }}</span>
-          <small>{{ noteActor(n) }} · {{ longDate(n.occurred_at) }}</small>
+          <small>{{ noteActor(n) }} · {{ longDate(n.occurred_at) }}<template v-if="noteJob(n)"> · <span data-testid="note-job">{{ noteJob(n) }}</span></template></small>
           <button
             v-if="canRemoveNote(n, viewer)"
             class="button secondary small-btn"

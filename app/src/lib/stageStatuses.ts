@@ -34,7 +34,9 @@ export const NOT_RESPONDING_FILTER = 'not_responding'
 
 const OUTREACH_STAGES = new Set<string>(['screening'])
 const LIVE_STAGES: readonly StageKey[] = STAGES.filter((s) => s !== 'hired')
-const DO_NOT_CONTACT = 'do_not_contact'
+/** Zoho's contact statuses; the import alone turns them into the candidate's contact rule. */
+const NEVER_CONTACT = 'never_contact'
+const CONTACT_LATER_STATUSES = new Set<string>(['contact_in_future', 'rejected_hirable'])
 const RETIRED_SUFFIX = ' (retired)'
 
 function stageRank(stageKey: string): number {
@@ -102,11 +104,19 @@ export function statusFilterGroups(rows: ReadonlyArray<SubStatusRow>, stageKeys?
  * The status picker's groups: every live status by stage — picking one moves
  * the application to its stage — or only those of one outcome (Reject,
  * Withdraw). "Hired" is never offered: it is set by confirming the hire.
+ * With `currentStage`, that stage's group comes first, so the natural pick
+ * ends the application where it is instead of moving it back a stage.
  */
-export function pickableStatusGroups(rows: ReadonlyArray<SubStatusRow>, outcome?: Outcome): StatusFilterGroup[] {
-  return statusFilterGroups(
+export function pickableStatusGroups(
+  rows: ReadonlyArray<SubStatusRow>,
+  outcome?: Outcome,
+  currentStage?: string,
+): StatusFilterGroup[] {
+  const groups = statusFilterGroups(
     rows.filter((r) => r.archived_at === null && r.outcome !== 'hired' && (!outcome || r.outcome === outcome)),
   )
+  if (!currentStage) return groups
+  return [...groups.filter((g) => g.stageKey === currentStage), ...groups.filter((g) => g.stageKey !== currentStage)]
 }
 
 /**
@@ -133,14 +143,19 @@ export function filterStagesFor(stageFilter: string): readonly string[] | undefi
 }
 
 /**
- * The warning beside "Do not contact": the status labels the application,
- * while the block that stops sourcing and re-applying is the candidate's
- * own contact rule (0067) — a separate, deliberate step.
+ * The warning beside a contact status ("NEVER to be contacted again",
+ * "Contact in Future", "Rejected-Hirable"): the status labels the
+ * application, while the candidate's own contact rule (0067) is what blocks
+ * or delays outreach — a separate, deliberate step.
  */
 export function contactHint(key: string): string | null {
-  return key === DO_NOT_CONTACT
-    ? 'This only labels the application. To stop anyone contacting this person, set Do not contact on their candidate record.'
-    : null
+  if (key === NEVER_CONTACT) {
+    return 'This only labels the application. To stop anyone contacting this person, set Do not contact on their candidate record.'
+  }
+  if (CONTACT_LATER_STATUSES.has(key)) {
+    return 'This only labels the application. To come back to this person later, set Contact later on their candidate record.'
+  }
+  return null
 }
 
 /** "Status: <from or —> → <to> · <note>", the timeline line of a `status_change` event. */

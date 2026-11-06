@@ -9,7 +9,7 @@ import { contactHint, pickableStatusGroups } from '@/lib/stageStatuses'
  * is the reason: Reject offers every live status whose outcome is
  * "rejected", Withdraw those whose outcome is "withdrew", grouped by stage,
  * and picking one moves the application to that status's stage through
- * set_application_status. The note is optional and goes into the timeline.
+ * set_application_status. The application's current stage is listed first. The note is optional and goes into the timeline.
  */
 type Mode = 'reject' | 'withdraw'
 const OUTCOME_OF: Record<Mode, Outcome> = { reject: 'rejected', withdraw: 'withdrew' }
@@ -26,11 +26,14 @@ const note = ref('')
 const busy = ref(false)
 const error = ref<string | null>(null)
 
-const groups = computed(() => pickableStatusGroups(props.rows, OUTCOME_OF[mode.value]))
+const currentStage = ref<string | undefined>(undefined)
+const groups = computed(() => pickableStatusGroups(props.rows, OUTCOME_OF[mode.value], currentStage.value))
 const warning = computed(() => contactHint(statusKey.value))
 
-function open(next: Mode, name: string, ids: string[]): void {
+/** `stageKey`: the application's current stage, whose statuses are listed first. */
+function open(next: Mode, name: string, ids: string[], stageKey?: string): void {
   mode.value = next
+  currentStage.value = stageKey
   candidateName.value = name
   applicationIds.value = ids
   statusKey.value = ''

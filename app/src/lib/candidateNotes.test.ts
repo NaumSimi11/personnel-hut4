@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { NOTES_PAGE_SIZE, NOTE_KINDS, canRemoveNote, noteActor, noteKindLabel } from './candidateNotes'
+import { NOTES_PAGE_SIZE, NOTE_KINDS, canRemoveNote, noteActor, noteJob, noteKindLabel } from './candidateNotes'
 
 describe('NOTE_KINDS', () => {
   it('names the ten kinds of candidate_notes.kind, note first', () => {
@@ -47,5 +47,16 @@ describe('canRemoveNote', () => {
   it('never matches an imported note without an actor to a signed-out viewer', () => {
     expect(canRemoveNote({ actor_id: null }, { personId: null, isAdmin: false })).toBe(false)
     expect(canRemoveNote({ actor_id: null }, { personId: 'p1', isAdmin: false })).toBe(false)
+  })
+})
+
+describe('noteJob', () => {
+  it('names the Zoho job an imported job note belongs to', () => {
+    expect(noteJob({ job_display_id: 'ZR_12_JOB' })).toBe('Job ZR_12_JOB')
+  })
+
+  it('is null for a note with no job', () => {
+    expect(noteJob({ job_display_id: null })).toBeNull()
+    expect(noteJob({ job_display_id: '  ' })).toBeNull()
   })
 })

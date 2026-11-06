@@ -9,6 +9,7 @@ import UploadCvsDialog from '@/components/UploadCvsDialog.vue'
 import PickFromPoolDialog from '@/components/PickFromPoolDialog.vue'
 import AddEmployeeDialog from '@/components/AddEmployeeDialog.vue'
 import RejectApplicationDialog from '@/components/RejectApplicationDialog.vue'
+import { orderNewestFirst } from '@/lib/applicationQueries'
 import { useDialogStore } from '@/stores/dialogs'
 import JobStepper from '@/components/JobStepper.vue'
 import ScreeningQuestionsEditor from '@/components/ScreeningQuestionsEditor.vue'
@@ -350,7 +351,7 @@ const APPLICATION_COLUMNS = `id, stage_key, sub_status_key, in_play, closed_at, 
 async function fetchApplicationPage(from: number) {
   let query = supabase.from('applications').select(APPLICATION_COLUMNS, { count: 'exact' }).eq('job_id', jobId)
   if (subStatusFilter.value) query = query.eq('sub_status_key', subStatusFilter.value)
-  return query.order('created_at', { ascending: true }).order('id').range(from, from + LIST_PAGE - 1)
+  return orderNewestFirst(query).range(from, from + LIST_PAGE - 1)
 }
 
 // A newer list load (a filter change, an action) retires answers still on the way.
@@ -640,7 +641,7 @@ async function moveTo(app: ApplicationRow, stageKey: StageKey): Promise<void> {
 
 // The same dialog as the application page: a Rejected status, set through the one door.
 function reject(app: ApplicationRow): void {
-  rejectDialog.value?.open('reject', app.candidate?.full_name ?? '', [app.id])
+  rejectDialog.value?.open('reject', app.candidate?.full_name ?? '', [app.id], app.stage_key)
 }
 
 function openConfirmHire(app: ApplicationRow): void {

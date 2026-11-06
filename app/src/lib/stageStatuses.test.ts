@@ -139,13 +139,21 @@ describe('filterStagesFor', () => {
 })
 
 describe('contactHint', () => {
-  it('warns that Do not contact is a label, not the block', () => {
-    expect(contactHint('do_not_contact')).toBe(
+  it('warns that NEVER to be contacted again is a label, not the block', () => {
+    expect(contactHint('never_contact')).toBe(
       'This only labels the application. To stop anyone contacting this person, set Do not contact on their candidate record.',
     )
   })
 
-  it('says nothing for any other status', () => {
+  it('points Contact in Future and Rejected-Hirable at the Contact later rule', () => {
+    const later =
+      'This only labels the application. To come back to this person later, set Contact later on their candidate record.'
+    expect(contactHint('contact_in_future')).toBe(later)
+    expect(contactHint('rejected_hirable')).toBe(later)
+  })
+
+  it('says nothing for any other status, or the deleted do_not_contact key', () => {
+    expect(contactHint('do_not_contact')).toBeNull()
     expect(contactHint('job_closed')).toBeNull()
     expect(contactHint('')).toBeNull()
   })
@@ -178,6 +186,17 @@ describe('pickableStatusGroups', () => {
     expect(pickableStatusGroups(pickable, 'rejected')).toEqual([
       { stageKey: 'interview', stageLabel: 'Interview', options: [{ key: 'rejected_by_hr', label: 'Rejected by HR' }] },
     ])
+  })
+
+  it('lists the current stage first, then the others in stage order', () => {
+    const withdrew: SubStatusRow[] = [
+      { key: 'not_interested', stage_key: 'screening', outcome: 'withdrew', label: 'Not Interested', sort_order: 80, archived_at: null },
+      { key: 'candidate_withdrew', stage_key: 'interview', outcome: 'withdrew', label: 'Withdraw Application', sort_order: 180, archived_at: null },
+      { key: 'offer_declined', stage_key: 'offer', outcome: 'withdrew', label: 'Offer-Declined', sort_order: 30, archived_at: null },
+    ]
+    expect(pickableStatusGroups(withdrew, 'withdrew', 'offer').map((g) => g.stageKey)).toEqual(['offer', 'screening', 'interview'])
+    expect(pickableStatusGroups(withdrew, 'withdrew', 'interview').map((g) => g.stageKey)).toEqual(['interview', 'screening', 'offer'])
+    expect(pickableStatusGroups(withdrew, 'withdrew').map((g) => g.stageKey)).toEqual(['screening', 'interview', 'offer'])
   })
 })
 

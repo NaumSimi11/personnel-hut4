@@ -786,7 +786,7 @@ onMounted(() => {
                       class="button secondary small-btn"
                       type="button"
                       :disabled="stageBusy"
-                      @click="rejectDialog?.open('reject', application.candidate?.full_name ?? '', [application.id])"
+                      @click="rejectDialog?.open('reject', application.candidate?.full_name ?? '', [application.id], application.stage_key)"
                     >
                       Reject
                     </button>
@@ -794,7 +794,7 @@ onMounted(() => {
                       class="button secondary small-btn"
                       type="button"
                       :disabled="stageBusy"
-                      @click="rejectDialog?.open('withdraw', application.candidate?.full_name ?? '', [application.id])"
+                      @click="rejectDialog?.open('withdraw', application.candidate?.full_name ?? '', [application.id], application.stage_key)"
                     >
                       Withdrawn
                     </button>

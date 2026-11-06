@@ -3,6 +3,7 @@ import {
   KEY_PATTERN,
   MAX_LABEL_LENGTH,
   OUTCOME_CHOICES,
+  canAddStatus,
   canRetire,
   duplicateLabel,
   groupByStage,
@@ -180,5 +181,14 @@ describe('OUTCOME_CHOICES', () => {
   it('names every outcome, Hired included, for the read-only tag', () => {
     expect(outcomeLabel('hired')).toBe('Hired')
     expect(outcomeLabel('open')).toBe('Still in play')
+  })
+})
+
+describe('canAddStatus', () => {
+  it('offers Add status on every stage but Hired, whose one status is the hire', () => {
+    expect(canAddStatus('screening')).toBe(true)
+    expect(canAddStatus('interview')).toBe(true)
+    expect(canAddStatus('offer')).toBe(true)
+    expect(canAddStatus('hired')).toBe(false)
   })
 })

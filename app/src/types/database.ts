@@ -5512,6 +5512,11 @@ export type Database = {
         Returns: Json
       }
       my_tasks: { Args: Record<PropertyKey, never>; Returns: Json }
+      not_responding_applications: {
+        Args: { p_company_id?: string | null }
+        Returns: Database['public']['Tables']['applications']['Row'][]
+        SetofOptions: { from: '*'; to: 'applications'; isOneToOne: false; isSetofReturn: true }
+      }
       opening_counts: {
         Args: { p_job_ids: string[] }
         Returns: { job_id: string; in_play: number; hired: number; total: number }[]

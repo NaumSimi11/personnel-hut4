@@ -5,7 +5,7 @@ import { supabase } from '@/lib/supabase'
 import CompanyFilter from '@/components/CompanyFilter.vue'
 import { PIPELINE_STAGES } from '@/lib/dashboard'
 import { applicantRows, type ApplicantLite, type ApplicantRow } from '@/lib/hiringTabs'
-import { SUB_STATUS_STAGES, type SubStatusRow } from '@/lib/outreach'
+import type { SubStatusRow } from '@/lib/outreach'
 import { NOT_RESPONDING_FILTER, filterStagesFor, statusFilterGroups, statusLabels } from '@/lib/stageStatuses'
 import { blockerCount, blockerWords, friendlyHardDeleteError } from '@/lib/hardDelete'
 import { FILE_BUCKET } from '@/lib/applicationFiles'
@@ -15,6 +15,7 @@ import { useHiringLookupsStore } from '@/stores/hiringLookups'
 import { LIST_PAGE } from '@/lib/pageAll'
 import { likePattern } from '@/lib/likePattern'
 import { createRequestGate } from '@/lib/requestGate'
+import { applicantsQueryPlan, orderNewestFirst } from '@/lib/applicationQueries'
 
 /**
  * The prototype's "Applicants" tab (plan 044): every application across
@@ -33,7 +34,10 @@ import { createRequestGate } from '@/lib/requestGate'
  * `?stage=` and `?status=` open the list already filtered — the Labels
  * page's "Review them first" (plan 069) links here that way. Since plan 075
  * "In progress" is `in_play`, a stage holds everyone who reached it, and a
- * row its job's closing marked says so where its status would be.
+ * row its job's closing marked says so where its status would be. The
+ * company filter and "Not responding" run in the query too: the latter is
+ * the database's rule (not_responding_applications, the one Home counts),
+ * so the list, its badge and "Showing N of total" agree with the filter.
  */
 const SEARCH_DEBOUNCE_MS = 300
 
@@ -61,12 +65,23 @@ const statusGroups = computed(() => statusFilterGroups(subStatusRows.value, filt
 const search = ref('')
 const hasMore = computed(() => applications.value.length < total.value)
 
-const companies = computed(() => {
-  const seen = new Map<string, string>()
-  applications.value.forEach((a) => seen.set(a.company_id, a.job?.company?.name ?? '—'))
-  return [...seen].map(([id, name]) => ({ id, name })).sort((a, b) => a.name.localeCompare(b.name))
+const companies = ref<{ id: string; name: string }[]>([])
+// The query already filtered; the rows only take their shape here. Every row
+// the "Not responding" filter returned is flagged by the database's rule.
+const rows = computed<ApplicantRow[]>(() => {
+  const shaped = applicantRows(applications.value, { companyId: '', stage: 'all', search: '' })
+  return stage.value === NOT_RESPONDING_FILTER ? shaped.map((r) => ({ ...r, notResponding: true })) : shaped
 })
-const rows = computed<ApplicantRow[]>(() => applicantRows(applications.value, { companyId: companyId.value, stage: stage.value, search: '' }))
+
+/** The companies the viewer may see candidates in (a handful of rows, once). */
+async function loadCompanies(): Promise<void> {
+  const { data, error: err } = await supabase.from('companies').select('id, name').is('archived_at', null).order('name')
+  if (err) {
+    console.error('Companies load failed:', err.message)
+    return
+  }
+  companies.value = (data ?? []).filter((c) => auth.can(c.id, 'candidates.view'))
+}
 
 function badgeClass(stageKey: string, inPlay: boolean): string {
   if (stageKey === 'hired') return 'green'
@@ -121,17 +136,15 @@ const COLUMNS = `id, company_id, stage_key, sub_status_key, in_play, closed_at, 
        job:jobs(id, title, status, company:companies(name)),
        owner:people!applications_owner_id_fkey(full_name)`
 
-/** One window of the list; the stage, status and name filters all run in the query. */
+/** One window of the list; the stage, status, company and name filters all run in the query. */
 function fetchPage(from: number) {
-  const stageKey = stage.value
-  let query = supabase.from('applications').select(COLUMNS, { count: 'exact' })
-  if (stageKey === 'live') query = query.eq('in_play', true)
-  else if (stageKey === NOT_RESPONDING_FILTER) query = query.eq('in_play', true).in('stage_key', [...SUB_STATUS_STAGES])
-  else if (stageKey !== 'all') query = query.eq('stage_key', stageKey)
-  if (status.value) query = query.eq('sub_status_key', status.value)
-  const term = search.value.trim()
-  if (term) query = query.ilike('candidate.full_name', likePattern(term))
-  return query.order('received_at', { ascending: false }).order('id').range(from, from + LIST_PAGE - 1)
+  const plan = applicantsQueryPlan({ stage: stage.value, status: status.value, companyId: companyId.value, search: search.value })
+  let query = plan.notResponding
+    ? supabase.rpc('not_responding_applications', {}, { count: 'exact' }).select(COLUMNS)
+    : supabase.from('applications').select(COLUMNS, { count: 'exact' })
+  for (const [column, value] of plan.eq) query = query.eq(column, value)
+  if (plan.nameLike) query = query.ilike('candidate.full_name', likePattern(plan.nameLike))
+  return orderNewestFirst(query).range(from, from + LIST_PAGE - 1)
 }
 
 // A newer load (or a filter change) retires the answers still on the way.
@@ -181,6 +194,7 @@ onBeforeUnmount(() => {
 
 onMounted(() => {
   void lookups.ensure()
+  void loadCompanies()
   void load()
 })
 // A status of another stage cannot match: clearing it reloads through its own watcher.
@@ -190,6 +204,7 @@ watch(stage, () => {
   else void load()
 })
 watch(status, load)
+watch(companyId, load)
 </script>
 
 <template>

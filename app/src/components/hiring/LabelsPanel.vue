@@ -11,6 +11,7 @@ import {
   type Outcome,
   type SubStatusGroup,
   type SubStatusRow,
+  canAddStatus,
   canRetire,
   duplicateLabel,
   groupByStage,
@@ -280,7 +281,7 @@ onMounted(load)
               </small>
             </div>
           </div>
-          <form class="row add-row" novalidate @submit.prevent="add(group)">
+          <form v-if="canAddStatus(group.stageKey)" class="row add-row" novalidate @submit.prevent="add(group)">
             <span class="key">New status</span>
             <input
               class="input"

@@ -41,6 +41,8 @@ export type CandidateNoteRow = {
   actor_name: string | null
   occurred_at: string
   actor: { full_name: string } | null
+  /** custom.zoho.job_display_id: the Zoho job an imported job note was written on. */
+  job_display_id: string | null
 }
 
 export function noteKindLabel(kind: string): string {
@@ -50,6 +52,12 @@ export function noteKindLabel(kind: string): string {
 /** The linked person, else the Zoho user we could not link, else the system. */
 export function noteActor(n: Pick<CandidateNoteRow, 'actor' | 'actor_name'>): string {
   return n.actor?.full_name ?? n.actor_name ?? NOTE_ACTOR_FALLBACK
+}
+
+/** "Job ZR_12_JOB" for an imported Zoho job note; null for any other note. */
+export function noteJob(n: Pick<CandidateNoteRow, 'job_display_id'>): string | null {
+  const id = (n.job_display_id ?? '').trim()
+  return id ? `Job ${id}` : null
 }
 
 /** The del policy as a hint: the author's own note, or any note for an admin. */
@@ -68,6 +76,7 @@ export async function listCandidateNotes(candidateId: string, page: number): Pro
     .from('candidate_notes')
     .select(
       `id, kind, body, actor_id, actor_name, occurred_at,
+       job_display_id:custom->zoho->>job_display_id,
        actor:people!candidate_notes_actor_id_fkey(full_name)`,
     )
     .eq('candidate_id', candidateId)
@@ -75,7 +84,7 @@ export async function listCandidateNotes(candidateId: string, page: number): Pro
     .order('created_at', { ascending: false })
     .range(from, from + NOTES_PAGE_SIZE - 1)
   if (error) throw new Error(error.message)
-  return (data ?? []) as CandidateNoteRow[]
+  return (data ?? []) as unknown as CandidateNoteRow[]
 }
 
 /** add_candidate_note: the RPC trims, checks and refuses in its own words. */

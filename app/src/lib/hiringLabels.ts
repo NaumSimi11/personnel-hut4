@@ -144,6 +144,14 @@ export function canRetire(key: string): boolean {
   return !RULE_KEYS.has(key)
 }
 
+/**
+ * Whether a stage takes new statuses. Hired does not: its outcome must be
+ * "hired" (0095's check) and a hire is only ever set by confirming it.
+ */
+export function canAddStatus(stageKey: string): boolean {
+  return stageKey !== 'hired'
+}
+
 /** A new status goes after everything at its stage, retired ones included. */
 export function nextSortOrder(stageRows: ReadonlyArray<{ sort_order: number }>): number {
   return stageRows.reduce((max, r) => Math.max(max, r.sort_order), 0) + SORT_STEP

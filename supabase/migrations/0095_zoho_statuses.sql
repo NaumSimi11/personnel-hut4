@@ -80,6 +80,10 @@ insert into public.application_sub_statuses (key, stage_key, label, sort_order, 
   ('offer_withdrawn',             'offer',     'Offer-Withdrawn',                         40, 'rejected'),
   ('hired',                       'hired',     'Hired',                                   10, 'hired');
 alter table public.application_sub_statuses alter column outcome set not null;
+-- Hired is the one stage of outcome hired, and outcome hired lives only there:
+-- an open status on Hired would count a hire as still in play.
+alter table public.application_sub_statuses add constraint application_sub_statuses_hired_stage
+  check ((stage_key = 'hired') = (outcome = 'hired'));
 
 -- ------------------------------------------------- an outcome stays put
 -- Flipping what a status means would silently re-count every application
@@ -151,7 +155,8 @@ begin
   return new;
 end $$;
 drop trigger t3_sub_status on public.applications;
-create trigger t3_sub_status before insert or update of stage_key, sub_status_key, closed_at
+-- in_play is in the list so a direct write of it is recomputed, never kept.
+create trigger t3_sub_status before insert or update of stage_key, sub_status_key, closed_at, in_play
   on public.applications
   for each row execute function app.applications_sub_status();
 

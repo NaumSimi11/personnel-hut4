@@ -88,9 +88,36 @@ begin
      group by a.job_id;
 end $$;
 
-revoke all on function public.hiring_summary(), public.opening_counts(uuid[]) from public, anon;
+-- ---------------------------------------------------- not_responding_applications
+-- The Applicants list's "Not responding" filter: the applications
+-- app.not_responding flags (the rule hiring_summary counts), in the companies
+-- where the caller holds candidates.view, optionally one company. Rows of
+-- applications, so the list composes its columns, search, order and page
+-- (range) onto the call and only the page leaves the database.
+create or replace function public.not_responding_applications(p_company_id uuid default null)
+returns setof public.applications
+language plpgsql stable security definer set search_path = public as $$
+declare v_visible uuid[];
+begin
+  if app.current_person_id() is null then
+    raise exception 'Sign in to continue.' using errcode = '42501';
+  end if;
+  select coalesce(array_agg(c.id), '{}') into v_visible
+    from public.companies c
+   where app.has_capability(c.id, 'candidates.view')
+     and (p_company_id is null or c.id = p_company_id);
+  return query
+    select a.* from public.applications a
+     where a.company_id = any (v_visible)
+       and a.in_play and a.stage_key = 'screening'
+       and app.not_responding(a);
+end $$;
+
+revoke all on function public.hiring_summary(), public.opening_counts(uuid[]),
+  public.not_responding_applications(uuid) from public, anon;
 grant execute on function public.hiring_summary() to authenticated;
 grant execute on function public.opening_counts(uuid[]) to authenticated;
+grant execute on function public.not_responding_applications(uuid) to authenticated;
 
 -- ============================================================ Part 2: import
 -- HR's Zoho Recruit "Candidate-Job View" (the payload server/scripts/
@@ -104,7 +131,9 @@ grant execute on function public.opening_counts(uuid[]) to authenticated;
 -- ------------------------------------------------------------ the bulk flag
 -- While app.bulk_import is 'on' (set local by the import) these four trigger
 -- functions step aside. Otherwise they are 0005's audit, 0018's redacted
--- audit, 0096's owner notification and 0096's fill-on-hire, unchanged.
+-- audit, 0096's owner notification and 0096's fill-on-hire, unchanged. The
+-- fifth, 0067's activity touch, steps aside only for the imported events: a
+-- candidate keeps Zoho's last activity.
 create or replace function app.audit() returns trigger
 language plpgsql security definer set search_path = public as $$
 declare
@@ -188,6 +217,30 @@ begin
   return new;
 end $$;
 
+create or replace function app.touch_candidate_activity() returns trigger
+language plpgsql security definer set search_path = public as $$
+declare v_cand uuid; v_at timestamptz; v_prev text;
+begin
+  if tg_table_name = 'applications' then
+    v_cand := new.candidate_id;
+    v_at := case when tg_op = 'INSERT' then new.received_at else new.updated_at end;
+  elsif tg_table_name = 'application_events' then
+    if current_setting('app.bulk_import', true) = 'on' then return new; end if;
+    select candidate_id into v_cand from public.applications where id = new.application_id;
+    v_at := new.created_at;
+  else
+    v_cand := new.candidate_id;
+    v_at := new.created_at;
+  end if;
+  if v_cand is null or v_at is null then return new; end if;
+  v_prev := current_setting('app.candidate_rpc', true);
+  perform set_config('app.candidate_rpc', 'on', true);
+  update public.candidates set last_activity_at = v_at
+    where id = v_cand and last_activity_at < v_at;
+  perform set_config('app.candidate_rpc', coalesce(nullif(v_prev, ''), 'off'), true);
+  return new;
+end $$;
+
 -- -------------------------------------------------------------- helpers
 -- Whether a payload stamp reads as a timestamp: a bad one is a refused row,
 -- never a failed cast halfway through the plan.
@@ -231,7 +284,8 @@ begin
 
   create temp table zoho_jv_jobs on commit drop as
     select custom->'zoho'->>'display_id' as display_id, count(*) as n,
-           (array_agg(id))[1] as job_id, (array_agg(company_id))[1] as company_id
+           (array_agg(id))[1] as job_id, (array_agg(company_id))[1] as company_id,
+           (array_agg(status))[1] as job_status, (array_agg(closed_at))[1] as job_closed_at
       from public.jobs where custom->'zoho'->>'display_id' is not null group by 1;
 
   create temp table zoho_jv_cand on commit drop as
@@ -267,8 +321,12 @@ begin
   ), r as (
     select a.*, c.id as candidate_id, c.is_new as candidate_is_new, c.problems as candidate_problems,
            c.source_key, c.v->>'last_activity_at' as candidate_activity,
-           j.n as job_matches, j.job_id, j.company_id,
+           j.n as job_matches, j.job_id, j.company_id, j.job_status, j.job_closed_at,
            s.key as sub_status_key, s.stage_key, s.outcome,
+           case when app.is_timestamptz(a.v->>'status_at') then (a.v->>'status_at')::timestamptz end as status_at,
+           -- Zoho's Hired Date is a calendar day (YYYY-MM-DD), read as UTC midnight.
+           case when coalesce(a.v->>'hired_date', '') ~ '^\d{4}-\d{2}-\d{2}$' and app.is_timestamptz(a.v->>'hired_date')
+                then (a.v->>'hired_date')::date end as hired_date,
            -- The Candidate Owner, else the first of the Assigned Recruiter(s)
            -- (the extract already keeps one; "; " or ", " separate several).
            coalesce(nullif(btrim(coalesce(c.v->>'owner_name', '')), ''),
@@ -280,13 +338,27 @@ begin
       left join pg_temp.zoho_jv_jobs j on j.display_id = a.job_ref
       left join public.application_sub_statuses s on s.key = a.v->>'sub_status_key' and s.archived_at is null
   )
-  select r.ord, r.cand_ref || ':' || r.job_ref as ref, r.v, r.cand_ref, r.job_ref,
+  , d as (
+    select r.*,
+           coalesce(case when app.is_timestamptz(r.v->>'received_at') then (r.v->>'received_at')::timestamptz end,
+                    r.status_at,
+                    case when app.is_timestamptz(r.candidate_activity) then r.candidate_activity::timestamptz end,
+                    now()) as received_at,
+           -- Open in Zoho on a job Zoho closed or filled: the closure mark,
+           -- as close_jobs would have put it (the reopen trigger lifts it).
+           r.outcome = 'open' and r.job_status in ('closed', 'filled') as job_closed
+      from r
+  )
+  select r.ord, r.cand_ref || ':' || r.job_ref as ref, r.v, r.cand_ref, r.job_ref, coalesce(x.id, gen_random_uuid()) as id,
          r.candidate_id, r.job_id, r.company_id, r.sub_status_key, r.stage_key, r.source_key, r.owner_name,
-         p.person_id as owner_id, x.id is null as is_new,
-         coalesce(case when app.is_timestamptz(r.v->>'received_at') then (r.v->>'received_at')::timestamptz end,
-                  case when app.is_timestamptz(r.v->>'status_at') then (r.v->>'status_at')::timestamptz end,
-                  case when app.is_timestamptz(r.candidate_activity) then r.candidate_activity::timestamptz end,
-                  now()) as received_at,
+         p.person_id as owner_id, x.id is null as is_new, r.received_at, r.status_at, r.hired_date,
+         case when r.job_closed then coalesce(r.job_closed_at, r.status_at, now()) end as closed_at,
+         case when r.job_closed then 'Job closed in Zoho.' end as closed_reason,
+         -- The one event that dates the application in Zoho time: the hire on
+         -- its Hired Date, any other status on Status Last Updated.
+         case when r.stage_key = 'hired'
+              then coalesce(r.hired_date::timestamp at time zone 'UTC', r.status_at, r.received_at)
+              else coalesce(r.status_at, r.received_at) end as event_at,
          case when r.cand_ref is null then array['no candidate_zoho_id'] else '{}'::text[] end
          || case when r.job_ref is null then array['no job_display_id'] else '{}'::text[] end
          || case when r.cand_ref is not null and r.candidate_id is null
@@ -306,14 +378,17 @@ begin
                       and count(*) over (partition by r.cand_ref, r.job_ref) > 1
                  then array['the candidate and job appear twice in the payload'] else '{}'::text[] end
          || app.zoho_stamp_problems(r.v, array['received_at', 'status_at'])
+         || case when nullif(r.v->>'hired_date', '') is not null and r.hired_date is null
+                 then array[format('hired_date "%s" is not a YYYY-MM-DD date', r.v->>'hired_date')]
+                 else '{}'::text[] end
          -- An application in play from another source (added by hand) for
          -- the same candidate and job: one open application per candidate.
-         || case when x.id is null and r.outcome = 'open' and not coalesce(r.candidate_is_new, true)
+         || case when x.id is null and r.outcome = 'open' and not r.job_closed and not coalesce(r.candidate_is_new, true)
                       and exists (select 1 from public.applications o
                                    where o.job_id = r.job_id and o.candidate_id = r.candidate_id and o.in_play)
                  then array['already has an open application for this job'] else '{}'::text[] end
          as problems
-    from r
+    from d r
     left join pg_temp.zoho_jv_people p on p.name_key = lower(r.owner_name)
     left join public.applications x
            on x.job_id = r.job_id and x.source_provider = 'zoho_recruit' and x.provider_ref = r.cand_ref || ':' || r.job_ref;
@@ -377,10 +452,28 @@ begin
    order by c.ord;
 
   insert into public.applications
-    (job_id, company_id, candidate_id, stage_key, sub_status_key, source_key, source_provider, provider_ref,
-     owner_id, received_at, custom)
-  select a.job_id, a.company_id, a.candidate_id, a.stage_key, a.sub_status_key, a.source_key, 'zoho_recruit', a.ref,
-         a.owner_id, a.received_at, app.jsonb_object_or_empty(a.v->'custom')
+    (id, job_id, company_id, candidate_id, stage_key, sub_status_key, source_key, source_provider, provider_ref,
+     owner_id, received_at, closed_at, closed_reason, custom)
+  select a.id, a.job_id, a.company_id, a.candidate_id, a.stage_key, a.sub_status_key, a.source_key, 'zoho_recruit', a.ref,
+         a.owner_id, a.received_at, a.closed_at, a.closed_reason,
+         -- custom.zoho.hired_date is what link_hired_application and the
+         -- imported-hire card read.
+         case when a.stage_key = 'hired' and a.hired_date is not null
+              then app.jsonb_object_or_empty(a.v->'custom') || jsonb_build_object('zoho',
+                     app.jsonb_object_or_empty(a.v->'custom'->'zoho') || jsonb_build_object('hired_date', a.hired_date::text))
+              else app.jsonb_object_or_empty(a.v->'custom') end
+    from pg_temp.zoho_jv_app a
+   where a.is_new
+   order by a.ord;
+
+  -- One event per application, in Zoho time, by nobody: the hire report
+  -- (app.report_hires) and "not responding" read these dates.
+  insert into public.application_events
+    (application_id, kind, from_stage_key, to_stage_key, from_sub_status_key, to_sub_status_key, body, actor_id, created_at)
+  select a.id,
+         case when a.stage_key = 'hired' then 'stage_change' else 'status_change' end,
+         null, case when a.stage_key = 'hired' then 'hired' end,
+         null, a.sub_status_key, null, null, a.event_at
     from pg_temp.zoho_jv_app a
    where a.is_new
    order by a.ord;

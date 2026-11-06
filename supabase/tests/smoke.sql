@@ -8770,6 +8770,23 @@ begin
   assert (select not in_play from public.applications where id = v_b), '0095-b: closed_at takes it out of play';
   update public.applications set closed_at = null where id = v_b;
   assert (select in_play from public.applications where id = v_b), 'and clearing it puts it back';
+  -- 0095-e: in_play written directly is recomputed from the status and mark
+  update public.applications set in_play = false where id = v_b;
+  assert (select in_play from public.applications where id = v_b), '0095-e: a direct in_play write is recomputed';
+
+  -- 0095-f: the Hired stage holds only outcome hired, and only it does
+  begin
+    insert into public.application_sub_statuses (key, stage_key, label, sort_order, outcome)
+      values ('zz95_hired_open', 'hired', 'ZZ95 hired but open', 99, 'open');
+    assert false, '0095-f: an open status on the Hired stage must be refused';
+  exception when check_violation then null;
+  end;
+  begin
+    insert into public.application_sub_statuses (key, stage_key, label, sort_order, outcome)
+      values ('zz95_screen_hired', 'screening', 'ZZ95 screening hire', 99, 'hired');
+    assert false, '0095-f: outcome hired outside the Hired stage must be refused';
+  exception when check_violation then null;
+  end;
 
   -- 0095-d: an outcome in use cannot change; an unused one can
   begin
@@ -9137,6 +9154,18 @@ begin
   assert (select count(*) from public.opening_counts(array[
     '70000000-0000-0000-0000-000000000971', '70000000-0000-0000-0000-000000000972']::uuid[])) = 1,
     '0097-summary: opening_counts shows nothing for the B job';
+
+  -- not_responding_applications: the same rule, as rows, for the Applicants filter.
+  assert (select count(*) from public.not_responding_applications()) = v_expected,
+    '0097-summary: not_responding_applications lists what hiring_summary counts';
+  assert exists (select 1 from public.not_responding_applications() r where r.id = '90000000-0000-0000-0000-000000000971'),
+    '0097-summary: the quiet Company A application is listed';
+  assert not exists (select 1 from public.not_responding_applications() r where r.id = '90000000-0000-0000-0000-000000000973'),
+    '0097-summary: no Company B row';
+  assert not exists (select 1 from public.not_responding_applications('10000000-0000-0000-0000-00000000000b')),
+    '0097-summary: filtering to a company the caller cannot see gives nothing';
+  assert (select count(*) from public.not_responding_applications('10000000-0000-0000-0000-00000000000a')) = v_expected,
+    '0097-summary: filtering to Company A';
 end $$;
 reset role;
 drop table zz97_expected;
@@ -9145,6 +9174,10 @@ begin
   assert not has_function_privilege('anon', 'public.hiring_summary()', 'execute'), '0097-summary: anon cannot run hiring_summary';
   assert not has_function_privilege('anon', 'public.opening_counts(uuid[])', 'execute'), '0097-summary: anon cannot run opening_counts';
   assert has_function_privilege('authenticated', 'public.hiring_summary()', 'execute'), '0097-summary: authenticated can run hiring_summary';
+  assert not has_function_privilege('anon', 'public.not_responding_applications(uuid)', 'execute'),
+    '0097-summary: anon cannot run not_responding_applications';
+  assert has_function_privilege('authenticated', 'public.not_responding_applications(uuid)', 'execute'),
+    '0097-summary: authenticated can run not_responding_applications';
 end $$;
 -- Someone with no candidates.view anywhere (Omar) sees empty counts.
 set app.test_uid = '00000000-0000-0000-0000-000000000003';
@@ -9154,6 +9187,8 @@ declare s jsonb := public.hiring_summary();
 begin
   assert s->'by_job' = '[]'::jsonb and s->'recent' = '[]'::jsonb and (s->>'not_responding')::int = 0,
     '0097-summary: no capability, no counts';
+  assert not exists (select 1 from public.not_responding_applications()),
+    '0097-summary: no capability, no not-responding rows';
 end $$;
 reset role;
 set app.test_uid = '';
@@ -9167,7 +9202,14 @@ insert into public.jobs (id, company_id, title, status, custom) values
   ('70000000-0000-0000-0000-000000000975', '10000000-0000-0000-0000-00000000000a', 'ZZ97 JV one', 'open',
    '{"zoho": {"display_id": "ZZ97_1_JOB", "headcount": "3"}}'),
   ('70000000-0000-0000-0000-000000000976', '10000000-0000-0000-0000-00000000000a', 'ZZ97 JV two', 'open',
-   '{"zoho": {"display_id": "ZZ97_2_JOB"}}');
+   '{"zoho": {"display_id": "ZZ97_2_JOB"}}'),
+  ('70000000-0000-0000-0000-000000000977', '10000000-0000-0000-0000-00000000000a', 'ZZ97 JV closed', 'open',
+   '{"zoho": {"display_id": "ZZ97_3_JOB"}}'),
+  ('70000000-0000-0000-0000-000000000978', '10000000-0000-0000-0000-00000000000a', 'ZZ97 JV filled', 'filled',
+   '{"zoho": {"display_id": "ZZ97_4_JOB"}}');
+-- Job three closed (stamped when it closed); job four filled (no stamp).
+update public.jobs set status = 'closed', closed_at = '2024-05-01T10:00:00Z'
+ where id = '70000000-0000-0000-0000-000000000977';
 -- Someone already in play on job two by hand: the imported hire must leave them be.
 insert into public.candidates (id, full_name, email) values
   ('80000000-0000-0000-0000-000000000975', 'ZZ97 Hand', 'zz97hand@example.test');
@@ -9203,7 +9245,19 @@ insert into zz97_jv values ('ok', jsonb_build_object(
       'owner_name', ' ; Bea HR; Someone Else', 'custom', jsonb_build_object('zoho', '{}'::jsonb)),
     jsonb_build_object('candidate_zoho_id', 'ZZ97_C3', 'job_display_id', 'ZZ97_1_JOB', 'sub_status_key', 'contact_in_future',
       'received_at', null, 'status_at', null, 'hired_date', null,
-      'owner_name', null, 'custom', jsonb_build_object('zoho', '{}'::jsonb))),
+      'owner_name', null, 'custom', jsonb_build_object('zoho', '{}'::jsonb)),
+    -- Open on a closed job, and open on a filled one: both closed by the import.
+    jsonb_build_object('candidate_zoho_id', 'ZZ97_C3', 'job_display_id', 'ZZ97_3_JOB', 'sub_status_key', 'contacted',
+      'received_at', '2024-04-01T08:00:00.000Z', 'status_at', '2024-04-02T08:00:00.000Z', 'hired_date', null,
+      'owner_name', null, 'custom', jsonb_build_object('zoho', '{}'::jsonb)),
+    jsonb_build_object('candidate_zoho_id', 'ZZ97_C1', 'job_display_id', 'ZZ97_4_JOB', 'sub_status_key', 'interview_hr',
+      'received_at', '2024-01-01T08:00:00.000Z', 'status_at', '2024-09-09T09:00:00.000Z', 'hired_date', null,
+      'owner_name', null, 'custom', jsonb_build_object('zoho', '{}'::jsonb)),
+    -- Contacted five days ago (Zoho's status date), received in 2024.
+    jsonb_build_object('candidate_zoho_id', 'ZZ97_C3', 'job_display_id', 'ZZ97_2_JOB', 'sub_status_key', 'contacted',
+      'received_at', '2024-02-02T08:00:00.000Z',
+      'status_at', to_char((now() - interval '5 days') at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS".000Z"'),
+      'hired_date', null, 'owner_name', null, 'custom', jsonb_build_object('zoho', '{}'::jsonb))),
   'notes', jsonb_build_array(
     jsonb_build_object('candidate_zoho_id', 'ZZ97_C1', 'job_display_id', 'ZZ97_1_JOB', 'seq', 1,
       'occurred_at', '2024-08-08T09:25:00.000Z', 'kind_label', 'Call', 'author_name', 'Bea HR', 'body', '  Called, will think.  '),
@@ -9247,7 +9301,7 @@ do $$
 declare r jsonb := public.import_zoho_job_view((select p from zz97_jv where name = 'ok'), false);
 begin
   assert r->>'committed' = 'false', '0097-a: committed=false: ' || r::text;
-  assert (r->>'candidates')::int = 3 and (r->>'applications')::int = 4 and (r->>'notes')::int = 3,
+  assert (r->>'candidates')::int = 3 and (r->>'applications')::int = 7 and (r->>'notes')::int = 3,
     '0097-a: planned counts: ' || r::text;
   assert r->'refused' = '[]'::jsonb, '0097-a: nothing refused: ' || (r->'refused')::text;
   assert not exists (select 1 from public.candidates where provider = 'zoho_recruit' and provider_ref like 'ZZ97_C%'),
@@ -9269,9 +9323,9 @@ declare
 begin
   select * into b from zz97_before;
   assert r->>'committed' = 'true', '0097-b: committed: ' || r::text;
-  assert (r->>'candidates')::int = 3 and (r->>'applications')::int = 4 and (r->>'notes')::int = 3,
+  assert (r->>'candidates')::int = 3 and (r->>'applications')::int = 7 and (r->>'notes')::int = 3,
     '0097-b: counts: ' || r::text;
-  assert r->'by_status' = '{"offer_made": 1, "hired": 1, "never_contact": 1, "contact_in_future": 1}'::jsonb,
+  assert r->'by_status' = '{"offer_made": 1, "hired": 1, "never_contact": 1, "contact_in_future": 1, "contacted": 2, "interview_hr": 1}'::jsonb,
     '0097-b: by_status: ' || (r->'by_status')::text;
   assert r->'contact_rules' = '{"do_not_contact": 1, "contact_later": 1}'::jsonb,
     '0097-b: contact_rules: ' || (r->'contact_rules')::text;
@@ -9281,8 +9335,8 @@ begin
 
   assert (select count(*) from public.candidates where provider = 'zoho_recruit' and provider_ref like 'ZZ97_C%') = 3,
     '0097-b: three candidates';
-  assert (select count(*) from public.applications where source_provider = 'zoho_recruit' and provider_ref like 'ZZ97_C%') = 4,
-    '0097-b: four applications';
+  assert (select count(*) from public.applications where source_provider = 'zoho_recruit' and provider_ref like 'ZZ97_C%') = 7,
+    '0097-b: seven applications';
   assert (select stage_key = 'offer' and sub_status_key = 'offer_made' and in_play
             and owner_id = '20000000-0000-0000-0000-000000000005'
             and received_at = '2024-07-30T08:00:00Z' and custom->'zoho'->>'Status for this Job' = 'Offer-Made'
@@ -9323,12 +9377,67 @@ begin
          = b.audit_rows, '0097-b: no per-row audit';
   assert (select count(*) from public.activity_log where entity_type = 'imports' and action = 'zoho_job_view'
             and actor_person_id = '20000000-0000-0000-0000-000000000004'
-            and (after->>'applications')::int = 4) = b.import_rows + 1, '0097-b: one summary row';
+            and (after->>'applications')::int = 7) = b.import_rows + 1, '0097-b: one summary row';
   assert (select status from public.jobs where id = '70000000-0000-0000-0000-000000000976') = 'open',
     '0097-b: the hire on a one-person job leaves the job open';
   assert (select closed_at is null and in_play from public.applications where id = '90000000-0000-0000-0000-000000000975'),
     '0097-b: the other applicant on that job is not marked';
   assert current_setting('app.bulk_import', true) is distinct from 'on', '0097-b: the bulk flag does not outlive the import';
+end $$;
+
+-- 0097-e: the import closes what Zoho's job closed, and dates one event per
+-- application in Zoho time (the hire report, not-responding and activity read it).
+do $$
+declare
+  v_hire uuid := (select id from public.applications where provider_ref = 'ZZ97_C1:ZZ97_2_JOB');
+  v_offer uuid := (select id from public.applications where provider_ref = 'ZZ97_C1:ZZ97_1_JOB');
+  v_later uuid := (select id from public.applications where provider_ref = 'ZZ97_C3:ZZ97_1_JOB');
+  v_quiet public.applications := (select a from public.applications a where provider_ref = 'ZZ97_C3:ZZ97_2_JOB');
+  ev record;
+begin
+  assert (select closed_at = '2024-05-01T10:00:00Z' and closed_reason = 'Job closed in Zoho.' and not in_play
+            and sub_status_key = 'contacted'
+            from public.applications where provider_ref = 'ZZ97_C3:ZZ97_3_JOB'),
+    '0097-e: open on a closed job: closed at the job''s closing, status kept';
+  assert (select closed_at = '2024-09-09T09:00:00Z' and closed_reason = 'Job closed in Zoho.' and not in_play
+            from public.applications where provider_ref = 'ZZ97_C1:ZZ97_4_JOB'),
+    '0097-e: open on a filled job (no job stamp): closed at the status date';
+  assert (select closed_at is null and in_play from public.applications where id = v_offer),
+    '0097-e: open on an open job stays in play';
+  assert (select closed_at is null from public.applications where provider_ref = 'ZZ97_C2:ZZ97_1_JOB'),
+    '0097-e: an ended status carries no closure mark';
+
+  assert (select count(*) from public.application_events e join public.applications a on a.id = e.application_id
+           where a.provider_ref like 'ZZ97_C%') = 7, '0097-e: one event per imported application';
+  select * into ev from public.application_events where application_id = v_hire;
+  assert ev.kind = 'stage_change' and ev.from_stage_key is null and ev.to_stage_key = 'hired'
+     and ev.to_sub_status_key = 'hired' and ev.created_at = '2022-12-01T00:00:00Z'
+     and ev.actor_id is null and ev.body is null, '0097-e: the hire event, on the Hired Date: ' || row_to_json(ev)::text;
+  assert (select custom->'zoho'->>'hired_date' = '2022-12-01' from public.applications where id = v_hire),
+    '0097-e: custom.zoho.hired_date';
+  assert (select h.hired_at = '2022-12-01T00:00:00Z' from app.report_hires('10000000-0000-0000-0000-00000000000a') h
+           where h.application_id = v_hire), '0097-e: the imported hire is in report_hires';
+  select * into ev from public.application_events where application_id = v_offer;
+  assert ev.kind = 'status_change' and ev.from_sub_status_key is null and ev.to_sub_status_key = 'offer_made'
+     and ev.created_at = '2024-08-08T09:25:00Z' and ev.actor_id is null and ev.body is null,
+    '0097-e: a status event on Status Last Updated: ' || row_to_json(ev)::text;
+  assert (select e.created_at = a.received_at from public.application_events e
+            join public.applications a on a.id = e.application_id where a.id = v_later),
+    '0097-e: no status date, so the event falls back to received_at';
+  assert not app.not_responding(v_quiet), '0097-e: contacted five days ago (Zoho) is not "not responding"';
+  assert (select last_activity_at = '2024-08-08T09:25:00Z' from public.candidates
+           where provider = 'zoho_recruit' and provider_ref = 'ZZ97_C1'),
+    '0097-e: a later imported event leaves Zoho''s last activity';
+
+  -- HR reopens job three: the closure mark lifts (rolled back).
+  begin
+    update public.jobs set status = 'open' where id = '70000000-0000-0000-0000-000000000977';
+    assert (select closed_at is null and in_play from public.applications where provider_ref = 'ZZ97_C3:ZZ97_3_JOB'),
+      '0097-e: reopening the job brings the application back';
+    raise exception 'zz97 rollback';
+  exception when raise_exception then
+    assert sqlerrm = 'zz97 rollback', '0097-e: reopen block: ' || sqlerrm;
+  end;
 end $$;
 
 -- 0097-c: an unknown job display id is a refused row; the commit refuses all.
@@ -9355,7 +9464,9 @@ begin
   assert r->>'committed' = 'true' and (r->>'candidates')::int = 0 and (r->>'applications')::int = 0
      and (r->>'notes')::int = 0, '0097-d: idempotent: ' || r::text;
   assert r->'refused' = '[]'::jsonb, '0097-d: nothing refused on the re-run';
-  assert (select count(*) from public.applications where provider_ref like 'ZZ97_C%') = 4, '0097-d: still four';
+  assert (select count(*) from public.applications where provider_ref like 'ZZ97_C%') = 7, '0097-d: still seven';
+  assert (select count(*) from public.application_events e join public.applications a on a.id = e.application_id
+           where a.provider_ref like 'ZZ97_C%') = 7, '0097-d: the second commit writes no event';
   assert (select count(*) from public.candidate_notes where provider_ref like 'ZZ97_C%') = 3, '0097-d: still three notes';
 end $$;
 -- 0097-b: the guards themselves. The same owner change and hire, once with
@@ -9401,7 +9512,8 @@ drop table zz97_jv, zz97_before, zz97_result;
 delete from public.candidate_notes where provider_ref like 'ZZ97_C%';
 delete from public.applications where provider_ref like 'ZZ97_C%' or id = '90000000-0000-0000-0000-000000000975';
 delete from public.candidates where provider_ref like 'ZZ97_C%' or id = '80000000-0000-0000-0000-000000000975';
-delete from public.jobs where id in ('70000000-0000-0000-0000-000000000975', '70000000-0000-0000-0000-000000000976');
+delete from public.jobs where id in ('70000000-0000-0000-0000-000000000975', '70000000-0000-0000-0000-000000000976',
+                                    '70000000-0000-0000-0000-000000000977', '70000000-0000-0000-0000-000000000978');
 delete from public.activity_log where entity_type = 'imports' and action = 'zoho_job_view';
 
 select 'SMOKE TESTS PASSED' as result;

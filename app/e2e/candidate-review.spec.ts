@@ -127,7 +127,7 @@ test('candidate page: files behind signed links, screening answers, decision, no
   await expect(page.getByRole('heading', { name: CANDIDATE_NAME })).toBeVisible()
   await expect(page.getByText(CANDIDATE_EMAIL)).toBeVisible()
   // A careers application lands on Screening / New.
-  await expect(page.locator('.stage-badge')).toHaveText('screening')
+  await expect(page.locator('.stage-badge')).toHaveText('Screening')
   await expect(page.getByTestId('sub-badge')).toHaveText('New')
 
   // Files: upload a CV; it lists with size and a download that works only when signed.
@@ -180,14 +180,14 @@ test('candidate page: files behind signed links, screening answers, decision, no
   await handoff.locator('#handoff-action').fill('Phone screen')
   await handoff.locator('#handoff-due').fill('2026-10-01')
   await handoff.getByRole('button', { name: 'Save assignment' }).click()
-  await expect(page.locator('.stage-badge')).toHaveText('screening')
+  await expect(page.locator('.stage-badge')).toHaveText('Screening')
   // The owner was notified in the app by the database; email delivery reports its state honestly.
   await expect(page.getByRole('status')).toContainText(/Assignment saved\. Notified/)
   await page.goto('/overview')
   const assignedTask = page.locator('.queue-row', { hasText: CANDIDATE_NAME })
   await expect(assignedTask).toContainText('Phone screen')
   await assignedTask.getByRole('link', { name: 'Open candidate' }).click()
-  await expect(page.locator('.stage-badge')).toHaveText('screening')
+  await expect(page.locator('.stage-badge')).toHaveText('Screening')
 
   await page.screenshot({ path: testInfo.outputPath('screening.png'), fullPage: true })
   await page.getByRole('button', { name: 'Edit assignment' }).click()
@@ -208,7 +208,7 @@ test('candidate page: files behind signed links, screening answers, decision, no
   await page.getByRole('dialog').locator('#handoff-due').fill('2030-01-15')
   await page.getByRole('dialog').getByRole('button', { name: 'Save outcome and next step' }).click()
   await expect(page.getByRole('dialog')).not.toBeVisible()
-  await expect(page.locator('.stage-badge')).toHaveText('screening')
+  await expect(page.locator('.stage-badge')).toHaveText('Screening')
 
   const timeline = page.locator('.card', { hasText: 'Timeline' })
   await timeline.locator('#note-body').fill('Strong warehouse background; check references.')
@@ -220,7 +220,7 @@ test('candidate page: files behind signed links, screening answers, decision, no
   await page.getByRole('dialog').locator('#handoff-note').fill('Screening passed; arrange technical interview.')
   await page.getByRole('dialog').locator('#handoff-due').fill('2030-01-22')
   await page.getByRole('dialog').getByRole('button', { name: 'Save outcome and next step' }).click()
-  await expect(page.locator('.stage-badge')).toHaveText('interview')
+  await expect(page.locator('.stage-badge')).toHaveText('Interview')
   await expect(page.getByTestId('sub-badge')).toHaveText('Interview-to-be-Scheduled')
   await page.locator('.decision-panel').getByRole('button', { name: 'Reject', exact: true }).click()
   const dialog = page.getByTestId('reject-dialog')
@@ -233,7 +233,7 @@ test('candidate page: files behind signed links, screening answers, decision, no
   await dialog.locator('#reject-reason').fill('Not enough scheduling experience for this role.')
   await dialog.getByRole('button', { name: 'Reject application' }).click()
   await expect(dialog).not.toBeVisible()
-  await expect(page.locator('.stage-badge')).toHaveText('interview')
+  await expect(page.locator('.stage-badge')).toHaveText('Interview')
   await expect(page.getByTestId('sub-badge')).toHaveText('Rejected by HR')
   await expect(
     timeline.locator('.event-row', { hasText: 'Status: Interview-to-be-Scheduled → Rejected by HR · Not enough scheduling experience' }),

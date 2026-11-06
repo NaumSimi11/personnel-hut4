@@ -3,7 +3,9 @@ import { expect, test } from '@playwright/test'
 
 /**
  * Hiring workspace part B: an approved request becomes a job, a candidate
- * moves through the pipeline stage by stage, and confirm hire turns them
+ * moves through the pipeline stage by stage — each quick move sets the next
+ * stage's first open status (plan 075: Screening → Interview → Offered →
+ * Hired, through set_application_status) — and confirm hire turns them
  * into an employee with an onboarding plan via the atomic `confirm_hire` RPC
  * (migration 0009). Runs against the live Supabase project; cleans up with
  * the secret key.
@@ -144,7 +146,7 @@ test('approved request → prepare job → candidate pipeline → confirm hire',
   // A prepared job starts as a draft (plan 017); publishing a channel opens it.
   await expect(page.locator('.page-head .badge')).toHaveText('draft')
 
-  // Step 3: add the candidate; the application row appears at stage `new`.
+  // Step 3: add the candidate; the application row appears at Screening / New.
   await page.getByRole('tab', { name: 'Applications' }).click()
   await page.getByRole('button', { name: 'Add candidate' }).click()
   await page.locator('#ac-name').fill(CANDIDATE_NAME)
@@ -153,15 +155,16 @@ test('approved request → prepare job → candidate pipeline → confirm hire',
 
   const appRow = page.locator('.application-row', { hasText: CANDIDATE_NAME })
   await expect(appRow).toBeVisible()
-  await expect(appRow.locator('.badge')).toHaveText('new')
+  await expect(appRow.locator('.badge')).toHaveText('Screening')
+  await expect(appRow.getByTestId('sub-badge')).toHaveText('New')
 
-  // Step 4: advance new -> screening -> interview -> offer.
-  await appRow.getByRole('button', { name: 'Move to screening' }).click()
-  await expect(appRow.locator('.badge')).toHaveText('screening')
+  // Step 4: advance Screening -> Interview -> Offered, each on its stage's first open status.
   await appRow.getByRole('button', { name: 'Move to interview' }).click()
-  await expect(appRow.locator('.badge')).toHaveText('interview')
+  await expect(appRow.locator('.badge')).toHaveText('Interview')
+  await expect(appRow.getByTestId('sub-badge')).toHaveText('Interview-to-be-Scheduled')
   await appRow.getByRole('button', { name: 'Prepare offer' }).click()
-  await expect(appRow.locator('.badge')).toHaveText('offer')
+  await expect(appRow.locator('.badge')).toHaveText('Offered')
+  await expect(appRow.getByTestId('sub-badge')).toHaveText('To-be-Offered')
   await expect(appRow.locator('.badge')).toHaveClass(/amber/)
 
   // Step 5: confirm hire, keeping the prefilled name/position/start date.
@@ -172,7 +175,7 @@ test('approved request → prepare job → candidate pipeline → confirm hire',
   await expect(hire.getByRole('heading', { name: /Hired\. Employment recorded, the onboarding checklist started/ })).toBeVisible()
   await hire.getByRole('button', { name: 'Done' }).click()
 
-  await expect(appRow.locator('.badge')).toHaveText('hired')
+  await expect(appRow.locator('.badge')).toHaveText('Hired')
   await expect(appRow.getByRole('link', { name: 'Open employee profile' })).toBeVisible()
 
   // Step 6: the new employee shows up in the directory. NOTE: the employee's
@@ -189,6 +192,14 @@ test('approved request → prepare job → candidate pipeline → confirm hire',
   await dirRow.locator('.person-link').click()
   await expect(page.getByRole('heading', { name: CANDIDATE_NAME })).toBeVisible()
   await expect(page.locator('.emp-row', { hasText: REQUEST_TITLE })).toBeVisible()
+
+  // The application moved only through statuses: one event per move, and it ended on Hired.
+  const { data: app } = await db
+    .from('applications')
+    .select('stage_key, sub_status_key, in_play, candidate:candidates!inner(email)')
+    .eq('candidate.email', CANDIDATE_EMAIL)
+    .single()
+  expect(app).toMatchObject({ stage_key: 'hired', in_play: false })
 
   // The candidate applied from a personal address; it stays personal on the record.
   const { data: hiredPerson, error: personErr } = await db

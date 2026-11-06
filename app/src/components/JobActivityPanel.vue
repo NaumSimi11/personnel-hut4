@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
 import { supabase } from '@/lib/supabase'
+import { stageName } from '@/lib/stageStatuses'
 
 /**
  * The job's audit trail (plan 017): every insert/update the audit trigger
@@ -38,16 +39,23 @@ const ENTITY_LABELS: Record<string, string> = {
 
 const WATCHED_FIELDS = ['status', 'stage_key', 'description_revision', 'publication_url', 'channel_key']
 
+/** A stage reads by its label ("Offered"), never its key. */
+function shown(field: string, value: unknown): string {
+  if (value === null || value === undefined) return '—'
+  return field === 'stage_key' ? stageName(String(value)) : String(value)
+}
+
 function summarise(row: ActivityRow): string {
   const after = row.after ?? {}
   const before = row.before ?? {}
   if (row.action === 'INSERT') {
-    const what = (after.channel_key as string | undefined) ?? (after.stage_key as string | undefined)
-    return what ? `created (${what.replace('_', ' ')})` : 'created'
+    const stage = after.stage_key as string | undefined
+    const what = (after.channel_key as string | undefined)?.replace('_', ' ') ?? (stage ? stageName(stage) : undefined)
+    return what ? `created (${what})` : 'created'
   }
   if (row.action === 'DELETE') return 'removed'
   const changes = WATCHED_FIELDS.filter((f) => f in after && before[f] !== after[f]).map(
-    (f) => `${f.replace('_', ' ')}: ${String(before[f] ?? '—')} → ${String(after[f] ?? '—')}`,
+    (f) => `${f === 'stage_key' ? 'stage' : f.replace('_', ' ')}: ${shown(f, before[f])} → ${shown(f, after[f])}`,
   )
   return changes.length ? changes.join(', ') : 'updated'
 }

@@ -26,6 +26,7 @@ import {
   closureLine,
   firstOpenStatus,
   noStatusesHint,
+  stageName,
   statusFilterGroups,
   statusLabels,
   type StageKey,
@@ -687,7 +688,7 @@ onMounted(async () => {
               <p>{{ a.next_action || candidateNextStep(a.stage_key).title }}</p>
               <small>{{ a.owner?.full_name ?? 'Owner needed' }} &middot; {{ a.next_action_due ? `Due ${a.next_action_due}` : 'No due date set' }}</small>
             </div>
-            <span class="badge" :class="stageBadgeClass(a.stage_key, a.in_play)">{{ a.stage_key }}</span>
+            <span class="badge" :class="stageBadgeClass(a.stage_key, a.in_play)">{{ stageName(a.stage_key) }}</span>
             <router-link class="button secondary small-btn" :to="{ name: 'application', params: { applicationId: a.id } }">{{ candidateNextStep(a.stage_key).label }}</router-link>
           </div>
         </section>
@@ -928,7 +929,7 @@ onMounted(async () => {
               v-if="canReview"
               class="select-app"
               type="checkbox"
-              :disabled="Boolean(closureOf(a))"
+              :disabled="Boolean(closureOf(a)) || a.stage_key === 'hired'"
               :checked="selectedIds.includes(a.id)"
               :aria-label="`Select ${a.candidate?.full_name ?? 'application'}`"
               :data-testid="`select-app-${a.id}`"
@@ -949,7 +950,7 @@ onMounted(async () => {
               </small>
             </div>
             <span v-if="a.candidate?.do_not_contact" class="badge amber">Do not contact</span>
-            <span class="badge" :class="stageBadgeClass(a.stage_key, a.in_play)">{{ a.stage_key }}</span>
+            <span class="badge" :class="stageBadgeClass(a.stage_key, a.in_play)">{{ stageName(a.stage_key) }}</span>
             <!-- Not a .badge: the E2E rows locate the stage badge by that class alone. -->
             <span v-if="closureOf(a)" class="sub-badge" data-testid="closure-badge">{{ closureOf(a) }}</span>
             <span v-else-if="a.sub_status_key && subStatusLabels[a.sub_status_key]" class="sub-badge" data-testid="sub-badge">{{ subStatusLabels[a.sub_status_key] }}</span>

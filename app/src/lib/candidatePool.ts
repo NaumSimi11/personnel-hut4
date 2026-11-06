@@ -1,4 +1,7 @@
 import type { LocationQuery } from 'vue-router'
+// stageStatuses.ts imports longDate from here: each side reads the other only
+// inside functions, never while the modules load, so the cycle is harmless.
+import { stageName } from '@/lib/stageStatuses'
 
 /**
  * Pure logic for the talent pool (plan 052): the browser mirrors of the SQL
@@ -269,7 +272,7 @@ export function matchHistoryLine(m: CandidateMatch): string {
   if (!m.visible) return 'Already in the talent pool — details are outside your companies.'
   const newest = [...m.applications].sort((a, b) => b.received_at.localeCompare(a.received_at))[0]
   if (!newest) return 'Already in the talent pool.'
-  return `Applied to ${newest.job_title} at ${newest.company_name} — ${newest.stage_key}, ${monthYear(newest.received_at)}.`
+  return `Applied to ${newest.job_title} at ${newest.company_name} — ${stageName(newest.stage_key)}, ${monthYear(newest.received_at)}.`
 }
 
 export function contactLine(m: ContactRule): string {

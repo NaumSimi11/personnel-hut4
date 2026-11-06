@@ -1,5 +1,6 @@
 import type { Outcome, SubStatusRow } from '@/lib/hiringLabels'
 import type { OutreachEvent, SubStatus } from '@/lib/outreach'
+import { longDate } from '@/lib/candidatePool'
 
 /**
  * Statuses on every stage (plan 068, migration 0088). 0069's sub-statuses
@@ -13,8 +14,9 @@ import type { OutreachEvent, SubStatus } from '@/lib/outreach'
  * and withdrawn are outcomes of a status, not stages; whether an application
  * is still being worked is `in_play`, never its stage.
  *
- * This file imports no values from other lib modules: dashboard.ts builds on
- * STAGES at load time, so a cycle through here would read it too early.
+ * This file imports no values from other lib modules but candidatePool.ts's
+ * date helper, used only inside a function: dashboard.ts builds on STAGES at
+ * load time, so a cycle through here must never be read while loading.
  */
 
 export const STAGES = ['screening', 'interview', 'offer', 'hired'] as const
@@ -74,7 +76,8 @@ export function firstOpenStatus(rows: ReadonlyArray<SubStatusRow>, stageKey: str
   return liveStatuses(rows.filter((r) => r.stage_key === stageKey && r.outcome === 'open'))[0] ?? null
 }
 
-function labelOfStage(key: string): string {
+/** A stage's label ("Offered" for `offer`); a key the app does not know reads as itself. */
+export function stageName(key: string): string {
   return (STAGE_LABEL as Record<string, string>)[key] ?? key
 }
 
@@ -90,7 +93,7 @@ export function statusFilterGroups(rows: ReadonlyArray<SubStatusRow>, stageKeys?
   const stages = [...new Set(sorted.map((r) => r.stage_key))]
   return stages.map((s) => ({
     stageKey: s,
-    stageLabel: labelOfStage(s),
+    stageLabel: stageName(s),
     options: sorted.filter((r) => r.stage_key === s).map((r) => ({ key: r.key, label: displayLabel(r) })),
   }))
 }
@@ -107,13 +110,13 @@ export function pickableStatusGroups(rows: ReadonlyArray<SubStatusRow>, outcome?
 }
 
 /**
- * "Job closed — Position filled (2026-11-06)": what an application its job's
+ * "Job closed — Position filled (6 Nov 2026)": what an application its job's
  * closing marked shows where its status would be. Null when nothing closed it.
  */
 export function closureLine(closedAt: string | null, closedReason: string | null): string | null {
   if (!closedAt) return null
   const reason = (closedReason ?? '').trim().replace(/\.$/, '')
-  const day = closedAt.slice(0, 10)
+  const day = longDate(closedAt)
   return reason ? `Job closed — ${reason} (${day})` : `Job closed (${day})`
 }
 

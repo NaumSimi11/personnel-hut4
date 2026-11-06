@@ -113,7 +113,9 @@ async function seed(): Promise<void> {
     job_id: jobAId,
     company_id: company.id,
     candidate_id: poolCandidateId,
-    stage_key: 'rejected',
+    // Rejected is an outcome since plan 075: the application stays at the stage it reached.
+    stage_key: 'interview',
+    sub_status_key: 'rejected_by_hr',
     source_key: 'head_hunt',
     rejected_reason: 'E2E: not this time',
   })
@@ -154,7 +156,7 @@ test('add candidate offers the match → attach; upload CVs offers it → create
   await expect(matches).toContainText('Is this the same person?')
   const match = matches.getByTestId(`match-${poolCandidateId}`)
   await expect(match).toContainText(`This looks like ${PERSON_NAME} (same email).`)
-  await expect(match).toContainText(new RegExp(`Applied to ${JOB_A} at .+ — rejected, [A-Z][a-z]{2} \\d{4}\\.`))
+  await expect(match).toContainText(new RegExp(`Applied to ${JOB_A} at .+ — Interview, [A-Z][a-z]{2} \\d{4}\\.`))
   const { count: beforeAttach } = await db.from('candidates').select('id', { count: 'exact', head: true }).eq('email', PERSON_EMAIL)
   expect(beforeAttach).toBe(1)
 
@@ -170,7 +172,7 @@ test('add candidate offers the match → attach; upload CVs offers it → create
     .eq('job_id', jobBId)
   expect(bApps).toHaveLength(1)
   expect(bApps?.[0]?.candidate_id).toBe(poolCandidateId)
-  expect(bApps?.[0]?.stage_key).toBe('new')
+  expect(bApps?.[0]?.stage_key).toBe('screening')
   const { count: afterAttach } = await db.from('candidates').select('id', { count: 'exact', head: true }).eq('email', PERSON_EMAIL)
   expect(afterAttach).toBe(1)
 
@@ -209,7 +211,7 @@ test('add candidate offers the match → attach; upload CVs offers it → create
     .eq('job_id', jobBId)
     .eq('candidate_id', created?.id ?? '')
   expect(createdApps).toHaveLength(1)
-  expect(createdApps?.[0]?.stage_key).toBe('new')
+  expect(createdApps?.[0]?.stage_key).toBe('screening')
 
   // The application page lists the CV under "Candidate's files".
   await page.goto(`/hiring/applications/${createdApps?.[0]?.id}`)

@@ -6,10 +6,12 @@ import { expect, test } from '@playwright/test'
  * sub-status beside the stage and flags "not responding"; two rows are
  * logged at once from the tab, one more from its application page; the
  * timeline carries the entry; the Reports attention tile counts it until
- * the fresh event clears it; a plain stage move to screening takes the
- * stage's default. Seeds one open Snowball job, three applications at new
- * (head hunt → sourced by the trigger) and one at screening whose only
- * activity is 31 days old; cleans before and after.
+ * the fresh event clears it. Since plan 075 the picker offers every live
+ * status by stage, and a quick "Move to interview" sets Interview's first
+ * open status as one stage_change. Seeds one open Snowball job, three
+ * applications at Screening (head hunt → Associated by the trigger) and one
+ * at Screening / Contacted whose only activity is 31 days old; cleans
+ * before and after.
  */
 
 const ADMIN_EMAIL = process.env.TEST_USER_EMAIL ?? ''
@@ -23,11 +25,13 @@ const INTERESTED_NOTE = 'E2E: keen, wants to talk next week'
 const QUIET_DAYS = 31
 const DAY_MS = 86_400_000
 
+// Zoho's wording, as migration 0095 ships it.
 const LABEL = {
-  sourced: 'Sourced — not yet contacted',
-  contactAttempted: 'Contact attempted — no answer yet',
-  contacted: 'In conversation',
+  sourced: 'Associated',
+  contactAttempted: 'Attempted to Contact',
+  contacted: 'Contacted',
   interested: 'Interested',
+  interviewFirst: 'Interview-to-be-Scheduled',
 } as const
 
 function serviceClient() {
@@ -98,16 +102,16 @@ async function seed(): Promise<void> {
       .single()
     if (candErr || !candidate) throw new Error(`Could not seed candidate ${name}: ${candErr?.message}`)
     const quiet = name === 'Dee'
-    // No sub_status_key: the 0069 trigger fills it from the stage and source.
+    // No sub_status_key for the fresh three: the trigger fills it from the source (head hunt → sourced).
     const { data: app, error: appErr } = await db
       .from('applications')
       .insert({
         job_id: jobId,
         company_id: company.id,
         candidate_id: candidate.id,
-        stage_key: quiet ? 'screening' : 'new',
+        stage_key: 'screening',
         source_key: 'head_hunt',
-        ...(quiet ? { received_at: quietAt } : {}),
+        ...(quiet ? { sub_status_key: 'contacted', received_at: quietAt } : {}),
       })
       .select('id')
       .single()
@@ -150,7 +154,7 @@ test('sub-status badges → bulk Set status → not-responding filter → the ti
 }) => {
   const db = serviceClient()
 
-  // The trigger's defaults: head hunt at new → sourced; at screening → contacted.
+  // The trigger's default for head hunt is sourced; the quiet row was seeded as contacted.
   const { data: seeded } = await db
     .from('applications')
     .select('id, stage_key, sub_status_key')
@@ -172,15 +176,15 @@ test('sub-status badges → bulk Set status → not-responding filter → the ti
   const notRespondingBefore = await readNotResponding(page)
   expect(notRespondingBefore).toBeGreaterThanOrEqual(1)
 
-  // The Applications tab: three "Sourced", the fourth "In conversation" + "Not responding".
+  // The Applications tab: three "Associated", the fourth "Contacted" + "Not responding".
   await page.goto(`/hiring/jobs/${jobId}?tab=applications`)
   const rowOf = (name: (typeof NAMES)[number]) => page.locator('.application-row', { hasText: candidateName(name) })
   for (const name of ['Ana', 'Ben', 'Cal'] as const) {
-    await expect(rowOf(name).locator('.badge')).toHaveText('new')
+    await expect(rowOf(name).locator('.badge')).toHaveText('Screening')
     await expect(rowOf(name).getByTestId('sub-badge')).toHaveText(LABEL.sourced)
     await expect(rowOf(name).getByTestId('not-responding-badge')).toHaveCount(0)
   }
-  await expect(rowOf('Dee').locator('.badge')).toHaveText('screening')
+  await expect(rowOf('Dee').locator('.badge')).toHaveText('Screening')
   await expect(rowOf('Dee').getByTestId('sub-badge')).toHaveText(LABEL.contacted)
   await expect(rowOf('Dee').getByTestId('not-responding-badge')).toHaveText('Not responding')
 
@@ -195,7 +199,10 @@ test('sub-status badges → bulk Set status → not-responding filter → the ti
   const dialog = page.getByTestId('outreach-dialog')
   await expect(dialog).toBeVisible()
   await expect(dialog).toContainText('Set the status for 2 applications.')
-  await expect(dialog.getByTestId('outreach-sub-contacted')).toHaveCount(0) // only the new stage's options
+  // Every live status, grouped by stage — never Hired, which only the hire sets.
+  await expect(dialog.getByTestId('outreach-sub-contacted')).toBeVisible()
+  await expect(dialog.getByTestId('outreach-sub-interview_to_schedule')).toBeVisible()
+  await expect(dialog.getByTestId('outreach-sub-hired')).toHaveCount(0)
   await dialog.getByTestId('outreach-sub-contact_attempted').check()
   await dialog.getByTestId('outreach-note').fill(VOICEMAIL_NOTE)
   await dialog.getByTestId('outreach-save').click()
@@ -226,7 +233,7 @@ test('sub-status badges → bulk Set status → not-responding filter → the ti
   expect(afterBulk?.find((a) => a.id === appIds.Ana)?.sub_status_key).toBe('contact_attempted')
   expect(afterBulk?.find((a) => a.id === appIds.Ben)?.sub_status_key).toBe('contact_attempted')
   expect(afterBulk?.find((a) => a.id === appIds.Cal)?.sub_status_key).toBe('sourced')
-  expect((afterBulk ?? []).every((a) => a.stage_key === 'new')).toBe(true)
+  expect((afterBulk ?? []).every((a) => a.stage_key === 'screening')).toBe(true)
 
   // "Not responding only" leaves the fourth row alone.
   await page.getByTestId('filter-not-responding').check()
@@ -238,14 +245,14 @@ test('sub-status badges → bulk Set status → not-responding filter → the ti
   // Open the fourth: the page shows the same badges; log "Interested" from it.
   await page.goto(`/hiring/applications/${appIds.Dee}`)
   await expect(page.getByRole('heading', { name: candidateName('Dee') })).toBeVisible()
-  await expect(page.locator('.stage-badge')).toHaveText('screening')
+  await expect(page.locator('.stage-badge')).toHaveText('Screening')
   await expect(page.getByTestId('sub-badge')).toHaveText(LABEL.contacted)
   await expect(page.getByTestId('not-responding-badge')).toHaveText('Not responding')
   await page.getByTestId('log-outreach').click()
   const pageDialog = page.getByTestId('outreach-dialog')
   await expect(pageDialog).toBeVisible()
   await expect(pageDialog).toContainText(`Set the status for ${candidateName('Dee')}.`)
-  await expect(pageDialog.getByTestId('outreach-sub-sourced')).toHaveCount(0) // only the screening stage's options
+  await expect(pageDialog.getByTestId('outreach-sub-offer_made')).toBeVisible() // every stage's statuses
   await pageDialog.getByTestId('outreach-sub-interested').check()
   await pageDialog.getByTestId('outreach-note').fill(INTERESTED_NOTE)
   await pageDialog.getByTestId('outreach-save').click()
@@ -274,21 +281,26 @@ test('sub-status badges → bulk Set status → not-responding filter → the ti
   const notRespondingAfter = await readNotResponding(page)
   expect(notRespondingAfter).toBe(notRespondingBefore - 1)
 
-  // A plain stage move to screening: the trigger gives the stage's default.
+  // A quick move to Interview sets its first open status, as one stage_change.
   await page.goto(`/hiring/jobs/${jobId}?tab=applications`)
   await expect(rowOf('Cal').getByTestId('sub-badge')).toHaveText(LABEL.sourced)
-  await rowOf('Cal').getByRole('button', { name: 'Move to screening' }).click()
-  await expect(rowOf('Cal').locator('.badge')).toHaveText('screening')
-  await expect(rowOf('Cal').getByTestId('sub-badge')).toHaveText(LABEL.contacted)
+  await rowOf('Cal').getByRole('button', { name: 'Move to interview' }).click()
+  await expect(rowOf('Cal').locator('.badge')).toHaveText('Interview')
+  await expect(rowOf('Cal').getByTestId('sub-badge')).toHaveText(LABEL.interviewFirst)
   await expect(rowOf('Cal').getByTestId('not-responding-badge')).toHaveCount(0)
-  const { data: cal } = await db.from('applications').select('stage_key, sub_status_key').eq('id', appIds.Cal).single()
-  expect(cal?.stage_key).toBe('screening')
-  expect(cal?.sub_status_key).toBe('contacted')
-  // The move wrote a stage_change, not an outreach event.
-  const { count: calOutreach } = await db
+  const { data: cal } = await db.from('applications').select('stage_key, sub_status_key, in_play').eq('id', appIds.Cal).single()
+  expect(cal).toEqual({ stage_key: 'interview', sub_status_key: 'interview_to_schedule', in_play: true })
+  const { data: calEvents } = await db
     .from('application_events')
-    .select('id', { count: 'exact', head: true })
+    .select('kind, from_stage_key, to_stage_key, from_sub_status_key, to_sub_status_key')
     .eq('application_id', appIds.Cal)
-    .eq('kind', 'outreach')
-  expect(calOutreach).toBe(0)
+  expect(calEvents).toEqual([
+    {
+      kind: 'stage_change',
+      from_stage_key: 'screening',
+      to_stage_key: 'interview',
+      from_sub_status_key: 'sourced',
+      to_sub_status_key: 'interview_to_schedule',
+    },
+  ])
 })

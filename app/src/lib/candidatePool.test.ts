@@ -210,11 +210,11 @@ describe('matchHistoryLine', () => {
   it('tells the newest visible application', () => {
     const m = match({
       applications: [
-        { id: 'a-2', job_title: 'Frontend Developer', company_name: 'Snowball', stage_key: 'rejected', received_at: '2026-03-05T10:00:00+00:00' },
+        { id: 'a-2', job_title: 'Frontend Developer', company_name: 'Snowball', stage_key: 'offer', received_at: '2026-03-05T10:00:00+00:00' },
         { id: 'a-1', job_title: 'Designer', company_name: 'Acme', stage_key: 'hired', received_at: '2024-11-20T10:00:00+00:00' },
       ],
     })
-    expect(matchHistoryLine(m)).toBe('Applied to Frontend Developer at Snowball — rejected, Mar 2026.')
+    expect(matchHistoryLine(m)).toBe('Applied to Frontend Developer at Snowball — Offered, Mar 2026.')
   })
   it('says the person is in the pool when nothing visible was applied to', () => {
     expect(matchHistoryLine(match({ applications: [] }))).toBe('Already in the talent pool.')

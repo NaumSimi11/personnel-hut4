@@ -19,6 +19,7 @@ import {
 } from '@/lib/candidatePool'
 import { shortDate } from '@/lib/leave'
 import { todayDb } from '@/lib/compensation'
+import { stageName } from '@/lib/stageStatuses'
 import type { Json } from '@/types/database'
 
 /**
@@ -121,7 +122,7 @@ function skillsLine(r: PoolRow): string {
 function applicationsLine(r: PoolRow): string {
   const latest = r.applications[0]
   if (!r.applications_count || !latest) return '—'
-  return `${r.applications_count} · latest: ${latest.job_title}, ${latest.company_name} — ${latest.stage_key}`
+  return `${r.applications_count} · latest: ${latest.job_title}, ${latest.company_name} — ${stageName(latest.stage_key)}`
 }
 
 function activityDate(r: PoolRow): string {

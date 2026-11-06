@@ -76,7 +76,7 @@ describe('hiring tabs', () => {
     expect(applicantRows(list, { companyId: '', stage: 'all', search: 'ANA' }).map((r) => r.id)).toEqual(['a1'])
     expect(all.map((r) => [r.id, r.inPlay, r.closure])).toEqual([
       ['a2', true, null],
-      ['a3', false, 'Job closed — Position filled (2026-09-15)'],
+      ['a3', false, 'Job closed — Position filled (15 Sep 2026)'],
       ['a1', true, null],
     ])
   })

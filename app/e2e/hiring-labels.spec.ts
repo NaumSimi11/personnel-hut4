@@ -5,14 +5,16 @@ import { expect, test } from '@playwright/test'
  * Renaming the hiring vocabulary (task.md: HR is used to her own names).
  * An admin opens Hiring → Labels, renames a sub-status, sees it stick across
  * a reload, and renames it back — so the run leaves the lookup as it found
- * it. Nothing is seeded: the rows edited here ship with migration 0069.
+ * it. Nothing is seeded: the rows edited here ship with migration 0095.
  *
  * The empty-label refusal is asserted in the browser only; it never reaches
  * the database, so no row is touched by that half.
  *
  * Plan 068/069: an admin also adds a status at a stage, then removes it —
- * nobody used it, so the dialog says so and it is deleted. The service
- * client removes the row before and after in case a run stops halfway.
+ * nobody used it, so the dialog says so and it is deleted. Since plan 075 the
+ * new status must say what it means (its outcome): Add waits for the radio,
+ * Hired is never offered, and the saved row shows its outcome read-only. The
+ * service client removes the row before and after in case a run stops halfway.
  */
 
 const ADMIN_EMAIL = process.env.TEST_USER_EMAIL ?? ''
@@ -37,6 +39,7 @@ test('an admin renames a sub-status label, and it survives a reload', async ({ p
 
   const row = page.getByTestId(`label-row-${KEY}`)
   const input = row.locator('input')
+  await expect(page.getByTestId(`label-outcome-${KEY}`)).toHaveText('Still in play')
   await expect(input).toHaveValue(ORIGINAL)
 
   // Nothing to save until the text actually differs.
@@ -97,17 +100,28 @@ test('an admin adds a status at a stage, and removes it again', async ({ page })
     await expect(stage).toBeVisible()
 
     // A name the stage already has is refused before it reaches the database.
-    await page.getByTestId(`label-add-input-${ADDED_STAGE}`).fill('  offer MADE ')
+    await page.getByTestId(`label-add-input-${ADDED_STAGE}`).fill('  offer-MADE ')
     await expect(stage).toContainText('is already a status at this stage.')
     await expect(page.getByTestId(`label-add-${ADDED_STAGE}`)).toBeDisabled()
 
+    // A name alone is not enough: the status must say what it means, and Hired is not a choice.
     await page.getByTestId(`label-add-input-${ADDED_STAGE}`).fill(ADDED_LABEL)
+    await expect(page.getByTestId(`label-add-${ADDED_STAGE}`)).toBeDisabled()
+    await expect(page.getByTestId(`label-add-outcome-${ADDED_STAGE}-hired`)).toHaveCount(0)
+    await page.getByTestId(`label-add-outcome-${ADDED_STAGE}-open`).check()
     await page.getByTestId(`label-add-${ADDED_STAGE}`).click()
-    await expect(panel).toContainText(`Added “${ADDED_LABEL}” to Offer.`)
+    await expect(panel).toContainText(`Added “${ADDED_LABEL}” to Offered.`)
 
     await page.reload()
     const added = page.getByTestId('label-row-e2e_waiting_on_references')
     await expect(added.locator('input')).toHaveValue(ADDED_LABEL)
+    await expect(page.getByTestId('label-outcome-e2e_waiting_on_references')).toHaveText('Still in play')
+    const { data: stored } = await serviceClient()
+      .from('application_sub_statuses')
+      .select('stage_key, outcome')
+      .eq('key', 'e2e_waiting_on_references')
+      .single()
+    expect(stored).toEqual({ stage_key: 'offer', outcome: 'open' })
 
     await page.getByTestId('label-remove-e2e_waiting_on_references').click()
     const dialog = page.getByTestId('remove-status-dialog')

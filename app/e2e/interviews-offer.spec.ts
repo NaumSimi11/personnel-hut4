@@ -192,7 +192,7 @@ test('interview → blind scorecards → offer approved by someone else → acce
   // Offer: build terms, submit, cannot approve own; hand authorship to the
   // colleague, approve, extend, accept.
   await page.locator('.decision-panel').getByRole('button', { name: 'Prepare offer' }).click()
-  await expect(page.locator('.stage-badge')).toHaveText('offer')
+  await expect(page.locator('.stage-badge')).toHaveText('Offered')
   const offer = page.locator('.offer-card')
   await offer.getByRole('button', { name: 'Draft offer' }).click()
   await offer.locator('#offer-salary').fill('52000')
@@ -238,7 +238,7 @@ test('interview → blind scorecards → offer approved by someone else → acce
   await hire.getByRole('button', { name: 'Complete hire' }).click()
   await expect(hire.getByRole('heading', { name: /Hired\. Employment recorded, the onboarding checklist started/ })).toBeVisible()
   await hire.getByRole('button', { name: 'Done' }).click()
-  await expect(page.locator('.stage-badge')).toHaveText('hired')
+  await expect(page.locator('.stage-badge')).toHaveText('Hired')
 
   const { data: period } = await db
     .from('employment_periods')

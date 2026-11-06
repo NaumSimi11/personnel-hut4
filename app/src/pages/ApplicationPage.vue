@@ -172,6 +172,7 @@ async function saveHandoff(payload: HandoffPayload): Promise<void> {
   if (!data) throw new Error('This candidate changed since you opened the page. Cancel, refresh the page, and review the latest assignment.')
   // A status goes through the one door, which writes its own timeline entry; anything else is a note.
   let eventFailed = false
+  let clearFailed = false
   if (statusKey) {
     const result = await setApplicationStatus([current.id], statusKey, payload.note)
     if (result.error) {
@@ -181,6 +182,7 @@ async function saveHandoff(payload: HandoffPayload): Promise<void> {
     if (terminal) {
       const { error: clearErr } = await supabase.from('applications')
         .update({ owner_id: null, next_action: null, next_action_due: null }).eq('id', current.id)
+      clearFailed = Boolean(clearErr)
       if (clearErr) console.error('Clearing the assignment after a rejection failed:', clearErr.message)
     }
   } else {
@@ -196,6 +198,7 @@ async function saveHandoff(payload: HandoffPayload): Promise<void> {
   const ownerChanged = payload.ownerId !== (current.owner_id ?? '') || payload.nextAction !== (current.next_action ?? '') || Boolean(statusKey)
   if (!terminal && ownerChanged) handoffNotice.value += ' ' + deliverySentence(await deliverNotifications())
   if (eventFailed) handoffNotice.value += ' The timeline note could not be saved; the assignment was saved.'
+  if (clearFailed) handoffNotice.value += ' The owner and next action could not be cleared. Clear them under Decision.'
   await load()
 }
 const answersSaving = ref(false)
@@ -292,7 +295,7 @@ function stageBadgeClass(stage: string, inPlay: boolean): string {
 
 function eventText(e: EventRow): string {
   if (e.kind === 'stage_change') {
-    const move = `${e.from_stage_key ?? '—'} → ${e.to_stage_key ?? '—'}`
+    const move = `${e.from_stage_key ? stageLabel(e.from_stage_key) : '—'} → ${e.to_stage_key ? stageLabel(e.to_stage_key) : '—'}`
     return e.body ? `${move} · ${e.body}` : move
   }
   if (e.kind === 'outreach') return outreachLine(e, subStatusLabels.value)
@@ -550,7 +553,7 @@ onMounted(() => {
           </p>
         </div>
         <div class="head-badges">
-          <span class="badge stage-badge" :class="stageBadgeClass(application.stage_key, application.in_play)">{{ application.stage_key }}</span>
+          <span class="badge stage-badge" :class="stageBadgeClass(application.stage_key, application.in_play)">{{ stageLabel(application.stage_key) }}</span>
           <span v-if="closure" class="badge sub-badge" data-testid="closure-badge">{{ closure }}</span>
           <span v-else-if="subStatusLabel" class="badge sub-badge" data-testid="sub-badge">{{ subStatusLabel }}</span>
           <span v-if="notRespondingNow" class="badge amber" data-testid="not-responding-badge">Not responding</span>

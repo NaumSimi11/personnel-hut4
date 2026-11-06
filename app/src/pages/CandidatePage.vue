@@ -15,7 +15,7 @@ import { todayDb } from '@/lib/compensation'
 import { countOf, detachable, friendlyDetachError } from '@/lib/detachApplication'
 import { candidateDeletable, friendlyHardDeleteError } from '@/lib/hardDelete'
 import { missingRecordMessage } from '@/lib/missingRecord'
-import { closureLine } from '@/lib/stageStatuses'
+import { closureLine, stageName } from '@/lib/stageStatuses'
 
 /**
  * The candidate's own record (plan 052): one person across every job —
@@ -500,7 +500,7 @@ onMounted(load)
                     <template v-if="a.source_key"> · via {{ sources.find((s) => s.key === a.source_key)?.label ?? a.source_key }}</template>
                   </small>
                 </div>
-                <span class="badge" :class="stageBadgeClass(a.stage_key, a.in_play)">{{ a.stage_key }}</span>
+                <span class="badge" :class="stageBadgeClass(a.stage_key, a.in_play)">{{ stageName(a.stage_key) }}</span>
                 <span v-if="closureLine(a.closed_at, a.closed_reason)" class="badge" :data-testid="`candidate-closure-${a.id}`">
                   {{ closureLine(a.closed_at, a.closed_reason) }}
                 </span>

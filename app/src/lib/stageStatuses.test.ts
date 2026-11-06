@@ -200,12 +200,13 @@ describe('firstOpenStatus', () => {
 
 describe('closureLine', () => {
   it('reads the reason and the day the job closed it', () => {
-    expect(closureLine('2026-11-06T09:30:00Z', 'Position filled.')).toBe('Job closed — Position filled (2026-11-06)')
+    expect(closureLine('2026-11-06T09:30:00Z', 'Position filled.')).toBe('Job closed — Position filled (6 Nov 2026)')
+    expect(closureLine('2024-01-31T23:10:00Z', 'Budget cut')).toBe('Job closed — Budget cut (31 Jan 2024)')
   })
 
   it('leaves the reason out when there is none', () => {
-    expect(closureLine('2026-11-06T09:30:00Z', null)).toBe('Job closed (2026-11-06)')
-    expect(closureLine('2026-11-06T09:30:00Z', '  ')).toBe('Job closed (2026-11-06)')
+    expect(closureLine('2026-11-06T09:30:00Z', null)).toBe('Job closed (6 Nov 2026)')
+    expect(closureLine('2026-11-06T09:30:00Z', '  ')).toBe('Job closed (6 Nov 2026)')
   })
 
   it('is null for an application nothing closed', () => {

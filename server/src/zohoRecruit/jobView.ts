@@ -1,5 +1,5 @@
 import type { CsvRow } from './csv.js'
-import { candidateEmail, candidatePhone, candidateSkills } from './payload.js'
+import { candidateEmail, candidatePhone, candidateSkills } from './candidateFields.js'
 import { parseLocalMinute } from './dates.js'
 import { mapSource, UnknownValueError } from './mapping.js'
 import { ZOHO_STATUS_KEY } from './jobViewStatuses.js'

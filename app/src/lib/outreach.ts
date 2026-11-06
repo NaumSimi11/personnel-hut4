@@ -10,17 +10,12 @@
 
 // -------------------------------------------------------------- the lookup
 
-export const SUB_STATUS_STAGES = ['new', 'screening'] as const
+export const SUB_STATUS_STAGES = ['screening'] as const
 export type SubStatusStage = (typeof SUB_STATUS_STAGES)[number]
 
-/** A row of `application_sub_statuses`, as loaded from the database. */
-export type SubStatusRow = {
-  key: string
-  stage_key: string
-  label: string
-  sort_order: number
-  archived_at: string | null
-}
+/** A row of `application_sub_statuses`, as loaded from the database (defined with the Labels rules). */
+export type { SubStatusRow } from '@/lib/hiringLabels'
+import type { SubStatusRow } from '@/lib/hiringLabels'
 
 /** The trimmed shape once archived rows are filtered out — what components pass around. */
 export type SubStatus = {
@@ -42,13 +37,13 @@ export function subStatusesFor(all: SubStatusRow[], stageKey: string): SubStatus
 
 export const NOT_RESPONDING_DAYS = 30
 
-const TERMINAL_STAGES = new Set(['hired', 'rejected', 'withdrawn'])
 const LIVE_JOB_STATUSES = new Set(['ready', 'open', 'on_hold'])
 const OPEN_OUTREACH_SUB_STATUSES = new Set(['sourced', 'contact_attempted', 'contacted'])
 
 /** Enough of an application (+ its job) to judge D3, named to read next to the SQL by eye. */
 export type OutreachRow = {
   stage_key: string
+  in_play: boolean
   sub_status_key: string | null
   last_activity_at: string | null
   received_at: string
@@ -66,14 +61,14 @@ function daysBetween(earlier: string, later: string): number {
 }
 
 /**
- * D3: an open application (`stage_key` not hired/rejected/withdrawn) on a
+ * D3: an application in play (`in_play`: open outcome, not closed with its job) on a
  * live job (`job_status` ready/open/on_hold) whose sub-status is sourced,
  * contact_attempted or contacted, and whose last activity — `last_activity_at`,
  * else `received_at` — is older than `NOT_RESPONDING_DAYS`. `today` is
  * `todayDb()`; both dates are compared as UTC calendar dates, not instants.
  */
 export function notResponding(row: OutreachRow, today: string): boolean {
-  if (TERMINAL_STAGES.has(row.stage_key)) return false
+  if (!row.in_play) return false
   if (!LIVE_JOB_STATUSES.has(row.job_status)) return false
   if (!row.sub_status_key || !OPEN_OUTREACH_SUB_STATUSES.has(row.sub_status_key)) return false
   const activity = dateOnly(row.last_activity_at ?? row.received_at)

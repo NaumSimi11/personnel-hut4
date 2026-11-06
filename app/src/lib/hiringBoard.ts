@@ -1,5 +1,6 @@
 import { INTERVIEW_KINDS } from '@/lib/interviews'
 import type { ApplicationLite, JobLite } from '@/lib/dashboard'
+import { STAGES, STAGE_LABEL, type StageKey } from '@/lib/stageStatuses'
 
 /**
  * The Home's hiring board and upcoming interviews (plan 067): the Zoho
@@ -8,20 +9,15 @@ import type { ApplicationLite, JobLite } from '@/lib/dashboard'
  * interviews. Pure shaping of what the page reads; RLS decides what that is.
  */
 
-export type BoardColumnKey = 'new' | 'screening' | 'interview' | 'offer' | 'hired' | 'closed'
+export type BoardColumnKey = StageKey | 'closed'
 
-/** In pipeline order. Rejected and withdrawn are both answers, not progress: one column. */
+/** In pipeline order. Rejected, withdrawn and closed-with-the-job are answers, not progress: one column. */
 export const BOARD_COLUMNS: ReadonlyArray<{ key: BoardColumnKey; label: string }> = [
-  { key: 'new', label: 'Applied' },
-  { key: 'screening', label: 'Screening' },
-  { key: 'interview', label: 'Interview' },
-  { key: 'offer', label: 'Offer' },
-  { key: 'hired', label: 'Hired' },
+  ...STAGES.map((key) => ({ key, label: STAGE_LABEL[key] })),
   { key: 'closed', label: 'Closed' },
 ]
 
-const PROGRESS: ReadonlyArray<BoardColumnKey> = ['new', 'screening', 'interview', 'offer', 'hired']
-const CLOSED = new Set(['rejected', 'withdrawn'])
+const PROGRESS: ReadonlyArray<BoardColumnKey> = STAGES
 
 export type BoardRow = {
   jobId: string
@@ -45,13 +41,15 @@ export function daysSince(from: string | null | undefined, today: string): numbe
   return Math.max(0, Math.round((end - start) / DAY_MS))
 }
 
-function columnOf(stage: string): BoardColumnKey | null {
-  if (CLOSED.has(stage)) return 'closed'
-  return (PROGRESS as ReadonlyArray<string>).includes(stage) ? (stage as BoardColumnKey) : null
+/** A hire stays in Hired; any other application no longer in play is Closed. */
+function columnOf(stage: string, inPlay: boolean): BoardColumnKey | null {
+  if (!(STAGES as ReadonlyArray<string>).includes(stage)) return null
+  if (stage === 'hired') return 'hired'
+  return inPlay ? (stage as StageKey) : 'closed'
 }
 
 function emptyCounts(): Record<BoardColumnKey, number> {
-  return { new: 0, screening: 0, interview: 0, offer: 0, hired: 0, closed: 0 }
+  return { screening: 0, interview: 0, offer: 0, hired: 0, closed: 0 }
 }
 
 /** One row per job anybody applied to, busiest first. */
@@ -59,7 +57,7 @@ export function jobBoard(apps: ReadonlyArray<ApplicationLite>, jobs: ReadonlyArr
   const openedOn = new Map(jobs.map((j) => [j.id, j.opened_at ?? null]))
   const rows = new Map<string, BoardRow>()
   for (const a of apps) {
-    const column = columnOf(a.stage_key)
+    const column = columnOf(a.stage_key, a.in_play)
     if (!column) continue
     const row = rows.get(a.job_id) ?? {
       jobId: a.job_id,
@@ -75,7 +73,7 @@ export function jobBoard(apps: ReadonlyArray<ApplicationLite>, jobs: ReadonlyArr
       ...row,
       counts: { ...row.counts, [column]: row.counts[column] + 1 },
       total: row.total + 1,
-      inPlay: row.inPlay + (column === 'closed' || column === 'hired' ? 0 : 1),
+      inPlay: row.inPlay + (a.in_play ? 1 : 0),
     })
   }
   return [...rows.values()]

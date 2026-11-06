@@ -1,5 +1,4 @@
-import { stageLabel } from '@/lib/dashboard'
-import { STATUS_STAGES } from '@/lib/stageStatuses'
+import { STAGES, STAGE_LABEL } from '@/lib/stageStatuses'
 
 /**
  * The rules behind the Hiring → Labels panel (task.md: "the status label needs
@@ -31,7 +30,9 @@ const SORT_STEP = 10
 const RULE_KEYS: ReadonlySet<string> = new Set(['applied', 'sourced', 'contact_attempted', 'contacted'])
 
 export type LookupRow = { key: string; label: string; sort_order: number }
-export type SubStatusRow = LookupRow & { stage_key: string; archived_at: string | null }
+/** What a status does to an application (0095): keeps it open, or closes it as rejected, withdrawn or hired. */
+export type Outcome = 'open' | 'rejected' | 'withdrew' | 'hired'
+export type SubStatusRow = LookupRow & { stage_key: string; outcome: Outcome; archived_at: string | null }
 export type SubStatusGroup = { stageKey: string; stageLabel: string; rows: SubStatusRow[]; retired: SubStatusRow[] }
 
 /** What gets stored: the trimmed text, so surrounding space never reaches the database. */
@@ -54,8 +55,8 @@ export function labelChanged(original: string, next: string): boolean {
 
 /** Pipeline order for the groups; an unknown stage sorts after the known ones rather than vanishing. */
 function stageRank(stageKey: string): number {
-  const i = (STATUS_STAGES as readonly string[]).indexOf(stageKey)
-  return i >= 0 ? i : STATUS_STAGES.length
+  const i = (STAGES as readonly string[]).indexOf(stageKey)
+  return i >= 0 ? i : STAGES.length
 }
 
 function bySortOrder(a: SubStatusRow, b: SubStatusRow): number {
@@ -68,14 +69,14 @@ function bySortOrder(a: SubStatusRow, b: SubStatusRow): number {
  * set aside for Restore. A stage the app does not know keeps its rows.
  */
 export function groupByStage(rows: ReadonlyArray<SubStatusRow>): SubStatusGroup[] {
-  const stages = [...new Set([...STATUS_STAGES, ...rows.map((r) => r.stage_key)])]
+  const stages = [...new Set([...STAGES, ...rows.map((r) => r.stage_key)])]
   return stages
     .sort((a, b) => stageRank(a) - stageRank(b) || a.localeCompare(b))
     .map((stageKey) => {
       const own = rows.filter((r) => r.stage_key === stageKey).sort(bySortOrder)
       return {
         stageKey,
-        stageLabel: stageLabel(stageKey),
+        stageLabel: (STAGE_LABEL as Record<string, string>)[stageKey] ?? stageKey,
         rows: own.filter((r) => !r.archived_at),
         retired: own.filter((r) => Boolean(r.archived_at)),
       }

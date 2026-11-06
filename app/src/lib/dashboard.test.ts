@@ -25,7 +25,8 @@ const PAYROLL: PayrollFact = { company_name: 'Synami', period_start: '2026-08-01
 const app = (over: Partial<ApplicationLite>): ApplicationLite => ({
   id: 'a',
   job_id: 'j1',
-  stage_key: 'new',
+  stage_key: 'screening',
+  in_play: true,
   received_at: '2026-09-10T10:00:00Z',
   candidate: { full_name: 'Cand' },
   job: { title: 'Role', company: { name: 'Synami' } },
@@ -35,32 +36,32 @@ const app = (over: Partial<ApplicationLite>): ApplicationLite => ({
 describe('dashboard', () => {
   it('counts applications per live stage in pipeline order, zero for empty stages', () => {
     const counts = pipelineCounts([
-      app({ id: '1', stage_key: 'new' }),
+      app({ id: '1', stage_key: 'screening' }),
       app({ id: '2', stage_key: 'interview' }),
       app({ id: '3', stage_key: 'interview' }),
-      app({ id: '4', stage_key: 'withdrawn' }),
+      app({ id: '4', stage_key: 'screening', in_play: false }),
+      app({ id: '5', stage_key: 'hired', in_play: false }),
     ])
     expect(counts.map((c) => [c.key, c.count])).toEqual([
-      ['new', 1],
-      ['screening', 0],
+      ['screening', 1],
       ['interview', 2],
       ['offer', 0],
-      ['hired', 0],
-      ['rejected', 0],
+      ['hired', 1],
     ])
-    expect(counts[2]?.label).toBe('Interview')
+    expect(counts[1]?.label).toBe('Interview')
+    expect(counts[2]?.label).toBe('Offered')
   })
 
-  it('applicants in progress excludes hired, rejected and withdrawn', () => {
+  it('applicants in progress counts only the ones still in play', () => {
     expect(
       applicantsInProgress([
-        app({ id: '1', stage_key: 'new' }),
+        app({ id: '1', stage_key: 'screening' }),
         app({ id: '2', stage_key: 'offer' }),
-        app({ id: '3', stage_key: 'hired' }),
-        app({ id: '4', stage_key: 'rejected' }),
-        app({ id: '5', stage_key: 'withdrawn' }),
+        app({ id: '3', stage_key: 'hired', in_play: false }),
+        app({ id: '4', stage_key: 'interview', in_play: false }),
       ]),
     ).toBe(2)
+    expect(applicantsInProgress([app({ stage_key: 'screening', in_play: false })])).toBe(0)
   })
 
   it('open positions are roles being hired (ready or open) with their live applicant count, headcount from the request', () => {
@@ -72,7 +73,7 @@ describe('dashboard', () => {
     ]
     const rows = openPositions(jobs, [
       app({ id: '1', job_id: 'j1' }),
-      app({ id: '2', job_id: 'j1', stage_key: 'rejected' }),
+      app({ id: '2', job_id: 'j1', stage_key: 'interview', in_play: false }),
       app({ id: '3', job_id: 'j2' }),
     ])
     expect(rows).toEqual([
@@ -101,7 +102,7 @@ describe('dashboard', () => {
       2,
     )
     expect(rows.map((r) => r.id)).toEqual(['new', 'mid'])
-    expect(rows[0]).toMatchObject({ name: 'Cand', position: 'Role', stage: 'new' })
+    expect(rows[0]).toMatchObject({ name: 'Cand', position: 'Role', stage: 'screening' })
   })
 
   it('away today lists approved leave covering today, with the last day', () => {
@@ -119,9 +120,10 @@ describe('dashboard', () => {
     expect(rows[1]?.backOn).toBe(true)
   })
 
-  it('labels stages as the pipeline does, withdrawn included', () => {
-    expect(stageLabel('new')).toBe('Applied')
-    expect(stageLabel('withdrawn')).toBe('Withdrawn')
+  it('labels stages as the pipeline does, an unknown key as itself', () => {
+    expect(stageLabel('screening')).toBe('Screening')
+    expect(stageLabel('offer')).toBe('Offered')
+    expect(stageLabel('mystery')).toBe('mystery')
   })
 
   it('shows each stat only to a viewer who may already see that data', () => {
@@ -138,7 +140,7 @@ describe('dashboard', () => {
   it('states the headline numbers and keeps the payroll tile on what the database returned', () => {
     const snapshot = { ...EMPTY_SNAPSHOT, active: 12, starting: 1, payroll: [PAYROLL] }
     const all = viewerWith('people.view', 'leave.view', 'candidates.view', 'jobs.approve')
-    const tiles = statTiles({ snapshot, away: [], applications: [app({ id: '1' }), app({ id: '2', stage_key: 'hired' })], requestsToDecide: 3, viewer: all })
+    const tiles = statTiles({ snapshot, away: [], applications: [app({ id: '1' }), app({ id: '2', stage_key: 'hired', in_play: false })], requestsToDecide: 3, viewer: all })
     expect(tiles.map((t) => [t.key, t.value])).toEqual([
       ['active', 12],
       ['away', 0],

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
-  STATUS_STAGES,
+  STAGES,
+  STAGE_LABEL,
   contactHint,
   filterStagesFor,
   liveStatuses,
@@ -10,20 +11,43 @@ import {
   statusEventTitle,
   statusFilterGroups,
   statusLabels,
+  statusesByOutcome,
 } from './stageStatuses'
-import type { SubStatusRow } from './outreach'
+import type { SubStatusRow } from './hiringLabels'
 
 const rows: SubStatusRow[] = [
-  { key: 'interview_stakeholders', stage_key: 'interview', label: 'Interview 2 – Stakeholders', sort_order: 50, archived_at: null },
-  { key: 'interview_hr', stage_key: 'interview', label: 'Interview 1 – HR', sort_order: 40, archived_at: null },
-  { key: 'no_show', stage_key: 'interview', label: 'No-show', sort_order: 130, archived_at: '2026-10-08T10:00:00Z' },
-  { key: 'contacted', stage_key: 'screening', label: 'In conversation', sort_order: 10, archived_at: null },
-  { key: 'job_closed', stage_key: 'withdrawn', label: 'Job closed', sort_order: 70, archived_at: null },
+  { key: 'interview_stakeholders', stage_key: 'interview', outcome: 'open', label: 'Interview 2 – Stakeholders', sort_order: 50, archived_at: null },
+  { key: 'interview_hr', stage_key: 'interview', outcome: 'open', label: 'Interview 1 – HR', sort_order: 40, archived_at: null },
+  { key: 'no_show', stage_key: 'interview', outcome: 'open', label: 'No-show', sort_order: 130, archived_at: '2026-10-08T10:00:00Z' },
+  { key: 'contacted', stage_key: 'screening', outcome: 'open', label: 'In conversation', sort_order: 10, archived_at: null },
+  { key: 'job_closed', stage_key: 'offer', outcome: 'withdrew', label: 'Job closed', sort_order: 70, archived_at: null },
 ]
 
-describe('STATUS_STAGES', () => {
-  it('is every stage, in pipeline order, withdrawn last', () => {
-    expect(STATUS_STAGES).toEqual(['new', 'screening', 'interview', 'offer', 'hired', 'rejected', 'withdrawn'])
+describe('STAGES', () => {
+  it('is Zoho’s four stages, in pipeline order', () => {
+    expect(STAGES).toEqual(['screening', 'interview', 'offer', 'hired'])
+  })
+
+  it('labels the offer stage Offered', () => {
+    expect(STAGE_LABEL.offer).toBe('Offered')
+    expect(STAGE_LABEL.screening).toBe('Screening')
+  })
+})
+
+describe('statusesByOutcome', () => {
+  const outcomes: SubStatusRow[] = [
+    { key: 'rejected_general', stage_key: 'offer', outcome: 'rejected', label: 'Rejected', sort_order: 10, archived_at: null },
+    { key: 'rejected_for_interview', stage_key: 'interview', outcome: 'rejected', label: 'Rejected for interview', sort_order: 90, archived_at: null },
+    { key: 'unqualified', stage_key: 'screening', outcome: 'rejected', label: 'Unqualified', sort_order: 80, archived_at: null },
+    { key: 'old_reject', stage_key: 'screening', outcome: 'rejected', label: 'Old', sort_order: 1, archived_at: '2026-10-08T10:00:00Z' },
+    { key: 'withdrew_self', stage_key: 'screening', outcome: 'withdrew', label: 'Withdrew', sort_order: 5, archived_at: null },
+    { key: 'contacted', stage_key: 'screening', outcome: 'open', label: 'Contacted', sort_order: 1, archived_at: null },
+  ]
+
+  it('lists the live statuses with that outcome, in stage order then sort order', () => {
+    expect(statusesByOutcome(outcomes, 'rejected').map((s) => s.key)).toEqual(['unqualified', 'rejected_for_interview', 'rejected_general'])
+    expect(statusesByOutcome(outcomes, 'withdrew').map((s) => s.key)).toEqual(['withdrew_self'])
+    expect(statusesByOutcome(outcomes, 'hired')).toEqual([])
   })
 })
 
@@ -49,7 +73,7 @@ describe('liveStatuses', () => {
 describe('statusFilterGroups', () => {
   it('groups by stage in pipeline order and skips a stage with nothing', () => {
     const groups = statusFilterGroups(rows)
-    expect(groups.map((g) => g.stageKey)).toEqual(['screening', 'interview', 'withdrawn'])
+    expect(groups.map((g) => g.stageKey)).toEqual(['screening', 'interview', 'offer'])
     expect(groups[1].options.map((o) => o.key)).toEqual(['interview_hr', 'interview_stakeholders', 'no_show'])
   })
 
@@ -60,7 +84,7 @@ describe('statusFilterGroups', () => {
   it('narrows to the stages asked for', () => {
     expect(statusFilterGroups(rows, ['interview']).map((g) => g.stageKey)).toEqual(['interview'])
     expect(statusFilterGroups(rows, ['screening', 'interview']).map((g) => g.stageKey)).toEqual(['screening', 'interview'])
-    expect(statusFilterGroups(rows, ['offer'])).toEqual([])
+    expect(statusFilterGroups(rows, ['hired'])).toEqual([])
   })
 
   it('names the stage the way the rest of the app does', () => {
@@ -87,11 +111,10 @@ describe('statusChangeLine', () => {
 })
 
 describe('statusEventTitle', () => {
-  it('calls it outreach at New and Screening and a status elsewhere', () => {
-    expect(statusEventTitle('new')).toBe('Outreach')
+  it('calls it outreach at Screening and a status elsewhere', () => {
     expect(statusEventTitle('screening')).toBe('Outreach')
     expect(statusEventTitle('interview')).toBe('Status')
-    expect(statusEventTitle('withdrawn')).toBe('Status')
+    expect(statusEventTitle('offer')).toBe('Status')
   })
 })
 
@@ -113,8 +136,8 @@ describe('reasonFor', () => {
 
 describe('filterStagesFor', () => {
   it('offers only statuses the list can show', () => {
-    expect(filterStagesFor('live')).toEqual(['new', 'screening', 'interview', 'offer'])
-    expect(filterStagesFor('not_responding')).toEqual(['new', 'screening'])
+    expect(filterStagesFor('live')).toEqual(['screening', 'interview', 'offer'])
+    expect(filterStagesFor('not_responding')).toEqual(['screening'])
     expect(filterStagesFor('interview')).toEqual(['interview'])
   })
 

@@ -15,6 +15,7 @@ const TODAY = '2026-09-21'
 function row(over: Partial<OutreachRow>): OutreachRow {
   return {
     stage_key: 'screening',
+    in_play: true,
     sub_status_key: 'contacted',
     last_activity_at: null,
     received_at: '2026-06-01T09:00:00+00:00',
@@ -50,9 +51,9 @@ describe('notResponding', () => {
     expect(notResponding(r, TODAY)).toBe(true)
   })
 
-  it('is false for a terminal stage even if stale', () => {
-    for (const stage_key of ['hired', 'rejected', 'withdrawn']) {
-      const r = row({ stage_key, last_activity_at: isoDaysAgo(TODAY, 60) })
+  it('is false once the application is out of play, even if stale', () => {
+    for (const stage_key of ['screening', 'interview', 'hired']) {
+      const r = row({ stage_key, in_play: false, last_activity_at: isoDaysAgo(TODAY, 60) })
       expect(notResponding(r, TODAY), stage_key).toBe(false)
     }
   })
@@ -89,27 +90,25 @@ describe('outreachBadge', () => {
 
 describe('subStatusesFor', () => {
   const all: SubStatusRow[] = [
-    { key: 'applied', stage_key: 'new', label: 'Applied', sort_order: 10, archived_at: null },
-    { key: 'sourced', stage_key: 'new', label: 'Sourced — not yet contacted', sort_order: 20, archived_at: null },
-    { key: 'contact_attempted', stage_key: 'new', label: 'Contact attempted — no answer yet', sort_order: 30, archived_at: null },
-    { key: 'retired_new', stage_key: 'new', label: 'Retired', sort_order: 5, archived_at: '2026-01-01T00:00:00+00:00' },
-    { key: 'contacted', stage_key: 'screening', label: 'In conversation', sort_order: 10, archived_at: null },
-    { key: 'interested', stage_key: 'screening', label: 'Interested', sort_order: 20, archived_at: null },
-    { key: 'awaiting_evaluation', stage_key: 'screening', label: 'Awaiting evaluation', sort_order: 30, archived_at: null },
-    { key: 'qualified', stage_key: 'screening', label: 'Qualified — ready for interview', sort_order: 40, archived_at: null },
+    { key: 'applied', stage_key: 'screening', outcome: 'open', label: 'New', sort_order: 10, archived_at: null },
+    { key: 'sourced', stage_key: 'screening', outcome: 'open', label: 'Associated', sort_order: 20, archived_at: null },
+    { key: 'contact_attempted', stage_key: 'screening', outcome: 'open', label: 'Contact attempted', sort_order: 30, archived_at: null },
+    { key: 'retired_new', stage_key: 'screening', outcome: 'open', label: 'Retired', sort_order: 5, archived_at: '2026-01-01T00:00:00+00:00' },
+    { key: 'interview_hr', stage_key: 'interview', outcome: 'open', label: 'Interview 1 – HR', sort_order: 10, archived_at: null },
+    { key: 'retired_interview', stage_key: 'interview', outcome: 'open', label: 'Retired', sort_order: 20, archived_at: '2026-01-01T00:00:00+00:00' },
   ]
 
-  it('returns the unarchived sub-statuses of one stage, sorted, without archived_at', () => {
-    expect(subStatusesFor(all, 'new')).toEqual([
-      { key: 'applied', stage_key: 'new', label: 'Applied', sort_order: 10 },
-      { key: 'sourced', stage_key: 'new', label: 'Sourced — not yet contacted', sort_order: 20 },
-      { key: 'contact_attempted', stage_key: 'new', label: 'Contact attempted — no answer yet', sort_order: 30 },
+  it('returns the unarchived sub-statuses of one stage, sorted, without archived_at or outcome', () => {
+    expect(subStatusesFor(all, 'screening')).toEqual([
+      { key: 'applied', stage_key: 'screening', label: 'New', sort_order: 10 },
+      { key: 'sourced', stage_key: 'screening', label: 'Associated', sort_order: 20 },
+      { key: 'contact_attempted', stage_key: 'screening', label: 'Contact attempted', sort_order: 30 },
     ])
-    expect(subStatusesFor(all, 'screening')).toHaveLength(4)
+    expect(subStatusesFor(all, 'interview')).toHaveLength(1)
   })
 
   it('is empty for a stage with no sub-statuses', () => {
-    expect(subStatusesFor(all, 'interview')).toEqual([])
+    expect(subStatusesFor(all, 'offer')).toEqual([])
   })
 })
 
@@ -144,7 +143,7 @@ describe('outreachLine', () => {
 
 describe('constants', () => {
   it('carry the plan values verbatim', () => {
-    expect(SUB_STATUS_STAGES).toEqual(['new', 'screening'])
+    expect(SUB_STATUS_STAGES).toEqual(['screening'])
     expect(NOT_RESPONDING_DAYS).toBe(30)
   })
 })

@@ -10,6 +10,7 @@ import {
   nextSortOrder,
   normaliseLabel,
   validateLabel,
+  type SubStatusRow,
 } from './hiringLabels'
 
 describe('validateLabel', () => {
@@ -54,40 +55,39 @@ describe('labelChanged', () => {
 })
 
 describe('groupByStage', () => {
-  const rows = [
-    { key: 'qualified', stage_key: 'screening', label: 'Qualified', sort_order: 40, archived_at: null },
-    { key: 'applied', stage_key: 'new', label: 'Applied', sort_order: 10, archived_at: null },
-    { key: 'contacted', stage_key: 'screening', label: 'In conversation', sort_order: 10, archived_at: null },
-    { key: 'sourced', stage_key: 'new', label: 'Sourced', sort_order: 20, archived_at: null },
-    { key: 'no_show', stage_key: 'interview', label: 'No-show', sort_order: 130, archived_at: '2026-10-08T10:00:00Z' },
+  const rows: SubStatusRow[] = [
+    { key: 'qualified', stage_key: 'screening', outcome: 'open', label: 'Qualified', sort_order: 40, archived_at: null },
+    { key: 'applied', stage_key: 'screening', outcome: 'open', label: 'New', sort_order: 10, archived_at: null },
+    { key: 'contacted', stage_key: 'screening', outcome: 'open', label: 'In conversation', sort_order: 20, archived_at: null },
+    { key: 'sourced', stage_key: 'screening', outcome: 'open', label: 'Associated', sort_order: 15, archived_at: null },
+    { key: 'no_show', stage_key: 'interview', outcome: 'open', label: 'No-show', sort_order: 130, archived_at: '2026-10-08T10:00:00Z' },
   ]
 
   it('lists every stage in pipeline order, even one with nothing yet, so HR can add the first', () => {
     const groups = groupByStage(rows)
-    expect(groups.map((g) => g.stageKey)).toEqual(['new', 'screening', 'interview', 'offer', 'hired', 'rejected', 'withdrawn'])
-    expect(groups[3].rows).toEqual([])
+    expect(groups.map((g) => g.stageKey)).toEqual(['screening', 'interview', 'offer', 'hired'])
+    expect(groups[2].rows).toEqual([])
   })
 
   it('keeps each stage in sort order', () => {
     const groups = groupByStage(rows)
-    expect(groups[0].rows.map((r) => r.key)).toEqual(['applied', 'sourced'])
-    expect(groups[1].rows.map((r) => r.key)).toEqual(['contacted', 'qualified'])
+    expect(groups[0].rows.map((r) => r.key)).toEqual(['applied', 'sourced', 'contacted', 'qualified'])
   })
 
   it('puts a retired status aside, where it can be restored', () => {
-    const interview = groupByStage(rows)[2]
+    const interview = groupByStage(rows)[1]
     expect(interview.rows).toEqual([])
     expect(interview.retired.map((r) => r.key)).toEqual(['no_show'])
   })
 
   it('names each stage the way the rest of the app names it', () => {
-    // stageLabel() calls the `new` stage "Applied" everywhere else; the panel
+    // STAGE_LABEL calls the offer stage "Offered" everywhere else; the panel
     // follows it rather than inventing a second name for the same stage.
-    expect(groupByStage(rows)[0].stageLabel).toBe('Applied')
+    expect(groupByStage(rows).map((g) => g.stageLabel)).toEqual(['Screening', 'Interview', 'Offered', 'Hired'])
   })
 
   it('keeps an unknown stage rather than dropping its rows', () => {
-    const groups = groupByStage([{ key: 'x', stage_key: 'mystery', label: 'X', sort_order: 1, archived_at: null }])
+    const groups = groupByStage([{ key: 'x', stage_key: 'mystery', outcome: 'open', label: 'X', sort_order: 1, archived_at: null }])
     expect(groups.map((g) => g.stageKey).at(-1)).toBe('mystery')
   })
 })
@@ -130,9 +130,9 @@ describe('keyFromLabel', () => {
 })
 
 describe('duplicateLabel', () => {
-  const stage = [
-    { key: 'interview_hr', stage_key: 'interview', label: 'Interview 1 – HR', sort_order: 40, archived_at: null },
-    { key: 'no_show', stage_key: 'interview', label: 'No-show', sort_order: 130, archived_at: '2026-10-08T10:00:00Z' },
+  const stage: SubStatusRow[] = [
+    { key: 'interview_hr', stage_key: 'interview', outcome: 'open', label: 'Interview 1 – HR', sort_order: 40, archived_at: null },
+    { key: 'no_show', stage_key: 'interview', outcome: 'open', label: 'No-show', sort_order: 130, archived_at: '2026-10-08T10:00:00Z' },
   ]
 
   it('refuses a name a live status of the stage already has, ignoring case and space', () => {

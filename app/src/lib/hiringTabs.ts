@@ -2,6 +2,7 @@ import { outreachRowOf, stageLabel } from '@/lib/dashboard'
 import { todayDb } from '@/lib/compensation'
 import { shortDate } from '@/lib/leave'
 import { notResponding } from '@/lib/outreach'
+import { NOT_RESPONDING_FILTER } from '@/lib/stageStatuses'
 import { jobHeadcount } from '@/lib/headcount'
 
 /**
@@ -19,7 +20,6 @@ export const JOB_STATUS_LABEL: Record<string, string> = {
   closed: 'Closed',
 }
 const LIVE_JOB_STATUSES = new Set(['ready', 'open', 'on_hold'])
-const CLOSED_STAGES = new Set(['hired', 'rejected', 'withdrawn'])
 
 export type OpeningJobLite = {
   id: string
@@ -37,7 +37,7 @@ export type OpeningJobLite = {
   /** PostgREST's embedded count of every application ever received here. */
   applications?: ReadonlyArray<{ count: number }> | null
 }
-export type OpeningApplicationLite = { id: string; job_id: string; stage_key: string }
+export type OpeningApplicationLite = { id: string; job_id: string; stage_key: string; in_play: boolean }
 
 export type JobOpeningRow = {
   id: string
@@ -96,7 +96,7 @@ export function openingRows(
         statusLabel: JOB_STATUS_LABEL[j.status] ?? j.status,
         statusTone: jobStatusTone(j.status),
         headcount: jobHeadcount(j),
-        inPlay: own.filter((a) => !CLOSED_STAGES.has(a.stage_key)).length,
+        inPlay: own.filter((a) => a.in_play).length,
         hired: own.filter((a) => a.stage_key === 'hired').length,
         manager: j.request?.manager?.full_name ?? null,
         applications: j.applications?.[0]?.count ?? 0,
@@ -113,6 +113,7 @@ export type ApplicantLite = {
   interviews?: { count: number }[] | null
   offers?: { count: number }[] | null
   stage_key: string
+  in_play: boolean
   /** Plan 054; the candidate's last activity and the job status judge "not responding" (see outreachRowOf). */
   sub_status_key?: string | null
   received_at: string
@@ -143,11 +144,11 @@ export type ApplicantRow = {
 }
 
 /** The stage filter's pseudo-value (plan 054): open outreach with no activity in 30 days, judged over the loaded rows. */
-export const NOT_RESPONDING_FILTER = 'not_responding'
+export { NOT_RESPONDING_FILTER }
 
 function stageMatches(a: ApplicantLite, stage: string, today: string): boolean {
   if (stage === 'all') return true
-  if (stage === 'live') return !CLOSED_STAGES.has(a.stage_key)
+  if (stage === 'live') return a.in_play
   if (stage === NOT_RESPONDING_FILTER) return notResponding(outreachRowOf(a), today)
   return a.stage_key === stage
 }

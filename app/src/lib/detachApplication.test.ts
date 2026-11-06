@@ -2,7 +2,9 @@ import { describe, expect, it } from 'vitest'
 import { countOf, detachable, friendlyDetachError, type DetachTarget } from './detachApplication'
 
 const row = (over: Partial<DetachTarget> = {}): DetachTarget => ({
-  stage_key: 'new',
+  stage_key: 'screening',
+  sub_status_key: 'applied',
+  source_key: null,
   owner_id: null,
   next_action: null,
   employment_period_id: null,
@@ -41,8 +43,15 @@ describe('detachable', () => {
   })
 
   it('refuses once it has moved past New', () => {
-    expect(detachable(row({ stage_key: 'screening' }), true).reason).toMatch(/moved on from New/)
-    expect(detachable(row({ stage_key: 'rejected' }), true).canDetach).toBe(false)
+    expect(detachable(row({ sub_status_key: 'contacted' }), true).reason).toMatch(/moved on from New/)
+    expect(detachable(row({ stage_key: 'interview', sub_status_key: 'interview_hr' }), true).canDetach).toBe(false)
+    expect(detachable(row({ sub_status_key: 'unqualified' }), true).canDetach).toBe(false)
+  })
+
+  it('starts a sourced application on Associated, any other on New', () => {
+    expect(detachable(row({ source_key: 'head_hunt', sub_status_key: 'sourced' }), true).canDetach).toBe(true)
+    expect(detachable(row({ source_key: 'head_hunt', sub_status_key: 'applied' }), true).canDetach).toBe(false)
+    expect(detachable(row({ source_key: 'careers_page', sub_status_key: 'sourced' }), true).canDetach).toBe(false)
   })
 
   it('refuses when anything at all has been recorded against it', () => {

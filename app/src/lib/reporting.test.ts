@@ -12,7 +12,7 @@ const raw = {
       title: 'Coordinator',
       status: 'open',
       received: 8,
-      stages: { new: 2, screening: 1, interview: 2, offer: 0, hired: 1, rejected: 2, withdrawn: 0 },
+      stages: { screening: 3, interview: 2, offer: 0, hired: 1, rejected: 2, withdrew: 1, closed: 1 },
       hired: 1,
     },
   ],
@@ -28,6 +28,7 @@ describe('parseReport', () => {
     const report = parseReport(raw)
     expect(report.kpis.hires).toBe(2)
     expect(report.funnel[0]?.stages.offer).toBe(0)
+    expect(report.funnel[0]?.stages.withdrew).toBe(1)
     const sparse = parseReport({ ...raw, kpis: { ...raw.kpis, median_days_to_hire: null }, sources: [] })
     expect(sparse.kpis.median_days_to_hire).toBeNull()
     expect(sparse.sources).toEqual([])
@@ -68,8 +69,9 @@ describe('funnelCsv', () => {
     })
     const csv = funnelCsv(report)
     const lines = csv.split('\n')
-    expect(lines[0]).toBe(`Job,Status,Received,${STAGE_ORDER.map((s) => s[0]!.toUpperCase() + s.slice(1)).join(',')}`)
-    expect(lines[1]).toBe('"Ops, Coordinator",open,8,2,1,2,0,1,2,0')
+    expect(STAGE_ORDER).toEqual(['screening', 'interview', 'offer', 'hired', 'rejected', 'withdrew', 'closed'])
+    expect(lines[0]).toBe('Job,Status,Received,Screening,Interview,Offered,Hired,Rejected,Withdrew,Closed')
+    expect(lines[1]).toBe('"Ops, Coordinator",open,8,3,2,0,1,2,1,1')
   })
 })
 

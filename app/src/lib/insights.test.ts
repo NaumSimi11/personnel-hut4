@@ -16,7 +16,7 @@ const RAW = {
   ],
   offers: { extended: 1, accepted: 2, declined: 1 },
   activity: [
-    { at: '2026-09-22T16:06:00Z', application_id: 'a3', candidate: 'Goran', job_id: 'j1', job: 'Vue', from_stage: 'new', to_stage: 'screening', actor: 'Ivana Frost' },
+    { at: '2026-09-22T16:06:00Z', application_id: 'a3', candidate: 'Goran', job_id: 'j1', job: 'Vue', from_stage: 'screening', to_stage: 'interview', actor: 'Ivana Frost' },
   ],
 }
 
@@ -50,7 +50,7 @@ describe('insights', () => {
 
   it('writes a stage change the way Zoho did, naming nobody it cannot see', () => {
     const [row] = parseInsights(RAW).activity
-    expect(activitySentence(row!)).toBe('Goran moved from Applied to Screening for Vue by Ivana Frost')
-    expect(activitySentence({ ...row!, from_stage: null, actor: null })).toBe('Goran moved to Screening for Vue')
+    expect(activitySentence(row!)).toBe('Goran moved from Screening to Interview for Vue by Ivana Frost')
+    expect(activitySentence({ ...row!, from_stage: null, actor: null })).toBe('Goran moved to Interview for Vue')
   })
 })

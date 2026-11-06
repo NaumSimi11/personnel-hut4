@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { STAGES, STAGE_LABEL } from '@/lib/stageStatuses'
 
 /**
  * Recruitment reporting (plan 021): the shape the recruitment_report RPC
@@ -6,8 +7,16 @@ import { z } from 'zod'
  * needs. The database does the counting; this file only presents it.
  */
 
-export const STAGE_ORDER = ['new', 'screening', 'interview', 'offer', 'hired', 'rejected', 'withdrawn'] as const
+/**
+ * The funnel columns: Zoho's four stages, then what no longer counts as
+ * progress: `rejected` and `withdrew` count by status outcome, `closed` the
+ * open applications a closed job marked (recruitment_report, 0096). Every
+ * application lands in exactly one of them.
+ */
+export const STAGE_ORDER = [...STAGES, 'rejected', 'withdrew', 'closed'] as const
 export type Stage = (typeof STAGE_ORDER)[number]
+
+const STAGE_HEADER: Record<Stage, string> = { ...STAGE_LABEL, rejected: 'Rejected', withdrew: 'Withdrew', closed: 'Closed' }
 
 const count = z.number().int().nonnegative().catch(0)
 
@@ -73,7 +82,7 @@ export function csvCell(value: string | number): string {
 }
 
 export function funnelCsv(data: RecruitmentReport): string {
-  const header = ['Job', 'Status', 'Received', ...STAGE_ORDER.map((s) => s[0]!.toUpperCase() + s.slice(1))]
+  const header = ['Job', 'Status', 'Received', ...STAGE_ORDER.map((s) => STAGE_HEADER[s])]
   const rows = data.funnel.map((f) => [f.title, f.status, f.received, ...STAGE_ORDER.map((s) => f.stages[s])])
   return [header, ...rows].map((r) => r.map(csvCell).join(',')).join('\n')
 }

@@ -1,6 +1,5 @@
-import { stageLabel } from '@/lib/dashboard'
-import { NOT_RESPONDING_FILTER } from '@/lib/hiringTabs'
-import type { OutreachEvent, SubStatus, SubStatusRow } from '@/lib/outreach'
+import type { Outcome, SubStatusRow } from '@/lib/hiringLabels'
+import type { OutreachEvent, SubStatus } from '@/lib/outreach'
 
 /**
  * Statuses on every stage (plan 068, migration 0088). 0069's sub-statuses
@@ -9,18 +8,36 @@ import type { OutreachEvent, SubStatus, SubStatusRow } from '@/lib/outreach'
  * `set_application_status` sets one at any stage. Pure shaping — the
  * database decides which status fits which stage, and refuses a retired one.
  * The "not responding" rule stays where it was, in outreach.ts.
+ *
+ * Since plan 075 (migrations 0095/0096) the stages are Zoho's four. Rejected
+ * and withdrawn are outcomes of a status, not stages; whether an application
+ * is still being worked is `in_play`, never its stage.
+ *
+ * This file imports no values from other lib modules: dashboard.ts builds on
+ * STAGES at load time, so a cycle through here would read it too early.
  */
 
-export const STATUS_STAGES = ['new', 'screening', 'interview', 'offer', 'hired', 'rejected', 'withdrawn'] as const
+export const STAGES = ['screening', 'interview', 'offer', 'hired'] as const
+export type StageKey = (typeof STAGES)[number]
 
-const OUTREACH_STAGES = new Set(['new', 'screening'])
-const OPEN_STAGES = ['new', 'screening', 'interview', 'offer'] as const
+export const STAGE_LABEL: Record<StageKey, string> = {
+  screening: 'Screening',
+  interview: 'Interview',
+  offer: 'Offered',
+  hired: 'Hired',
+}
+
+/** The stage filter's pseudo-value (plan 054): open outreach with no activity in 30 days. */
+export const NOT_RESPONDING_FILTER = 'not_responding'
+
+const OUTREACH_STAGES = new Set<string>(['screening'])
+const LIVE_STAGES: readonly StageKey[] = STAGES.filter((s) => s !== 'hired')
 const DO_NOT_CONTACT = 'do_not_contact'
 const RETIRED_SUFFIX = ' (retired)'
 
 function stageRank(stageKey: string): number {
-  const i = (STATUS_STAGES as readonly string[]).indexOf(stageKey)
-  return i >= 0 ? i : STATUS_STAGES.length
+  const i = (STAGES as readonly string[]).indexOf(stageKey)
+  return i >= 0 ? i : STAGES.length
 }
 
 function byStageThenOrder(a: SubStatusRow, b: SubStatusRow): number {
@@ -44,6 +61,15 @@ export function liveStatuses(rows: ReadonlyArray<SubStatusRow>): SubStatus[] {
     .map(({ key, stage_key, label, sort_order }) => ({ key, stage_key, label, sort_order }))
 }
 
+/** The statuses with this outcome that may be picked (Reject and Withdraw pickers): unretired, stage then sort order. */
+export function statusesByOutcome(rows: ReadonlyArray<SubStatusRow>, outcome: Outcome): SubStatus[] {
+  return liveStatuses(rows.filter((r) => r.outcome === outcome))
+}
+
+function labelOfStage(key: string): string {
+  return (STAGE_LABEL as Record<string, string>)[key] ?? key
+}
+
 export type StatusFilterGroup = { stageKey: string; stageLabel: string; options: { key: string; label: string }[] }
 
 /**
@@ -56,19 +82,19 @@ export function statusFilterGroups(rows: ReadonlyArray<SubStatusRow>, stageKeys?
   const stages = [...new Set(sorted.map((r) => r.stage_key))]
   return stages.map((s) => ({
     stageKey: s,
-    stageLabel: stageLabel(s),
+    stageLabel: labelOfStage(s),
     options: sorted.filter((r) => r.stage_key === s).map((r) => ({ key: r.key, label: displayLabel(r) })),
   }))
 }
 
 /**
- * The stages whose statuses a stage filter can still show: the open four
- * for "In progress", New and Screening for "Not responding", the stage
+ * The stages whose statuses a stage filter can still show: every stage but
+ * Hired for "In progress", Screening for "Not responding", the stage
  * itself for a stage, and every stage (undefined) for "All stages".
  */
 export function filterStagesFor(stageFilter: string): readonly string[] | undefined {
   if (stageFilter === 'all') return undefined
-  if (stageFilter === 'live') return OPEN_STAGES
+  if (stageFilter === 'live') return LIVE_STAGES
   if (stageFilter === NOT_RESPONDING_FILTER) return [...OUTREACH_STAGES]
   return [stageFilter]
 }

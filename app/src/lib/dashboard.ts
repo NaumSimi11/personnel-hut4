@@ -1,6 +1,7 @@
 import { formatAmount, todayDb } from '@/lib/compensation'
 import { daysSince } from '@/lib/hiringBoard'
 import { notResponding, type OutreachRow } from '@/lib/outreach'
+import { STAGES, STAGE_LABEL, type StageKey } from '@/lib/stageStatuses'
 
 /**
  * Dashboard facts (plan 044): pure shaping of what the page reads — the
@@ -15,6 +16,8 @@ export type ApplicationLite = {
   id: string
   job_id: string
   stage_key: string
+  /** Still being worked: open outcome and not closed with its job (0095). The stage no longer says. */
+  in_play: boolean
   /** Plan 054; with the candidate's last activity and the job status it feeds notRespondingCount. */
   sub_status_key?: string | null
   received_at: string
@@ -51,20 +54,15 @@ export type PayrollFact = {
   status: string
 }
 
-/** The stages of the prototype's pipeline bars, in order; withdrawn stays out of the chart. */
-export const PIPELINE_STAGES: ReadonlyArray<{ key: string; label: string; tone: 'blue' | 'green' | 'red' }> = [
-  { key: 'new', label: 'Applied', tone: 'blue' },
-  { key: 'screening', label: 'Screening', tone: 'blue' },
-  { key: 'interview', label: 'Interview', tone: 'blue' },
-  { key: 'offer', label: 'Offer', tone: 'blue' },
-  { key: 'hired', label: 'Hired', tone: 'green' },
-  { key: 'rejected', label: 'Rejected', tone: 'red' },
-]
-
-const CLOSED_STAGES = new Set(['hired', 'rejected', 'withdrawn'])
+/** The stages of the pipeline bars, in order; closed applications stay out of the chart. */
+export const PIPELINE_STAGES: ReadonlyArray<{ key: StageKey; label: string; tone: 'blue' | 'green' }> = STAGES.map((key) => ({
+  key,
+  label: STAGE_LABEL[key],
+  tone: key === 'hired' ? 'green' : 'blue',
+}))
 
 export function stageLabel(key: string): string {
-  return PIPELINE_STAGES.find((s) => s.key === key)?.label ?? (key === 'withdrawn' ? 'Withdrawn' : key)
+  return (STAGE_LABEL as Record<string, string>)[key] ?? key
 }
 
 export type Celebrant = { id: string; full_name: string; job_title: string | null; company_name: string }
@@ -183,11 +181,11 @@ export function dashboardSections(viewer: Viewer): {
 }
 
 export function pipelineCounts(apps: ReadonlyArray<ApplicationLite>): Array<{ key: string; label: string; tone: string; count: number }> {
-  return PIPELINE_STAGES.map((s) => ({ ...s, count: apps.filter((a) => a.stage_key === s.key).length }))
+  return PIPELINE_STAGES.map((s) => ({ ...s, count: apps.filter((a) => a.stage_key === s.key && (a.in_play || s.key === 'hired')).length }))
 }
 
 export function applicantsInProgress(apps: ReadonlyArray<ApplicationLite>): number {
-  return apps.filter((a) => !CLOSED_STAGES.has(a.stage_key)).length
+  return apps.filter((a) => a.in_play).length
 }
 
 export type OpenPosition = { id: string; title: string; company: string; headcount: number; applicants: number; daysOpen: number | null }
@@ -208,7 +206,7 @@ export function openPositions(jobs: ReadonlyArray<JobLite>, apps: ReadonlyArray<
       title: j.title,
       company: j.company?.name ?? '—',
       headcount: j.request?.headcount ?? 1,
-      applicants: apps.filter((a) => a.job_id === j.id && !CLOSED_STAGES.has(a.stage_key)).length,
+      applicants: apps.filter((a) => a.job_id === j.id && a.in_play).length,
       daysOpen: daysSince(j.opened_at, today),
     }))
     .sort((a, b) => (b.daysOpen ?? -1) - (a.daysOpen ?? -1))
@@ -286,6 +284,7 @@ export function payrollLabel(p: PayrollFact): { value: string; sub: string } {
  */
 export type OutreachLite = {
   stage_key: string
+  in_play: boolean
   sub_status_key?: string | null
   received_at: string
   candidate: { last_activity_at?: string | null } | null
@@ -295,6 +294,7 @@ export type OutreachLite = {
 export function outreachRowOf(a: OutreachLite): OutreachRow {
   return {
     stage_key: a.stage_key,
+    in_play: a.in_play,
     sub_status_key: a.sub_status_key ?? null,
     last_activity_at: a.candidate?.last_activity_at ?? null,
     received_at: a.received_at,

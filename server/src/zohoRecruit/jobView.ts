@@ -29,7 +29,7 @@ export type JobViewPayload = { candidates: JobViewCandidate[]; applications: Job
 export type JobViewProblem = { ref: string; message: string }
 export type JobViewResult = {
   payload: JobViewPayload
-  counts: { candidates: number; applications: number; notes: number; byStatus: Record<string, number> }
+  counts: { candidates: number; applications: number; notes: number; byStatus: Record<string, number>; skippedNoId: number }
   problems: JobViewProblem[]
 }
 export type ParsedNote = Omit<JobViewNote, 'candidate_zoho_id' | 'job_display_id' | 'seq'>
@@ -146,21 +146,32 @@ function buildJobRow(r: CsvRow, jobColumns: string[], ctx: Ctx): JobRow | null {
   return { application, notes, statusKey }
 }
 
-function groupByCandidate(rows: CsvRow[], problems: JobViewProblem[]): Map<string, CsvRow[]> {
+/**
+ * Rows grouped by Candidate ID. A row with data but no ID is a problem —
+ * unless `skipMissingId` (the maintainer's call, 2026-11-06): then it is
+ * left out and only counted.
+ */
+function groupByCandidate(
+  rows: CsvRow[],
+  problems: JobViewProblem[],
+  skipMissingId: boolean,
+): { groups: Map<string, CsvRow[]>; skippedNoId: number } {
   const groups = new Map<string, CsvRow[]>()
+  let skippedNoId = 0
   rows.forEach((r, i) => {
     if (Object.values(r).every((v) => v.trim() === '')) return // a row of bare commas
     const id = cell(r, COL.candidateId)
     if (id === '') {
-      problems.push({ ref: `record ${i + 2}`, message: 'Blank Candidate ID' })
+      if (skipMissingId) skippedNoId += 1
+      else problems.push({ ref: `record ${i + 2}`, message: 'Blank Candidate ID' })
       return
     }
     groups.set(id, [...(groups.get(id) ?? []), r])
   })
-  return groups
+  return { groups, skippedNoId }
 }
 
-export function buildJobViewPayload(rows: CsvRow[], opts: { tz: string }): JobViewResult {
+export function buildJobViewPayload(rows: CsvRow[], opts: { tz: string; skipMissingId?: boolean }): JobViewResult {
   const problems: JobViewProblem[] = []
   const header = rows.length > 0 ? Object.keys(rows[0]) : []
   const split = header.indexOf(JOB_COLUMNS_FROM)
@@ -171,7 +182,8 @@ export function buildJobViewPayload(rows: CsvRow[], opts: { tz: string }): JobVi
   const applications: JobViewApplication[] = []
   const notes: JobViewNote[] = []
   const byStatus: Record<string, number> = {}
-  for (const [id, group] of groupByCandidate(rows, problems)) {
+  const { groups, skippedNoId } = groupByCandidate(rows, problems, opts.skipMissingId ?? false)
+  for (const [id, group] of groups) {
     candidates.push(buildCandidate(group, ctx))
     const seen = new Set<string>()
     for (const r of group) {
@@ -191,7 +203,7 @@ export function buildJobViewPayload(rows: CsvRow[], opts: { tz: string }): JobVi
   }
   return {
     payload: { candidates, applications, notes },
-    counts: { candidates: candidates.length, applications: applications.length, notes: notes.length, byStatus },
+    counts: { candidates: candidates.length, applications: applications.length, notes: notes.length, byStatus, skippedNoId },
     problems,
   }
 }

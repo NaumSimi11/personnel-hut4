@@ -19,6 +19,7 @@ describe('buildJobViewPayload on the fixture', () => {
       applications: 5,
       notes: 2,
       byStatus: { interview_scheduled: 1, never_contact: 1, contact_in_future: 1, not_contacted: 1, hired: 1 },
+      skippedNoId: 0,
     })
   })
 
@@ -87,6 +88,16 @@ describe('buildJobViewPayload problems', () => {
   it('skips a row of bare commas but reports data without a Candidate ID', () => {
     const r = buildJobViewPayload(csv(line({}), line({ 'Full Name': 'Orphan', 'Job Opening ID': 'JO-9', 'Status for this Job': 'Hired' })), { tz: TZ })
     expect(r.problems).toEqual([{ ref: 'record 3', message: 'Blank Candidate ID' }])
+    expect(r.payload.candidates).toEqual([])
+  })
+
+  it('skips and counts a row without a Candidate ID when asked to', () => {
+    const r = buildJobViewPayload(csv(line({ 'Full Name': 'Orphan', 'Job Opening ID': 'JO-9', 'Status for this Job': 'Hired' })), {
+      tz: TZ,
+      skipMissingId: true,
+    })
+    expect(r.problems).toEqual([])
+    expect(r.counts.skippedNoId).toBe(1)
     expect(r.payload.candidates).toEqual([])
   })
 

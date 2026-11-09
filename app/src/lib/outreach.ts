@@ -38,7 +38,7 @@ export function subStatusesFor(all: SubStatusRow[], stageKey: string): SubStatus
 export const NOT_RESPONDING_DAYS = 30
 
 const LIVE_JOB_STATUSES = new Set(['ready', 'open', 'on_hold'])
-const OPEN_OUTREACH_SUB_STATUSES = new Set(['sourced', 'contact_attempted', 'contacted'])
+const OPEN_OUTREACH_SUB_STATUSES = new Set(['sourced', 'contacted'])
 
 /** Enough of an application (+ its job) to judge D3, named to read next to the SQL by eye. */
 export type OutreachRow = {

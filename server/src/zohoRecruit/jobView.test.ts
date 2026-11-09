@@ -18,27 +18,28 @@ describe('buildJobViewPayload on the fixture', () => {
       candidates: 4,
       applications: 5,
       notes: 2,
-      byStatus: { interview_scheduled: 1, never_contact: 1, contact_in_future: 1, not_contacted: 1, hired: 1 },
+      byStatus: { interview_hr: 1, do_not_contact: 1, contact_in_future: 1, sourced: 1, hired: 1 },
       skippedNoId: 0,
     })
   })
 
-  it('keeps both status columns apart and counts only the one that counts', () => {
+  it('takes HR\'s column T and keeps Zoho\'s column R as written', () => {
     expect(Object.keys(rows()[0]).filter((k) => k.toLowerCase() === 'status for this job')).toHaveLength(2)
     const app = payload.applications.find((a) => a.job_display_id === 'JO-1' && a.candidate_zoho_id === '1001')!
-    expect(app.sub_status_key).toBe('interview_scheduled')
+    expect(app.sub_status_key).toBe('interview_hr')
     expect(app.custom.zoho['Status for this job']).toBeUndefined()
     expect(app.custom.zoho['Status for this Job']).toBe('Interview-Scheduled')
   })
 
-  it('NEVER-contact beats Contact in Future on the same candidate', () => {
-    expect(candidate('1001').contact_rule).toEqual({ rule: 'do_not_contact', reason: 'Zoho: NEVER to be contacted again' })
+  it('do_not_contact beats contact_in_future on the same candidate', () => {
+    expect(candidate('1001').contact_rule).toEqual({ rule: 'do_not_contact', reason: 'HR: do_not_contact' })
   })
 
-  it('maps Not contacted to not_contacted, no rule', () => {
+  it('reads HR\'s spelling variants as the key: "Sourced", "hired" with a no-break space', () => {
     const app = payload.applications.find((a) => a.candidate_zoho_id === '1002')!
-    expect(app.sub_status_key).toBe('not_contacted')
+    expect(app.sub_status_key).toBe('sourced')
     expect(candidate('1002').contact_rule).toBeNull()
+    expect(payload.applications.find((a) => a.candidate_zoho_id === '1004')!.sub_status_key).toBe('hired')
   })
 
   it('a row without a job is a candidate only', () => {
@@ -78,7 +79,7 @@ describe('buildJobViewPayload problems', () => {
   const line = (over: Record<string, string>) => header.map((h) => over[h] ?? '')
 
   it('reports an unknown status as one problem and no application', () => {
-    const r = buildJobViewPayload(csv(line({ 'Candidate ID': '9', 'Full Name': 'X', 'Job Opening ID': 'JO-9', 'Status for this Job': 'Made-Up' })), { tz: TZ })
+    const r = buildJobViewPayload(csv(line({ 'Candidate ID': '9', 'Full Name': 'X', 'Job Opening ID': 'JO-9', 'Status for this job': 'Made-Up' })), { tz: TZ })
     expect(r.problems).toHaveLength(1)
     expect(r.problems[0].ref).toBe('9/JO-9')
     expect(r.payload.applications).toEqual([])
@@ -86,13 +87,13 @@ describe('buildJobViewPayload problems', () => {
   })
 
   it('skips a row of bare commas but reports data without a Candidate ID', () => {
-    const r = buildJobViewPayload(csv(line({}), line({ 'Full Name': 'Orphan', 'Job Opening ID': 'JO-9', 'Status for this Job': 'Hired' })), { tz: TZ })
+    const r = buildJobViewPayload(csv(line({}), line({ 'Full Name': 'Orphan', 'Job Opening ID': 'JO-9', 'Status for this job': 'hired' })), { tz: TZ })
     expect(r.problems).toEqual([{ ref: 'record 3', message: 'Blank Candidate ID' }])
     expect(r.payload.candidates).toEqual([])
   })
 
   it('skips and counts a row without a Candidate ID when asked to', () => {
-    const r = buildJobViewPayload(csv(line({ 'Full Name': 'Orphan', 'Job Opening ID': 'JO-9', 'Status for this Job': 'Hired' })), {
+    const r = buildJobViewPayload(csv(line({ 'Full Name': 'Orphan', 'Job Opening ID': 'JO-9', 'Status for this job': 'hired' })), {
       tz: TZ,
       skipMissingId: true,
     })
@@ -103,7 +104,7 @@ describe('buildJobViewPayload problems', () => {
 
   it('keeps only the date of a Hired Date written with a time, as the real export does', () => {
     const r = buildJobViewPayload(
-      csv(line({ 'Candidate ID': '9', 'Full Name': 'X', 'Job Opening ID': 'JO-9', 'Status for this Job': 'Hired', 'Hired Date': '2024-04-12 00:00' })),
+      csv(line({ 'Candidate ID': '9', 'Full Name': 'X', 'Job Opening ID': 'JO-9', 'Status for this job': 'hired', 'Hired Date': '2024-04-12 00:00' })),
       { tz: TZ },
     )
     expect(r.payload.applications[0].hired_date).toBe('2024-04-12')
@@ -115,7 +116,7 @@ describe('buildJobViewPayload problems', () => {
   })
 
   it('keeps only the first of several Assigned Recruiters as the owner name', () => {
-    const base = { 'Candidate ID': '9', 'Full Name': 'X', 'Job Opening ID': 'JO-9', 'Status for this Job': 'Hired' }
+    const base = { 'Candidate ID': '9', 'Full Name': 'X', 'Job Opening ID': 'JO-9', 'Status for this job': 'hired' }
     const semi = buildJobViewPayload(csv(line({ ...base, 'Assigned Recruiter(s)': ' Bea HR ; Ana Testova' })), { tz: TZ })
     expect(semi.payload.applications[0].owner_name).toBe('Bea HR')
     expect(semi.payload.applications[0].custom.zoho['Assigned Recruiter(s)']).toBe(' Bea HR ; Ana Testova')
@@ -127,7 +128,7 @@ describe('buildJobViewPayload problems', () => {
 
   it('reports a note without a header', () => {
     const r = buildJobViewPayload(
-      csv(line({ 'Candidate ID': '9', 'Full Name': 'X', 'Job Opening ID': 'JO-9', 'Status for this Job': 'Hired', 'Job Notes Log (newest first)': 'just text' })),
+      csv(line({ 'Candidate ID': '9', 'Full Name': 'X', 'Job Opening ID': 'JO-9', 'Status for this job': 'hired', 'Job Notes Log (newest first)': 'just text' })),
       { tz: TZ },
     )
     expect(r.problems).toHaveLength(1)

@@ -34,9 +34,9 @@ export const NOT_RESPONDING_FILTER = 'not_responding'
 
 const OUTREACH_STAGES = new Set<string>(['screening'])
 const LIVE_STAGES: readonly StageKey[] = STAGES.filter((s) => s !== 'hired')
-/** Zoho's contact statuses; the import alone turns them into the candidate's contact rule. */
-const NEVER_CONTACT = 'never_contact'
-const CONTACT_LATER_STATUSES = new Set<string>(['contact_in_future', 'rejected_hirable'])
+/** HR's contact statuses (0098); the import alone turns them into the candidate's contact rule. */
+const NEVER_CONTACT = 'do_not_contact'
+const CONTACT_LATER_STATUSES = new Set<string>(['contact_in_future'])
 const RETIRED_SUFFIX = ' (retired)'
 
 function stageRank(stageKey: string): number {
@@ -143,8 +143,8 @@ export function filterStagesFor(stageFilter: string): readonly string[] | undefi
 }
 
 /**
- * The warning beside a contact status ("NEVER to be contacted again",
- * "Contact in Future", "Rejected-Hirable"): the status labels the
+ * The warning beside a contact status (do_not_contact,
+ * contact_in_future): the status labels the
  * application, while the candidate's own contact rule (0067) is what blocks
  * or delays outreach — a separate, deliberate step.
  */

@@ -5619,7 +5619,7 @@ insert into public.applications (id, job_id, company_id, candidate_id, stage_key
   ('90000000-0000-0000-0000-00000000069c', '70000000-0000-0000-0000-000000000691', '10000000-0000-0000-0000-00000000000b',
    '80000000-0000-0000-0000-00000000069c', 'screening', 'head_hunt', 'interview_hr'),
   ('90000000-0000-0000-0000-00000000069d', '70000000-0000-0000-0000-000000000691', '10000000-0000-0000-0000-00000000000b',
-   '80000000-0000-0000-0000-00000000069d', 'screening', 'head_hunt', 'contact_attempted'),
+   '80000000-0000-0000-0000-00000000069d', 'screening', 'head_hunt', 'contacted'),
   ('90000000-0000-0000-0000-00000000069e', '70000000-0000-0000-0000-000000000691', '10000000-0000-0000-0000-00000000000b',
    '80000000-0000-0000-0000-00000000069e', 'screening', 'careers_page', 'interview_hr');
 -- The "not responding" fixtures: received two months ago, so only the events
@@ -5645,29 +5645,25 @@ insert into public.application_events (application_id, kind, body, created_at) v
   ('90000000-0000-0000-0000-00000000069b', 'note', 'Left a message.', (current_date - 30)::timestamptz + interval '12 hours');
 update public.applications set stage_key = 'interview' where id = '90000000-0000-0000-0000-000000000695';
 
--- 1. The vocabulary: Screening's fourteen statuses (0095), in order, and the
--- defaults the trigger and the stage give.
+-- 1. The vocabulary: HR's eighteen statuses (0098), in order, labelled by
+-- their keys until HR names them, and the defaults the trigger and the stage give.
 do $$
 begin
-  assert (select count(*) from public.application_sub_statuses where stage_key = 'screening') = 14,
-    'fourteen sub-statuses inside Screening';
+  assert (select count(*) from public.application_sub_statuses) = 18, 'HR''s eighteen statuses, nothing else';
   assert (select string_agg(key, ',' order by sort_order) from public.application_sub_statuses
           where stage_key = 'screening')
-    = 'applied,sourced,not_contacted,contact_attempted,contacted,no_response,interested,not_interested,qualified,'
-      'waiting_for_evaluation,unqualified,rejected_for_interview,contact_in_future,never_contact',
+    = 'sourced,contacted,interested,no_response,not_interested,unqualified,contact_in_future,do_not_contact',
     'Screening, in order';
-  assert (select string_agg(label, ';' order by sort_order) from public.application_sub_statuses
-          where stage_key = 'screening')
-    = 'New;Associated;Not Contacted;Attempted to Contact;Contacted;Not responding;Interested;Not Interested;Qualified;'
-      'Waiting-for-Evaluation;Unqualified;Rejected-for-Interview;Contact in Future;NEVER to be contacted again',
-    'the labels as Zoho names them';
+  assert (select string_agg(key, ',' order by sort_order) from public.application_sub_statuses
+          where stage_key = 'interview')
+    = 'interview_to_schedule,interview_hr,interview_stakeholders,interview_task,rejected_by_hr,rejected_after_interview,withdrawn',
+    'Interview, in order';
+  assert not exists (select 1 from public.application_sub_statuses where label <> key), 'every label is its key';
   assert app.default_sub_status('screening', 'head_hunt') = 'sourced'
-     and app.default_sub_status('screening', 'linkedin_profile') = 'sourced'
-     and app.default_sub_status('screening', 'imported') = 'sourced'
-     and app.default_sub_status('screening', 'careers_page') = 'applied'
-     and app.default_sub_status('screening', null) = 'applied', 'at Screening the source decides';
+     and app.default_sub_status('screening', 'careers_page') = 'sourced'
+     and app.default_sub_status('screening', null) = 'sourced', 'at Screening everyone starts sourced';
   assert app.default_sub_status('interview', 'head_hunt') = 'interview_to_schedule'
-     and app.default_sub_status('offer', null) = 'to_be_offered'
+     and app.default_sub_status('offer', null) = 'offer_made'
      and app.default_sub_status('hired', null) = 'hired'
      and app.default_sub_status('withdrawn', null) is null, 'elsewhere: the first by sort order, or nothing';
 end $$;
@@ -5689,18 +5685,18 @@ begin
     'full_name', 'Outreach Applicant', 'email', 'applicant@outreach.test', 'source_key', 'careers_page',
     'job_id', '70000000-0000-0000-0000-000000000691'));
   assert (select stage_key || '|' || source_key || '|' || sub_status_key from public.applications
-          where id = (r->>'application_id')::uuid) = 'screening|careers_page|applied',
-    'someone who came to us is Applied';
-  assert (select sub_status_key from public.applications where id = '90000000-0000-0000-0000-000000000696') = 'applied',
-    'a careers-site insert with no source at all is Applied too';
+          where id = (r->>'application_id')::uuid) = 'screening|careers_page|sourced',
+    'someone who came to us starts sourced too';
+  assert (select sub_status_key from public.applications where id = '90000000-0000-0000-0000-000000000696') = 'sourced',
+    'and so does a careers-site insert with no source at all';
   assert (select sub_status_key from public.applications where id = '90000000-0000-0000-0000-000000000691') = 'sourced',
     'and a head-hunted insert is Sourced';
   assert (select sub_status_key from public.applications where id = '90000000-0000-0000-0000-000000000695') = 'interview_to_schedule',
     'a row moved to Interview carries that stage''s first status';
   assert (select sub_status_key from public.applications where id = '90000000-0000-0000-0000-00000000069c') = 'sourced'
-     and (select sub_status_key from public.applications where id = '90000000-0000-0000-0000-00000000069e') = 'applied',
-    'an Interview key on an inserted Screening row is corrected to the stage default, by source';
-  assert (select sub_status_key from public.applications where id = '90000000-0000-0000-0000-00000000069d') = 'contact_attempted',
+     and (select sub_status_key from public.applications where id = '90000000-0000-0000-0000-00000000069e') = 'sourced',
+    'an Interview key on an inserted Screening row is corrected to the stage default';
+  assert (select sub_status_key from public.applications where id = '90000000-0000-0000-0000-00000000069d') = 'contacted',
     'a key of the right stage is kept as given';
 end $$;
 
@@ -5724,13 +5720,13 @@ begin
   exception when invalid_parameter_value then
     if sqlerrm not like '%"interview_hr" is not a sub-status of the screening stage.%' then raise; end if;
   end;
-  update public.applications set sub_status_key = 'contact_attempted' where id = '90000000-0000-0000-0000-000000000692';
-  assert (select sub_status_key from public.applications where id = '90000000-0000-0000-0000-000000000692') = 'contact_attempted',
+  update public.applications set sub_status_key = 'contacted' where id = '90000000-0000-0000-0000-000000000692';
+  assert (select sub_status_key from public.applications where id = '90000000-0000-0000-0000-000000000692') = 'contacted',
     'a sub-status of the same stage is accepted';
   update public.applications set sub_status_key = null where id = '90000000-0000-0000-0000-000000000692';
   assert (select sub_status_key from public.applications where id = '90000000-0000-0000-0000-000000000692') = 'sourced',
     'clearing it inside Screening re-defaults from the source: a row here always carries one';
-  update public.applications set sub_status_key = 'contact_attempted' where id = '90000000-0000-0000-0000-000000000692';
+  update public.applications set sub_status_key = 'contacted' where id = '90000000-0000-0000-0000-000000000692';
 end $$;
 
 -- 5. log_outreach: two applications, one call, one event each.
@@ -5741,16 +5737,16 @@ begin
     from public.candidates c3, public.candidates c4
     where c3.id = '80000000-0000-0000-0000-000000000693' and c4.id = '80000000-0000-0000-0000-000000000694';
   r := public.log_outreach(array['90000000-0000-0000-0000-000000000693', '90000000-0000-0000-0000-000000000694']::uuid[],
-                           'contact_attempted', '  Left a voicemail.  ');
+                           'contacted', '  Left a voicemail.  ');
   assert r = '{"logged": 2}'::jsonb, 'two logged: ' || r::text;
   assert (select count(*) from public.applications
           where id in ('90000000-0000-0000-0000-000000000693', '90000000-0000-0000-0000-000000000694')
-            and sub_status_key = 'contact_attempted') = 2, 'both rows moved to Contact attempted';
+            and sub_status_key = 'contacted') = 2, 'both rows moved to Contact attempted';
   assert (select count(*) from public.application_events
           where application_id in ('90000000-0000-0000-0000-000000000693', '90000000-0000-0000-0000-000000000694')
-            and kind = 'outreach' and from_sub_status_key = 'sourced' and to_sub_status_key = 'contact_attempted'
+            and kind = 'outreach' and from_sub_status_key = 'sourced' and to_sub_status_key = 'contacted'
             and body = 'Left a voicemail.' and actor_id = '20000000-0000-0000-0000-000000000004') = 2,
-    'two outreach events, from sourced to contact_attempted, the note trimmed, attributed to Ada';
+    'two outreach events, from sourced to contacted, the note trimmed, attributed to Ada';
   assert (select min(last_activity_at) from public.candidates
           where id in ('80000000-0000-0000-0000-000000000693', '80000000-0000-0000-0000-000000000694')) > v_before,
     'the outreach moved both candidates'' last activity';
@@ -5773,7 +5769,7 @@ begin
           where application_id in ('90000000-0000-0000-0000-000000000693', '90000000-0000-0000-0000-000000000694')) = n_before
      and (select count(*) from public.applications
           where id in ('90000000-0000-0000-0000-000000000693', '90000000-0000-0000-0000-000000000694')
-            and sub_status_key = 'contact_attempted') = 2,
+            and sub_status_key = 'contacted') = 2,
     'nothing of the refused call persisted: no event, no change on the first two';
   begin
     perform public.log_outreach(array['90000000-0000-0000-0000-000000000693']::uuid[], 'interview_hr', '');
@@ -5787,7 +5783,7 @@ begin
      and exists (select 1 from public.application_events where application_id = '90000000-0000-0000-0000-000000000693'
                    and kind = 'outreach' and to_sub_status_key = 'sourced' and body is null),
     'an empty note leaves the event body null: ' || r::text;
-  perform public.log_outreach(array['90000000-0000-0000-0000-000000000693']::uuid[], 'contact_attempted', 'Back again.');
+  perform public.log_outreach(array['90000000-0000-0000-0000-000000000693']::uuid[], 'contacted', 'Back again.');
   -- The same id twice is one application.
   select count(*) into n_before from public.application_events
     where application_id = '90000000-0000-0000-0000-000000000692';
@@ -5799,7 +5795,7 @@ begin
     'and writes exactly one event';
   -- The four sentences the plan left to the house.
   begin
-    perform public.log_outreach(array[]::uuid[], 'contact_attempted', '');
+    perform public.log_outreach(array[]::uuid[], 'contacted', '');
     raise exception 'FAIL: logged outreach against nothing';
   exception when invalid_parameter_value then
     if sqlerrm not like '%Pick at least one application.%' then raise; end if;
@@ -5811,16 +5807,16 @@ begin
     if sqlerrm not like '%Pick a sub-status.%' then raise; end if;
   end;
   begin
-    perform public.log_outreach(array['90000000-0000-0000-0000-000000000692']::uuid[], 'contact_attempted',
+    perform public.log_outreach(array['90000000-0000-0000-0000-000000000692']::uuid[], 'contacted',
                                 repeat('x', 2001));
     raise exception 'FAIL: a note over the limit';
   exception when invalid_parameter_value then
     if sqlerrm not like '%Keep the note to 2,000 characters or fewer.%' then raise; end if;
   end;
-  r := public.log_outreach(array['90000000-0000-0000-0000-000000000692']::uuid[], 'contact_attempted', repeat('x', 2000));
+  r := public.log_outreach(array['90000000-0000-0000-0000-000000000692']::uuid[], 'contacted', repeat('x', 2000));
   assert r = '{"logged": 1}'::jsonb, 'exactly 2,000 characters is allowed: ' || r::text;
   begin
-    perform public.log_outreach(array['90000000-0000-0000-0000-0000000006ff']::uuid[], 'contact_attempted', '');
+    perform public.log_outreach(array['90000000-0000-0000-0000-0000000006ff']::uuid[], 'contacted', '');
     raise exception 'FAIL: logged outreach against an id that is not there';
   exception when invalid_parameter_value then
     if sqlerrm not like '%That application no longer exists.%' then raise; end if;
@@ -5832,7 +5828,7 @@ set role authenticated;
 do $$
 begin
   begin
-    perform public.log_outreach(array['90000000-0000-0000-0000-000000000692']::uuid[], 'contact_attempted', '');
+    perform public.log_outreach(array['90000000-0000-0000-0000-000000000692']::uuid[], 'contacted', '');
     raise exception 'FAIL: logged outreach without candidates.review';
   exception when insufficient_privilege then
     -- Company B answers to "Company Bee" since the 0028 import renamed it.
@@ -5845,7 +5841,7 @@ set role authenticated;
 do $$
 begin
   begin
-    perform public.log_outreach(array['90000000-0000-0000-0000-000000000692']::uuid[], 'contact_attempted', '');
+    perform public.log_outreach(array['90000000-0000-0000-0000-000000000692']::uuid[], 'contacted', '');
     raise exception 'FAIL: logged outreach signed out';
   exception when insufficient_privilege then
     if sqlerrm not like '%Sign in to continue.%' then raise; end if;
@@ -5869,7 +5865,7 @@ begin
   assert not (select app.not_responding(a) from public.applications a where a.id = '90000000-0000-0000-0000-00000000069a'),
     'a closed job is nobody''s attention';
   assert not (select app.not_responding(a) from public.applications a where a.id = '90000000-0000-0000-0000-000000000696'),
-    'Applied is not outreach: they came to us';
+    'sourced, but received today: not yet quiet';
 end $$;
 set app.test_uid = '00000000-0000-0000-0000-000000000004';  -- Ada
 set role authenticated;
@@ -5909,7 +5905,7 @@ insert into public.applications (id, job_id, company_id, candidate_id, source_pr
 values
   ('90000000-0000-0000-0000-000000000701', '70000000-0000-0000-0000-000000000701',
    '10000000-0000-0000-0000-00000000000b', '80000000-0000-0000-0000-000000000703',
-   'zoho_recruit', 'ZA-ZH1', 'interview', 'candidate_withdrew'),
+   'zoho_recruit', 'ZA-ZH1', 'interview', 'withdrawn'),
   ('90000000-0000-0000-0000-000000000702', '70000000-0000-0000-0000-000000000701',
    '10000000-0000-0000-0000-00000000000b', '80000000-0000-0000-0000-000000000703',
    null, null, 'screening', null);
@@ -6086,7 +6082,7 @@ insert into public.applications (id, job_id, company_id, candidate_id, stage_key
   ('90000000-0000-0000-0000-000000000714', '70000000-0000-0000-0000-000000000711',
    '10000000-0000-0000-0000-00000000000b', '80000000-0000-0000-0000-000000000714', 'hired', null, null),
   ('90000000-0000-0000-0000-000000000715', '70000000-0000-0000-0000-000000000711',
-   '10000000-0000-0000-0000-00000000000b', '80000000-0000-0000-0000-000000000715', 'interview', 'rejected_general', 'Not this time.');
+   '10000000-0000-0000-0000-00000000000b', '80000000-0000-0000-0000-000000000715', 'interview', 'rejected_by_hr', 'Not this time.');
 
 set app.test_uid = '00000000-0000-0000-0000-000000000005';  -- Bea, Company HR in B
 set role authenticated;
@@ -6122,7 +6118,7 @@ begin
              and not in_play and closed_reason = 'Headcount withdrawn for the year.') = 3,
     'three marked, each with the reason, out of play';
   assert (select stage_key from public.applications where id = '90000000-0000-0000-0000-000000000714') = 'hired'
-     and (select sub_status_key from public.applications where id = '90000000-0000-0000-0000-000000000715') = 'rejected_general'
+     and (select sub_status_key from public.applications where id = '90000000-0000-0000-0000-000000000715') = 'rejected_by_hr'
      and (select count(*) from public.applications
            where id in ('90000000-0000-0000-0000-000000000714', '90000000-0000-0000-0000-000000000715')
              and closed_at is null and closed_reason is null) = 2,
@@ -6140,7 +6136,7 @@ begin
            where application_id = '90000000-0000-0000-0000-000000000713' and kind = 'status_change'
              and body = 'Headcount withdrawn for the year.') = 'interview>interview',
     'the event carries the stage the application is at';
-  assert (select sub_status_key from public.applications where id = '90000000-0000-0000-0000-000000000711') = 'applied',
+  assert (select sub_status_key from public.applications where id = '90000000-0000-0000-0000-000000000711') = 'sourced',
     'a row marked by closing its job keeps its status';
 end $$;
 
@@ -6168,7 +6164,7 @@ begin
             from public.jobs where id = '70000000-0000-0000-0000-000000000711'),
     'reopening clears the whole stamp';
   assert (select count(*) from public.applications
-           where job_id = '70000000-0000-0000-0000-000000000711' and sub_status_key in ('applied', 'interview_to_schedule')) = 3,
+           where job_id = '70000000-0000-0000-0000-000000000711' and sub_status_key in ('sourced', 'interview_to_schedule')) = 3,
     'reopening does not change anybody''s status';
   assert (select count(*) from public.applications
            where job_id = '70000000-0000-0000-0000-000000000711' and in_play and closed_at is null) = 3
@@ -7410,7 +7406,7 @@ insert into public.jobs (id, company_id, title, status) values
   ('70000000-0000-0000-0000-000000000831', '10000000-0000-0000-0000-00000000000b', 'Force Delete Role', 'open');
 insert into public.applications (id, job_id, company_id, candidate_id, stage_key, sub_status_key) values
   ('90000000-0000-0000-0000-000000000831', '70000000-0000-0000-0000-000000000831',
-   '10000000-0000-0000-0000-00000000000b', '80000000-0000-0000-0000-000000000831', 'interview', 'rejected_general');
+   '10000000-0000-0000-0000-00000000000b', '80000000-0000-0000-0000-000000000831', 'interview', 'rejected_by_hr');
 insert into public.application_files
     (application_id, company_id, kind, storage_path, original_name, mime_type, size_bytes) values
   ('90000000-0000-0000-0000-000000000831', '10000000-0000-0000-0000-00000000000b', 'cv',
@@ -7881,9 +7877,9 @@ insert into public.applications (id, job_id, company_id, candidate_id, stage_key
   ('90000000-0000-0000-0000-0000000008a1', '70000000-0000-0000-0000-0000000008a1', '10000000-0000-0000-0000-00000000000b',
    '80000000-0000-0000-0000-0000000008a1', 'interview', 'interview_hr', null, null, '{}'),
   ('90000000-0000-0000-0000-0000000008a2', '70000000-0000-0000-0000-0000000008a1', '10000000-0000-0000-0000-00000000000b',
-   '80000000-0000-0000-0000-0000000008a2', 'interview', 'rejected_by_hr', '  rejected BY hr ', null, '{}'),
+   '80000000-0000-0000-0000-0000000008a2', 'interview', 'rejected_by_hr', '  REJECTED_by_HR ', null, '{}'),
   ('90000000-0000-0000-0000-0000000008a3', '70000000-0000-0000-0000-0000000008a1', '10000000-0000-0000-0000-00000000000b',
-   '80000000-0000-0000-0000-0000000008a3', 'interview', 'candidate_withdrew', null, 'A reason nobody wrote before', '{}'),
+   '80000000-0000-0000-0000-0000000008a3', 'interview', 'withdrawn', null, 'A reason nobody wrote before', '{}'),
   ('90000000-0000-0000-0000-0000000008a4', '70000000-0000-0000-0000-0000000008a1', '10000000-0000-0000-0000-00000000000b',
    '80000000-0000-0000-0000-0000000008a4', 'offer', null, null, null, '{}'),
   ('90000000-0000-0000-0000-0000000008a5', '70000000-0000-0000-0000-0000000008a1', '10000000-0000-0000-0000-00000000000b',
@@ -7893,28 +7889,28 @@ insert into public.applications (id, job_id, company_id, candidate_id, stage_key
   ('90000000-0000-0000-0000-0000000008a7', '70000000-0000-0000-0000-0000000008a1', '10000000-0000-0000-0000-00000000000b',
    '80000000-0000-0000-0000-0000000008a7', 'hired', null, null, null, '{}'),
   ('90000000-0000-0000-0000-0000000008a8', '70000000-0000-0000-0000-0000000008a3', '10000000-0000-0000-0000-00000000000b',
-   '80000000-0000-0000-0000-0000000008a8', 'interview', 'candidate_withdrew', null, 'Budget frozen for the year.', '{}'),
+   '80000000-0000-0000-0000-0000000008a8', 'interview', 'withdrawn', null, 'Budget frozen for the year.', '{}'),
   ('90000000-0000-0000-0000-0000000008a9', '70000000-0000-0000-0000-0000000008a1', '10000000-0000-0000-0000-00000000000b',
-   '80000000-0000-0000-0000-0000000008a9', 'interview', 'rejected_by_hr', 'Rejected by HR', null, '{}'),
+   '80000000-0000-0000-0000-0000000008a9', 'interview', 'rejected_by_hr', 'rejected_by_hr', null, '{}'),
   ('90000000-0000-0000-0000-0000000008aa', '70000000-0000-0000-0000-0000000008a1', '10000000-0000-0000-0000-00000000000b',
-   '80000000-0000-0000-0000-0000000008aa', 'interview', 'rejected_general', 'Salary expectations far apart.', null, '{}'),
+   '80000000-0000-0000-0000-0000000008aa', 'interview', 'rejected_by_hr', 'Salary expectations far apart.', null, '{}'),
   ('90000000-0000-0000-0000-0000000008ab', '70000000-0000-0000-0000-0000000008a4', '10000000-0000-0000-0000-00000000000a',
    '80000000-0000-0000-0000-0000000008ab', 'interview', null, null, null, '{}');
 
 -- 1. The vocabulary: every stage has one, in order, one outcome each.
 do $$
 begin
-  assert (select count(*) from public.application_sub_statuses) = 37, 'the 37 statuses of 0095';
+  assert (select count(*) from public.application_sub_statuses) = 18, 'the 18 statuses of 0098';
   assert (select string_agg(key, ',' order by sort_order) from public.application_sub_statuses where stage_key = 'offer')
-    = 'to_be_offered,offer_made,offer_declined,offer_withdrawn', 'Offered: to be offered, made, then the two endings';
+    = 'offer_made,offer_declined', 'Offered: made, then declined';
   assert (select string_agg(key, ',' order by sort_order) from public.application_sub_statuses where stage_key = 'hired')
     = 'hired', 'Hired has the one status';
-  assert (select count(*) from public.application_sub_statuses where stage_key = 'interview') = 18, 'eighteen at Interview';
+  assert (select count(*) from public.application_sub_statuses where stage_key = 'interview') = 7, 'seven at Interview';
   assert (select string_agg(outcome || '=' || n, ',' order by outcome)
             from (select outcome, count(*) n from public.application_sub_statuses group by outcome) o)
-    = 'hired=1,open=22,rejected=8,withdrew=6', 'the outcomes: 22 open, 8 rejected, 6 withdrew, 1 hired';
+    = 'hired=1,open=8,rejected=3,withdrew=6', 'the outcomes: 8 open, 3 rejected, 6 withdrew, 1 hired';
   assert app.default_sub_status('interview', null) = 'interview_to_schedule'
-     and app.default_sub_status('offer', null) = 'to_be_offered'
+     and app.default_sub_status('offer', null) = 'offer_made'
      and app.default_sub_status('hired', null) = 'hired',
     'Interview onwards start at their first status';
 end $$;
@@ -7966,7 +7962,7 @@ begin
     'Contact in Future is a Screening status, so the application moved there';
   perform public.set_application_status(array['90000000-0000-0000-0000-0000000008a9',
                                               '90000000-0000-0000-0000-0000000008aa']::uuid[], 'unqualified', '');
-  assert (select rejected_reason from public.applications where id = '90000000-0000-0000-0000-0000000008a9') = 'Unqualified',
+  assert (select rejected_reason from public.applications where id = '90000000-0000-0000-0000-0000000008a9') = 'unqualified',
     'a reason that was only the old status follows the new one';
   assert (select rejected_reason from public.applications where id = '90000000-0000-0000-0000-0000000008aa') = 'Salary expectations far apart.',
     'a reason in somebody''s own words stays';
@@ -8070,7 +8066,7 @@ begin
   end;
   declare k text;
   begin
-    foreach k in array array['applied', 'sourced', 'contact_attempted', 'contacted'] loop
+    foreach k in array array['sourced', 'contacted'] loop
       begin
         update public.application_sub_statuses set archived_at = now() where key = k;
         raise exception 'FAIL: retired %, which the rules name', k;
@@ -8078,9 +8074,9 @@ begin
       end;
     end loop;
   end;
-  update public.application_sub_statuses set label = 'Came to us' where key = 'applied';
-  assert app.default_sub_status('screening', 'careers_page') = 'applied', 'a rule key can still be renamed';
-  update public.application_sub_statuses set label = 'New' where key = 'applied';
+  update public.application_sub_statuses set label = 'Came to us' where key = 'sourced';
+  assert app.default_sub_status('screening', 'careers_page') = 'sourced', 'a rule key can still be renamed';
+  update public.application_sub_statuses set label = 'sourced' where key = 'sourced';
 end $$;
 set app.test_uid = '00000000-0000-0000-0000-000000000005';
 set role authenticated;
@@ -8129,18 +8125,21 @@ insert into public.candidates (id, full_name) values
   ('80000000-0000-0000-0000-0000000008b2', 'Remove Two'),
   ('80000000-0000-0000-0000-0000000008b3', 'Remove Three'),
   ('80000000-0000-0000-0000-0000000008b4', 'Remove Four');
+insert into public.application_sub_statuses (key, stage_key, label, sort_order, outcome) values
+  ('zz_never', 'offer', 'Never used', 90, 'open'),
+  ('zz_other_stakeholders', 'interview', 'Interview 4 - Other stakeholders', 92, 'open'),
+  ('zz_other_stakeholder', 'interview', 'Interview 3 - Other stakeholder', 93, 'open'),
+  ('zz_rejected_for_interview', 'screening', 'Rejected-for-Interview', 94, 'rejected'),
+  ('zz_history', 'offer', 'Only in history', 91, 'open');
 insert into public.applications (id, job_id, company_id, candidate_id, stage_key, sub_status_key, rejected_reason) values
   ('90000000-0000-0000-0000-0000000008b1', '70000000-0000-0000-0000-0000000008b1', '10000000-0000-0000-0000-00000000000b',
-   '80000000-0000-0000-0000-0000000008b1', 'interview', 'interview_other_stakeholders', null),
+   '80000000-0000-0000-0000-0000000008b1', 'interview', 'zz_other_stakeholders', null),
   ('90000000-0000-0000-0000-0000000008b2', '70000000-0000-0000-0000-0000000008b1', '10000000-0000-0000-0000-00000000000b',
    '80000000-0000-0000-0000-0000000008b2', 'screening', 'unqualified', 'Unqualified'),
   ('90000000-0000-0000-0000-0000000008b3', '70000000-0000-0000-0000-0000000008b1', '10000000-0000-0000-0000-00000000000b',
    '80000000-0000-0000-0000-0000000008b3', 'screening', 'unqualified', 'Our own words here.'),
   ('90000000-0000-0000-0000-0000000008b4', '70000000-0000-0000-0000-0000000008b1', '10000000-0000-0000-0000-00000000000b',
    '80000000-0000-0000-0000-0000000008b4', 'interview', 'interview_task', null);
-insert into public.application_sub_statuses (key, stage_key, label, sort_order, outcome) values
-  ('zz_never', 'offer', 'Never used', 90, 'open'),
-  ('zz_history', 'offer', 'Only in history', 91, 'open');
 insert into public.application_events (application_id, kind, from_sub_status_key, to_sub_status_key) values
   ('90000000-0000-0000-0000-0000000008b4', 'status_change', 'zz_history', 'interview_task');
 
@@ -8169,25 +8168,25 @@ set role authenticated;
 do $$
 declare r jsonb;
 begin
-  r := public.sub_status_usage('interview_other_stakeholders');
+  r := public.sub_status_usage('zz_other_stakeholders');
   assert r = '{"applications": 1, "history": 0}'::jsonb, 'one application, no history yet: ' || r::text;
   assert public.sub_status_usage('zz_history') = '{"applications": 0, "history": 1}'::jsonb, 'history only';
 
   -- The refusals.
   begin
-    perform public.remove_sub_status('applied', null);
+    perform public.remove_sub_status('sourced', null);
     raise exception 'FAIL: removed a status the rules name';
   exception when invalid_parameter_value then
-    if sqlerrm not like '%"New" is used by the pipeline''s own rules — rename it instead.%' then raise; end if;
+    if sqlerrm not like '%"sourced" is used by the pipeline''s own rules — rename it instead.%' then raise; end if;
   end;
   begin
-    perform public.remove_sub_status('interview_other_stakeholders', 'offer_made');
+    perform public.remove_sub_status('zz_other_stakeholders', 'offer_made');
     raise exception 'FAIL: moved Interview applications onto an Offer status';
   exception when invalid_parameter_value then
     if sqlerrm not like '%Pick another live status of the same stage%' then raise; end if;
   end;
   begin
-    perform public.remove_sub_status('interview_other_stakeholders', 'interview_other_stakeholders');
+    perform public.remove_sub_status('zz_other_stakeholders', 'zz_other_stakeholders');
     raise exception 'FAIL: moved a status onto itself';
   exception when invalid_parameter_value then null;
   end;
@@ -8197,8 +8196,8 @@ begin
   exception when invalid_parameter_value then
     if sqlerrm not like '%That status no longer exists.%' then raise; end if;
   end;
-  assert (select archived_at is null from public.application_sub_statuses where key = 'interview_other_stakeholders')
-     and (select sub_status_key from public.applications where id = '90000000-0000-0000-0000-0000000008b1') = 'interview_other_stakeholders',
+  assert (select archived_at is null from public.application_sub_statuses where key = 'zz_other_stakeholders')
+     and (select sub_status_key from public.applications where id = '90000000-0000-0000-0000-0000000008b1') = 'zz_other_stakeholders',
     'a refused call changed nothing';
 end $$;
 
@@ -8208,13 +8207,13 @@ declare r jsonb; v_activity timestamptz; v_audit int;
 begin
   select last_activity_at into v_activity from public.candidates where id = '80000000-0000-0000-0000-0000000008b1';
   select count(*) into v_audit from public.activity_log where entity_id = '90000000-0000-0000-0000-0000000008b1';
-  r := public.remove_sub_status('interview_other_stakeholders', 'interview_other_stakeholder');
+  r := public.remove_sub_status('zz_other_stakeholders', 'zz_other_stakeholder');
   assert r = '{"moved": 1, "outcome": "retired"}'::jsonb, 'one moved, and retired because history now names it: ' || r::text;
-  assert (select sub_status_key from public.applications where id = '90000000-0000-0000-0000-0000000008b1') = 'interview_other_stakeholder',
+  assert (select sub_status_key from public.applications where id = '90000000-0000-0000-0000-0000000008b1') = 'zz_other_stakeholder',
     'Interview 4 → Interview 3';
   assert exists (select 1 from public.application_events where application_id = '90000000-0000-0000-0000-0000000008b1'
-                   and kind = 'status_change' and from_sub_status_key = 'interview_other_stakeholders'
-                   and to_sub_status_key = 'interview_other_stakeholder'
+                   and kind = 'status_change' and from_sub_status_key = 'zz_other_stakeholders'
+                   and to_sub_status_key = 'zz_other_stakeholder'
                    and body = 'Status "Interview 4 - Other stakeholders" removed.'
                    and actor_id = '20000000-0000-0000-0000-000000000004'),
     'the application''s timeline says why, attributed to Ada';
@@ -8223,11 +8222,11 @@ begin
   assert (select count(*) from public.activity_log where entity_id = '90000000-0000-0000-0000-0000000008b1') = v_audit,
     'no audit row per application';
   assert exists (select 1 from public.activity_log
-                  where entity_type = 'application_sub_statuses' and entity_id = 'interview_other_stakeholders'
-                    and action = 'UPDATE' and (after->>'moved')::int = 1 and after->>'moved_to' = 'interview_other_stakeholder'
+                  where entity_type = 'application_sub_statuses' and entity_id = 'zz_other_stakeholders'
+                    and action = 'UPDATE' and (after->>'moved')::int = 1 and after->>'moved_to' = 'zz_other_stakeholder'
                     and actor_person_id = '20000000-0000-0000-0000-000000000004'),
     'one summary row says what was moved where';
-  assert (select archived_at is not null from public.application_sub_statuses where key = 'interview_other_stakeholders'),
+  assert (select archived_at is not null from public.application_sub_statuses where key = 'zz_other_stakeholders'),
     'and the status is retired';
 end $$;
 reset role;
@@ -8246,7 +8245,7 @@ set role authenticated;
 do $$
 declare r jsonb;
 begin
-  r := public.remove_sub_status('unqualified', 'rejected_for_interview');
+  r := public.remove_sub_status('unqualified', 'zz_rejected_for_interview');
   assert (r->>'moved')::int = 2, 'both Unqualified rows moved: ' || r::text;
   assert (select rejected_reason from public.applications where id = '90000000-0000-0000-0000-0000000008b2') = 'Rejected-for-Interview'
      and (select rejected_reason from public.applications where id = '90000000-0000-0000-0000-0000000008b3') = 'Our own words here.',
@@ -8284,9 +8283,9 @@ delete from public.application_events where application_id::text like '90000000-
 delete from public.applications where id::text like '90000000-0000-0000-0000-0000000008b_';
 delete from public.candidates where id::text like '80000000-0000-0000-0000-0000000008b_';
 delete from public.jobs where id = '70000000-0000-0000-0000-0000000008b1';
-delete from public.application_sub_statuses where key = 'zz_history';
-update public.application_sub_statuses set archived_at = null
- where key in ('interview_other_stakeholders', 'unqualified', 'interview_task');
+delete from public.application_sub_statuses
+ where key in ('zz_history', 'zz_other_stakeholders', 'zz_other_stakeholder', 'zz_rejected_for_interview');
+update public.application_sub_statuses set archived_at = null where key in ('unqualified', 'interview_task');
 
 -- ================================================================ 0090
 -- A job fills itself (plan 070): headcount from the request, else Zoho's,
@@ -8347,7 +8346,7 @@ begin
     'the fill marks the two still in play "Position filled." and not the hire';
   assert (select from_stage_key || '>' || to_stage_key || '|' || from_sub_status_key from public.application_events
            where application_id = '90000000-0000-0000-0000-0000000008c5' and kind = 'status_change'
-             and body = 'Position filled.') = 'offer>offer|to_be_offered',
+             and body = 'Position filled.') = 'offer>offer|offer_made',
     'each mark has one status_change event at the stage and status the application is at';
   update public.applications set stage_key = 'hired' where id = '90000000-0000-0000-0000-0000000008c6';
   assert (select status from public.jobs where id = '70000000-0000-0000-0000-0000000008c3') = 'filled',
@@ -8741,7 +8740,7 @@ declare v_a uuid; v_b uuid; v_c uuid;
   c constant uuid := '80000000-0000-0000-0000-000000000951';
   co constant uuid := '10000000-0000-0000-0000-00000000000a';
 begin
-  assert (select count(*) from public.application_sub_statuses) = 37, '37 statuses';
+  assert (select count(*) from public.application_sub_statuses) = 18, 'HR''s 18 statuses (0098)';
   assert (select string_agg(key, ',' order by sort_order) from public.application_stages) = 'screening,interview,offer,hired',
     'four stages';
 
@@ -8750,9 +8749,9 @@ begin
 
   -- 0095-a: defaults
   insert into public.applications (job_id, company_id, candidate_id) values (j, co, c) returning id into v_a;
-  assert (select stage_key = 'screening' and sub_status_key = 'applied' and in_play from public.applications where id = v_a),
-    '0095-a: no stage means screening / applied / in play';
-  update public.applications set stage_key = 'interview', sub_status_key = 'rejected_general' where id = v_a;
+  assert (select stage_key = 'screening' and sub_status_key = 'sourced' and in_play from public.applications where id = v_a),
+    '0095-a: no stage means screening / sourced / in play';
+  update public.applications set stage_key = 'interview', sub_status_key = 'rejected_by_hr' where id = v_a;
   -- 0095-b: a rejected status takes the application out of play
   assert (select not in_play from public.applications where id = v_a), '0095-b: rejected is out of play';
 
@@ -8790,16 +8789,16 @@ begin
 
   -- 0095-d: an outcome in use cannot change; an unused one can
   begin
-    update public.application_sub_statuses set outcome = 'open' where key = 'rejected_general';
+    update public.application_sub_statuses set outcome = 'open' where key = 'rejected_by_hr';
     assert false, '0095-d: outcome change on a used status must be refused';
   exception when sqlstate '22023' then
-    assert sqlerrm = '"Rejected" is in use — its outcome cannot change.', 'message: ' || sqlerrm;
+    assert sqlerrm = '"rejected_by_hr" is in use — its outcome cannot change.', 'message: ' || sqlerrm;
   end;
   update public.application_sub_statuses set outcome = 'rejected' where key = 'rejected_by_hr';
   -- a rule key cannot be retired
   begin
-    update public.application_sub_statuses set archived_at = now() where key = 'applied';
-    assert false, 'the rule key applied cannot be retired';
+    update public.application_sub_statuses set archived_at = now() where key = 'sourced';
+    assert false, 'the rule key sourced cannot be retired';
   exception when check_violation then null;
   end;
 
@@ -8822,22 +8821,22 @@ select ('80000000-0000-0000-0000-00000000096' || n)::uuid, 'Smoke 0096 ' || n fr
 insert into public.applications (id, job_id, company_id, candidate_id, stage_key, sub_status_key) values
   ('90000000-0000-0000-0000-000000000961', '70000000-0000-0000-0000-000000000961', '10000000-0000-0000-0000-00000000000b', '80000000-0000-0000-0000-000000000961', 'screening', null),
   ('90000000-0000-0000-0000-000000000962', '70000000-0000-0000-0000-000000000961', '10000000-0000-0000-0000-00000000000b', '80000000-0000-0000-0000-000000000962', 'interview', 'interview_hr'),
-  ('90000000-0000-0000-0000-000000000963', '70000000-0000-0000-0000-000000000961', '10000000-0000-0000-0000-00000000000b', '80000000-0000-0000-0000-000000000963', 'interview', 'rejected_general'),
+  ('90000000-0000-0000-0000-000000000963', '70000000-0000-0000-0000-000000000961', '10000000-0000-0000-0000-00000000000b', '80000000-0000-0000-0000-000000000963', 'interview', 'rejected_by_hr'),
   ('90000000-0000-0000-0000-000000000964', '70000000-0000-0000-0000-000000000962', '10000000-0000-0000-0000-00000000000b', '80000000-0000-0000-0000-000000000964', 'offer', 'offer_made'),
   ('90000000-0000-0000-0000-000000000965', '70000000-0000-0000-0000-000000000962', '10000000-0000-0000-0000-00000000000b', '80000000-0000-0000-0000-000000000965', 'screening', 'contacted'),
   ('90000000-0000-0000-0000-000000000966', '70000000-0000-0000-0000-000000000963', '10000000-0000-0000-0000-00000000000b', '80000000-0000-0000-0000-000000000966', 'screening', null),
   -- Already rejected / withdrew when their job closes or fills: never marked.
-  ('90000000-0000-0000-0000-000000000968', '70000000-0000-0000-0000-000000000962', '10000000-0000-0000-0000-00000000000b', '80000000-0000-0000-0000-000000000968', 'interview', 'rejected_general'),
-  ('90000000-0000-0000-0000-000000000969', '70000000-0000-0000-0000-000000000963', '10000000-0000-0000-0000-00000000000b', '80000000-0000-0000-0000-000000000969', 'interview', 'candidate_withdrew'),
+  ('90000000-0000-0000-0000-000000000968', '70000000-0000-0000-0000-000000000962', '10000000-0000-0000-0000-00000000000b', '80000000-0000-0000-0000-000000000968', 'interview', 'rejected_by_hr'),
+  ('90000000-0000-0000-0000-000000000969', '70000000-0000-0000-0000-000000000963', '10000000-0000-0000-0000-00000000000b', '80000000-0000-0000-0000-000000000969', 'interview', 'withdrawn'),
   -- An older rejected application of the candidate who is in play on job 963 (a6).
-  ('90000000-0000-0000-0000-00000000096b', '70000000-0000-0000-0000-000000000963', '10000000-0000-0000-0000-00000000000b', '80000000-0000-0000-0000-000000000966', 'interview', 'rejected_general');
+  ('90000000-0000-0000-0000-00000000096b', '70000000-0000-0000-0000-000000000963', '10000000-0000-0000-0000-00000000000b', '80000000-0000-0000-0000-000000000966', 'interview', 'rejected_by_hr');
 
 -- open_application inserts with no stage, so a new application lands on the default.
 do $$
 declare v uuid;
 begin
   v := app.open_application('80000000-0000-0000-0000-000000000967', '70000000-0000-0000-0000-000000000963', 'careers_page', false);
-  assert (select stage_key = 'screening' and sub_status_key = 'applied' and in_play from public.applications where id = v),
+  assert (select stage_key = 'screening' and sub_status_key = 'sourced' and in_play from public.applications where id = v),
     '0096: open_application lands on Screening / New';
   delete from public.applications where id = v;
 end $$;
@@ -8862,13 +8861,13 @@ begin
             from public.applications where id = a1), '0096-a: moved to Offered / Offer-Made';
   select * into e from public.application_events where application_id = a1 order by created_at desc, id limit 1;
   assert e.kind = 'stage_change' and e.from_stage_key = 'screening' and e.to_stage_key = 'offer'
-     and e.from_sub_status_key = 'applied' and e.to_sub_status_key = 'offer_made' and e.body = 'ok',
+     and e.from_sub_status_key = 'sourced' and e.to_sub_status_key = 'offer_made' and e.body = 'ok',
     '0096-a: the stage_change event carries both stages and both statuses';
   -- A status of the same stage is a status_change; within screening it is outreach.
-  perform public.set_application_status(array[a2], 'interview_feedback_due', null);
+  perform public.set_application_status(array[a2], 'interview_stakeholders', null);
   select * into e from public.application_events where application_id = a2 order by created_at desc, id limit 1;
   assert e.kind = 'status_change' and e.from_stage_key = 'interview' and e.to_stage_key = 'interview'
-     and e.to_sub_status_key = 'interview_feedback_due' and e.body is null, '0096-a: same stage is a status_change';
+     and e.to_sub_status_key = 'interview_stakeholders' and e.body is null, '0096-a: same stage is a status_change';
   perform public.set_application_status(array[a6], 'contacted', 'Called');
   select * into e from public.application_events where application_id = a6 order by created_at desc, id limit 1;
   assert e.kind = 'outreach' and e.to_sub_status_key = 'contacted', '0096-a: screening to screening is outreach';
@@ -8879,7 +8878,7 @@ begin
   assert (select sub_status_key = 'offer_made' and stage_key = 'offer' and closed_at is not null
                  and closed_reason = 'Budget cut' and not in_play from public.applications where id = a1),
     '0096-b: status untouched, closure mark set, out of play';
-  assert (select sub_status_key = 'interview_feedback_due' and closed_reason = 'Budget cut' and not in_play
+  assert (select sub_status_key = 'interview_stakeholders' and closed_reason = 'Budget cut' and not in_play
             from public.applications where id = a2), '0096-b: the interview one too';
   assert (select closed_at is null and closed_reason is null from public.applications where id = a3),
     '0096-b: a rejected application is not marked';
@@ -8892,7 +8891,7 @@ begin
 
   -- 0096-c: a closed application cannot take a status.
   begin
-    perform public.set_application_status(array[a1], 'to_be_offered', null);
+    perform public.set_application_status(array[a1], 'offer_made', null);
     assert false, '0096-c: a closed application took a status';
   exception when sqlstate '22023' then
     assert sqlerrm = format('This job was closed on %s. Reopen the job first.', to_char(current_date, 'YYYY-MM-DD')),
@@ -8915,7 +8914,7 @@ begin
   exception when sqlstate '22023' then
     assert sqlerrm = 'This job is closed. Reopen the job first.', '0096-g: message: ' || sqlerrm;
   end;
-  assert (select sub_status_key = 'rejected_general' and in_play = false from public.applications where id = a3),
+  assert (select sub_status_key = 'rejected_by_hr' and in_play = false from public.applications where id = a3),
     '0096-g: the refused row is unchanged';
   perform public.set_application_status(array[a3], 'rejected_by_hr', null);
   assert (select sub_status_key = 'rejected_by_hr' from public.applications where id = a3),
@@ -8935,7 +8934,7 @@ begin
   exception when sqlstate '22023' then
     assert sqlerrm like '% already has an open application for this job.', '0096-h: set_application_status message: ' || sqlerrm;
   end;
-  assert (select sub_status_key from public.applications where id = '90000000-0000-0000-0000-00000000096b') = 'rejected_general',
+  assert (select sub_status_key from public.applications where id = '90000000-0000-0000-0000-00000000096b') = 'rejected_by_hr',
     '0096-h: the finished row stays finished';
 end $$;
 reset role;
@@ -9113,7 +9112,7 @@ insert into public.applications (id, job_id, company_id, candidate_id, stage_key
   ('90000000-0000-0000-0000-000000000971', '70000000-0000-0000-0000-000000000971', '10000000-0000-0000-0000-00000000000a',
    '80000000-0000-0000-0000-000000000971', 'screening', 'contacted', now() - interval '90 days'),
   ('90000000-0000-0000-0000-000000000972', '70000000-0000-0000-0000-000000000971', '10000000-0000-0000-0000-00000000000a',
-   '80000000-0000-0000-0000-000000000972', 'screening', 'applied', now() + interval '1 day'),
+   '80000000-0000-0000-0000-000000000972', 'screening', 'sourced', now() + interval '1 day'),
   ('90000000-0000-0000-0000-000000000973', '70000000-0000-0000-0000-000000000972', '10000000-0000-0000-0000-00000000000b',
    '80000000-0000-0000-0000-000000000973', 'screening', 'contacted', now() - interval '90 days');
 create temp table zz97_expected as
@@ -9240,7 +9239,7 @@ insert into zz97_jv values ('ok', jsonb_build_object(
     jsonb_build_object('candidate_zoho_id', 'ZZ97_C1', 'job_display_id', 'ZZ97_2_JOB', 'sub_status_key', 'hired',
       'received_at', '2022-10-10T08:10:00.000Z', 'status_at', null, 'hired_date', '2022-12-01',
       'owner_name', null, 'custom', jsonb_build_object('zoho', '{}'::jsonb)),
-    jsonb_build_object('candidate_zoho_id', 'ZZ97_C2', 'job_display_id', 'ZZ97_1_JOB', 'sub_status_key', 'never_contact',
+    jsonb_build_object('candidate_zoho_id', 'ZZ97_C2', 'job_display_id', 'ZZ97_1_JOB', 'sub_status_key', 'do_not_contact',
       'received_at', '2023-02-13T14:38:00.000Z', 'status_at', null, 'hired_date', null,
       'owner_name', ' ; Bea HR; Someone Else', 'custom', jsonb_build_object('zoho', '{}'::jsonb)),
     jsonb_build_object('candidate_zoho_id', 'ZZ97_C3', 'job_display_id', 'ZZ97_1_JOB', 'sub_status_key', 'contact_in_future',
@@ -9325,7 +9324,7 @@ begin
   assert r->>'committed' = 'true', '0097-b: committed: ' || r::text;
   assert (r->>'candidates')::int = 3 and (r->>'applications')::int = 7 and (r->>'notes')::int = 3,
     '0097-b: counts: ' || r::text;
-  assert r->'by_status' = '{"offer_made": 1, "hired": 1, "never_contact": 1, "contact_in_future": 1, "contacted": 2, "interview_hr": 1}'::jsonb,
+  assert r->'by_status' = '{"offer_made": 1, "hired": 1, "do_not_contact": 1, "contact_in_future": 1, "contacted": 2, "interview_hr": 1}'::jsonb,
     '0097-b: by_status: ' || (r->'by_status')::text;
   assert r->'contact_rules' = '{"do_not_contact": 1, "contact_later": 1}'::jsonb,
     '0097-b: contact_rules: ' || (r->'contact_rules')::text;

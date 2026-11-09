@@ -69,12 +69,12 @@ describe('notResponding', () => {
     }
   })
 
-  it('is false for a sub-status that is not one of sourced/contact_attempted/contacted', () => {
-    for (const sub_status_key of ['applied', 'interested', 'awaiting_evaluation', 'qualified', null]) {
+  it('is false for a sub-status that is not sourced or contacted', () => {
+    for (const sub_status_key of ['contact_attempted', 'interested', 'no_response', 'not_interested', null]) {
       const r = row({ sub_status_key, last_activity_at: isoDaysAgo(TODAY, 60) })
       expect(notResponding(r, TODAY), String(sub_status_key)).toBe(false)
     }
-    for (const sub_status_key of ['sourced', 'contact_attempted', 'contacted']) {
+    for (const sub_status_key of ['sourced', 'contacted']) {
       const r = row({ sub_status_key, last_activity_at: isoDaysAgo(TODAY, 60) })
       expect(notResponding(r, TODAY), sub_status_key).toBe(true)
     }

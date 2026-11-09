@@ -159,8 +159,8 @@ describe('nextSortOrder', () => {
 })
 
 describe('canRetire', () => {
-  it('refuses the four statuses the rules name, as the database does', () => {
-    for (const key of ['applied', 'sourced', 'contact_attempted', 'contacted']) expect(canRetire(key), key).toBe(false)
+  it('refuses the two statuses the rules name, as the database does', () => {
+    for (const key of ['sourced', 'contacted']) expect(canRetire(key), key).toBe(false)
   })
 
   it('lets every other status go', () => {

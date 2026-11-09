@@ -1,42 +1,39 @@
-/** Zoho's "Status for this Job" label -> application_sub_statuses.key (migration 0095). */
-export const ZOHO_STATUS_KEY: Readonly<Record<string, string>> = {
-  New: 'applied',
-  Associated: 'sourced',
-  'Not Contacted': 'not_contacted',
-  'Attempted to Contact': 'contact_attempted',
-  Contacted: 'contacted',
-  'Not responding': 'no_response',
-  Interested: 'interested',
-  'Not Interested': 'not_interested',
-  Qualified: 'qualified',
-  'Waiting-for-Evaluation': 'waiting_for_evaluation',
-  Unqualified: 'unqualified',
-  'Rejected-for-Interview': 'rejected_for_interview',
-  'Contact in Future': 'contact_in_future',
-  'NEVER to be contacted again': 'never_contact',
-  'Interview-to-be-Scheduled': 'interview_to_schedule',
-  'Interview-Scheduled': 'interview_scheduled',
-  'Interview-in-Progress': 'interview_in_progress',
-  'Interview 1 - HR': 'interview_hr',
-  'Interview 2 - Stakeholders': 'interview_stakeholders',
-  'Interview 3 - Other stakeholder': 'interview_other_stakeholder',
-  'Interview 4 - Other stakeholders': 'interview_other_stakeholders',
-  Task: 'interview_task',
-  'No-Show': 'no_show',
-  'Feedback to be provided from an Interview': 'interview_feedback_due',
-  'Submitted-to-hiring manager': 'submitted_to_manager',
-  'On-Hold': 'interview_on_hold',
-  Rejected: 'rejected_general',
-  'Rejected by HR': 'rejected_by_hr',
-  'Rejected by hiring manager': 'rejected_by_manager',
-  'Rejected by Manager - Interview': 'rejected_after_interview',
-  'Rejected-Hirable': 'rejected_hirable',
-  'Withdraw Application': 'candidate_withdrew',
-  'To-be-Offered': 'to_be_offered',
-  'Offer-Made': 'offer_made',
-  'Offer-Declined': 'offer_declined',
-  'Offer-Withdrawn': 'offer_withdrawn',
-  Hired: 'hired',
-  // Zoho's picklist spells it both ways.
-  'Not contacted': 'not_contacted',
+/**
+ * HR's statuses (migration 0098): the keys HR writes in the orange column T,
+ * "Status for this job" (lower-case j), of the Candidate-Job View. Zoho's own
+ * column R ("Status for this Job") is kept on the row as written and decides
+ * nothing.
+ */
+export const HR_STATUS_KEYS: ReadonlySet<string> = new Set([
+  'sourced',
+  'contacted',
+  'interested',
+  'no_response',
+  'not_interested',
+  'unqualified',
+  'contact_in_future',
+  'do_not_contact',
+  'interview_to_schedule',
+  'interview_hr',
+  'interview_stakeholders',
+  'interview_task',
+  'rejected_by_hr',
+  'rejected_after_interview',
+  'withdrawn',
+  'offer_made',
+  'offer_declined',
+  'hired',
+])
+
+/** The statuses that become the candidate's contact rule on import. */
+export const DO_NOT_CONTACT_KEY = 'do_not_contact'
+export const CONTACT_LATER_KEY = 'contact_in_future'
+
+/**
+ * HR's cell as a key: "Interview  Stakeholders", "Contacted" and a trailing
+ * no-break space all read as the key HR meant. Null when it is no status.
+ */
+export function hrStatusKey(cell: string): string | null {
+  const key = cell.replace(/ /g, ' ').trim().toLowerCase().replace(/\s+/g, '_')
+  return HR_STATUS_KEYS.has(key) ? key : null
 }

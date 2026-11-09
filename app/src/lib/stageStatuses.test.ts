@@ -139,21 +139,20 @@ describe('filterStagesFor', () => {
 })
 
 describe('contactHint', () => {
-  it('warns that NEVER to be contacted again is a label, not the block', () => {
-    expect(contactHint('never_contact')).toBe(
+  it('warns that do_not_contact is a label, not the block', () => {
+    expect(contactHint('do_not_contact')).toBe(
       'This only labels the application. To stop anyone contacting this person, set Do not contact on their candidate record.',
     )
   })
 
-  it('points Contact in Future and Rejected-Hirable at the Contact later rule', () => {
+  it('points contact_in_future at the Contact later rule', () => {
     const later =
       'This only labels the application. To come back to this person later, set Contact later on their candidate record.'
     expect(contactHint('contact_in_future')).toBe(later)
-    expect(contactHint('rejected_hirable')).toBe(later)
   })
 
-  it('says nothing for any other status, or the deleted do_not_contact key', () => {
-    expect(contactHint('do_not_contact')).toBeNull()
+  it('says nothing for any other status, or Zoho\'s old never_contact key', () => {
+    expect(contactHint('never_contact')).toBeNull()
     expect(contactHint('job_closed')).toBeNull()
     expect(contactHint('')).toBeNull()
   })

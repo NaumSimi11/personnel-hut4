@@ -27,7 +27,7 @@ const SORT_STEP = 10
  * count (0069) — so they may be renamed but never retired; 0088's
  * `application_sub_statuses_rule_keys_stay` CHECK says the same.
  */
-const RULE_KEYS: ReadonlySet<string> = new Set(['applied', 'sourced', 'contact_attempted', 'contacted'])
+const RULE_KEYS: ReadonlySet<string> = new Set(['sourced', 'contacted'])
 
 export type LookupRow = { key: string; label: string; sort_order: number }
 /** What a status does to an application (0095): keeps it open, or closes it as rejected, withdrawn or hired. */

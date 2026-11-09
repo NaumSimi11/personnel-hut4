@@ -3,7 +3,7 @@ import { countOf, detachable, friendlyDetachError, type DetachTarget } from './d
 
 const row = (over: Partial<DetachTarget> = {}): DetachTarget => ({
   stage_key: 'screening',
-  sub_status_key: 'applied',
+  sub_status_key: 'sourced',
   source_key: null,
   owner_id: null,
   next_action: null,
@@ -48,10 +48,10 @@ describe('detachable', () => {
     expect(detachable(row({ sub_status_key: 'unqualified' }), true).canDetach).toBe(false)
   })
 
-  it('starts a sourced application on Associated, any other on New', () => {
+  it('starts every application on sourced, whatever its source', () => {
     expect(detachable(row({ source_key: 'head_hunt', sub_status_key: 'sourced' }), true).canDetach).toBe(true)
-    expect(detachable(row({ source_key: 'head_hunt', sub_status_key: 'applied' }), true).canDetach).toBe(false)
-    expect(detachable(row({ source_key: 'careers_page', sub_status_key: 'sourced' }), true).canDetach).toBe(false)
+    expect(detachable(row({ source_key: 'careers_page', sub_status_key: 'sourced' }), true).canDetach).toBe(true)
+    expect(detachable(row({ source_key: 'head_hunt', sub_status_key: 'contacted' }), true).canDetach).toBe(false)
   })
 
   it('refuses when anything at all has been recorded against it', () => {

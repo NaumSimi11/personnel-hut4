@@ -33,13 +33,8 @@ export type DetachTarget = {
 
 export type DetachVerdict = { canDetach: boolean; reason: string | null }
 
-/** Sources that start an application at Associated rather than New (`app.default_sub_status`, 0095). */
-const SOURCED_SOURCE_KEYS: ReadonlySet<string> = new Set(['head_hunt', 'linkedin_profile', 'imported'])
-
-/** The status a new application starts on at Screening. */
-function startingStatus(sourceKey: string | null): 'sourced' | 'applied' {
-  return SOURCED_SOURCE_KEYS.has(sourceKey ?? '') ? 'sourced' : 'applied'
-}
+/** The status every new application starts on at Screening, whatever its source (`app.default_sub_status`, 0098). */
+const STARTING_STATUS = 'sourced'
 
 const ALLOWED: DetachVerdict = { canDetach: true, reason: null }
 
@@ -58,7 +53,7 @@ export function detachable(row: DetachTarget, permitted: boolean): DetachVerdict
   if (row.owner_id || row.next_action) {
     return { canDetach: false, reason: 'This is assigned to somebody. Take the owner off it first.' }
   }
-  if (row.stage_key !== 'screening' || row.sub_status_key !== startingStatus(row.source_key)) {
+  if (row.stage_key !== 'screening' || row.sub_status_key !== STARTING_STATUS) {
     return { canDetach: false, reason: 'This has already moved on from New. Reject or withdraw it instead.' }
   }
   if (row.interviews > 0) return { canDetach: false, reason: 'There is an interview on this application.' }

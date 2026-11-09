@@ -1,32 +1,36 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { ZOHO_STATUS_KEY } from './jobViewStatuses.js'
+import { HR_STATUS_KEYS, hrStatusKey } from './jobViewStatuses.js'
 
-const MIGRATION = path.resolve(__dirname, '../../../supabase/migrations/0095_zoho_statuses.sql')
+const MIGRATION = path.resolve(__dirname, '../../../supabase/migrations/0098_hr_statuses.sql')
 
-function seededStatuses(): Array<{ key: string; label: string }> {
+function seededKeys(): string[] {
   const sql = fs.readFileSync(MIGRATION, 'utf8')
-  const block = sql.split('insert into public.application_sub_statuses')[1].split(';')[0]
-  return [...block.matchAll(/\('([a-z_]+)',\s*'[a-z]+',\s*'([^']+)'/g)].map((m) => ({ key: m[1], label: m[2] }))
+  const block = sql.split('insert into hr_statuses values')[1].split(';')[0]
+  return [...block.matchAll(/\('([a-z_]+)',/g)].map((m) => m[1])
 }
 
-describe('ZOHO_STATUS_KEY', () => {
-  const seeded = seededStatuses()
+describe('HR_STATUS_KEYS', () => {
+  it('is exactly the eighteen statuses 0098 seeds', () => {
+    const seeded = seededKeys()
+    expect(seeded).toHaveLength(18)
+    expect(new Set(seeded)).toEqual(new Set(HR_STATUS_KEYS))
+  })
+})
 
-  it('reads all 37 seeded statuses', () => {
-    expect(seeded).toHaveLength(37)
+describe('hrStatusKey', () => {
+  it('reads every spelling HR used in column T as its key', () => {
+    expect(hrStatusKey('Contacted')).toBe('contacted')
+    expect(hrStatusKey('Sourced')).toBe('sourced')
+    expect(hrStatusKey('Interview HR')).toBe('interview_hr')
+    expect(hrStatusKey('Interview  Stakeholders')).toBe('interview_stakeholders')
+    expect(hrStatusKey('contact in future')).toBe('contact_in_future')
+    expect(hrStatusKey('withdrawn ')).toBe('withdrawn')
   })
 
-  it('covers exactly the seeded keys', () => {
-    expect(new Set(Object.values(ZOHO_STATUS_KEY))).toEqual(new Set(seeded.map((s) => s.key)))
-  })
-
-  it('maps each seeded label to its key', () => {
-    for (const { key, label } of seeded) expect(ZOHO_STATUS_KEY[label]).toBe(key)
-  })
-
-  it('also takes the lower-case spelling of Not contacted', () => {
-    expect(ZOHO_STATUS_KEY['Not contacted']).toBe('not_contacted')
+  it('is null for a blank cell or a word that is not a status', () => {
+    expect(hrStatusKey('')).toBeNull()
+    expect(hrStatusKey('Associated')).toBeNull()
   })
 })

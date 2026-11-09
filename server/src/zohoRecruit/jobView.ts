@@ -2,7 +2,7 @@ import type { CsvRow } from './csv.js'
 import { candidateEmail, candidatePhone, candidateSkills } from './candidateFields.js'
 import { parseLocalMinute } from './dates.js'
 import { mapSource, UnknownValueError } from './mapping.js'
-import { ZOHO_STATUS_KEY } from './jobViewStatuses.js'
+import { CONTACT_LATER_KEY, DO_NOT_CONTACT_KEY, hrStatusKey } from './jobViewStatuses.js'
 
 /**
  * HR's Zoho Recruit "Candidate-Job View" CSV -> the import payload (spec
@@ -37,9 +37,9 @@ export type ParsedNote = Omit<JobViewNote, 'candidate_zoho_id' | 'job_display_id
 const COL = {
   candidateId: 'Candidate ID',
   jobId: 'Job Opening ID',
-  // Zoho's own status. The lower-case "Status for this job" beside it is ignored.
-  status: 'Status for this Job',
-  ignored: 'Status for this job',
+  // HR's status, the orange column T (lower-case j) — the only one that counts.
+  // Zoho's "Status for this Job" beside it is kept on the row as written.
+  status: 'Status for this job',
   notesLog: 'Job Notes Log (newest first)',
 } as const
 
@@ -86,11 +86,9 @@ function zohoColumns(r: CsvRow, columns: string[], skip: readonly string[]): Rec
 }
 
 function contactRuleOf(rows: CsvRow[]): ContactRule | null {
-  const labels = rows.map((r) => cell(r, COL.status))
-  const never = labels.find((l) => ZOHO_STATUS_KEY[l] === 'never_contact')
-  if (never !== undefined) return { rule: 'do_not_contact', reason: `Zoho: ${never}` }
-  const later = labels.find((l) => ZOHO_STATUS_KEY[l] === 'contact_in_future' || ZOHO_STATUS_KEY[l] === 'rejected_hirable')
-  return later === undefined ? null : { rule: 'contact_later', reason: `Zoho: ${later}` }
+  const keys = rows.map((r) => hrStatusKey(cell(r, COL.status)))
+  if (keys.includes(DO_NOT_CONTACT_KEY)) return { rule: 'do_not_contact', reason: `HR: ${DO_NOT_CONTACT_KEY}` }
+  return keys.includes(CONTACT_LATER_KEY) ? { rule: 'contact_later', reason: `HR: ${CONTACT_LATER_KEY}` } : null
 }
 
 type Ctx = { tz: string; problems: JobViewProblem[]; candidateColumns: string[] }
@@ -134,9 +132,9 @@ function buildJobRow(r: CsvRow, jobColumns: string[], ctx: Ctx): JobRow | null {
   const job = cell(r, COL.jobId)
   const ref = `${candidate}/${job}`
   const label = cell(r, COL.status)
-  const statusKey = Object.prototype.hasOwnProperty.call(ZOHO_STATUS_KEY, label) ? ZOHO_STATUS_KEY[label] : undefined
-  if (statusKey === undefined) {
-    ctx.problems.push({ ref, message: label === '' ? 'No status for this job' : `Unknown Zoho status "${label}"` })
+  const statusKey = hrStatusKey(label)
+  if (statusKey === null) {
+    ctx.problems.push({ ref, message: label === '' ? 'No status for this job' : `Unknown HR status "${label}"` })
     return null
   }
   const application: JobViewApplication = {
@@ -147,7 +145,7 @@ function buildJobRow(r: CsvRow, jobColumns: string[], ctx: Ctx): JobRow | null {
     status_at: stamp(ctx, ref, 'Status Last Updated', cell(r, 'Status Last Updated')),
     hired_date: hiredDay(cell(r, 'Hired Date')),
     owner_name: firstName(cell(r, 'Assigned Recruiter(s)')),
-    custom: { zoho: zohoColumns(r, jobColumns, [COL.ignored, COL.notesLog]) },
+    custom: { zoho: zohoColumns(r, jobColumns, [COL.status, COL.notesLog]) },
   }
   const notes = splitNotesLog(r[COL.notesLog] ?? '', ctx.tz).map((n, i) => {
     if (n.kind_label === '') ctx.problems.push({ ref, message: `Job note ${i + 1} has no "[date] Kind – Author:" header` })

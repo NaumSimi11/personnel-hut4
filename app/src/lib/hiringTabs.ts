@@ -4,6 +4,7 @@ import { shortDate } from '@/lib/leave'
 import { notResponding } from '@/lib/outreach'
 import { NOT_RESPONDING_FILTER, closureLine } from '@/lib/stageStatuses'
 import { jobHeadcount } from '@/lib/headcount'
+import { linkedinHref } from '@/lib/linkedin'
 
 /**
  * The Hiring page's list tabs (plan 044): Job openings and Applicants, flat
@@ -121,7 +122,7 @@ export type ApplicantLite = {
   received_at: string
   next_action: string | null
   next_action_due: string | null
-  candidate: { full_name: string; email: string | null; last_activity_at?: string | null } | null
+  candidate: { full_name: string; email: string | null; linkedin_url?: string | null; last_activity_at?: string | null } | null
   job: { id: string; title: string; status?: string; company: { name: string } | null } | null
   owner: { full_name: string } | null
 }
@@ -134,6 +135,8 @@ export type ApplicantRow = {
   blockers: { files: number; interviews: number; offers: number }
   name: string
   email: string | null
+  /** A safe link to the LinkedIn profile, or null. */
+  linkedin: string | null
   position: string
   company: string
   stage: string
@@ -179,6 +182,7 @@ export function applicantRows(
       },
       name: a.candidate?.full_name ?? 'Candidate',
       email: a.candidate?.email ?? null,
+      linkedin: linkedinHref(a.candidate?.linkedin_url),
       position: a.job?.title ?? '—',
       company: a.job?.company?.name ?? '—',
       stage: a.stage_key,

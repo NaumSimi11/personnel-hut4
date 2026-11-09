@@ -78,6 +78,24 @@ describe('hiring tabs', () => {
     ])
   })
 
+  it('applicant rows carry a safe LinkedIn link, or none', () => {
+    const base: ApplicantLite = {
+      id: 'l1', company_id: 'A', stage_key: 'screening', in_play: true, received_at: '2026-09-01T00:00:00Z',
+      next_action: null, next_action_due: null, job: null, owner: null,
+      candidate: { full_name: 'Ana Kova', email: null, linkedin_url: 'www.linkedin.com/in/ana' },
+    }
+    const rows = applicantRows(
+      [base, { ...base, id: 'l2', candidate: { full_name: 'Ben Ilic', email: null, linkedin_url: 'javascript:alert(1)' } },
+        { ...base, id: 'l3', candidate: { full_name: 'Cy Dan', email: null } }],
+      { companyId: '', stage: 'all', search: '' },
+    )
+    expect(rows.map((r) => [r.id, r.linkedin])).toEqual([
+      ['l1', 'https://www.linkedin.com/in/ana'],
+      ['l2', null],
+      ['l3', null],
+    ])
+  })
+
   it('applicants: carries the company and counts what blocks a delete (plan 063)', () => {
     const list: ApplicantLite[] = [
       {

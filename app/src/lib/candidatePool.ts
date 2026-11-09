@@ -110,6 +110,8 @@ export type PoolRow = {
   full_name: string
   email: string | null
   phone: string | null
+  /** As stored; render it through linkedinHref (0099). */
+  linkedin_url: string | null
   current_title: string | null
   current_employer: string | null
   location: string | null

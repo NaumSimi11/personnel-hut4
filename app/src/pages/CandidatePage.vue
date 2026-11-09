@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { linkedinHref } from '@/lib/linkedin'
 import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { supabase } from '@/lib/supabase'
@@ -436,7 +437,7 @@ onMounted(load)
             <template v-if="candidate.location"> · {{ candidate.location }}</template>
             <template v-if="candidate.email"> · {{ candidate.email }}</template>
             <template v-if="candidate.phone"> · {{ candidate.phone }}</template>
-            <template v-if="candidate.linkedin_url"> · <a :href="candidate.linkedin_url" target="_blank" rel="noopener">LinkedIn ↗</a></template>
+            <template v-if="linkedinHref(candidate.linkedin_url)"> · <a :href="linkedinHref(candidate.linkedin_url)!" target="_blank" rel="noopener noreferrer" data-testid="candidate-linkedin">LinkedIn ↗</a></template>
           </p>
           <div class="badges">
             <span v-if="badge" class="badge" :class="state === 'do_not_contact' ? 'amber' : 'blue'" data-testid="candidate-contact-badge">{{ badge }}</span>

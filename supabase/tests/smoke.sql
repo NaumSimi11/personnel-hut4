@@ -5082,6 +5082,8 @@ begin
   r := public.search_candidates('{"q":"pool"}');
   assert exists (select 1 from jsonb_array_elements(r->'rows') x where x->>'id' = '80000000-0000-0000-0000-000000000671'),
     'search by name: ' || r::text;
+  assert (select x->>'linkedin_url' from jsonb_array_elements(r->'rows') x where x->>'id' = '80000000-0000-0000-0000-000000000671')
+       = 'https://www.linkedin.com/in/pool-person/', '0099: the row carries the LinkedIn address: ' || r::text;
   r := public.search_candidates('{"q":"070 000 068"}');
   assert exists (select 1 from jsonb_array_elements(r->'rows') x where x->>'id' = '80000000-0000-0000-0000-000000000671'),
     'search by phone: ' || r::text;

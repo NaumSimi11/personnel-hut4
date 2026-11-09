@@ -21,6 +21,7 @@ import {
 import { shortDate } from '@/lib/leave'
 import { todayDb } from '@/lib/compensation'
 import { stageName } from '@/lib/stageStatuses'
+import { linkedinHref } from '@/lib/linkedin'
 import type { Json } from '@/types/database'
 
 /**
@@ -259,7 +260,16 @@ onBeforeUnmount(() => clearTimeout(searchTimer))
             <tr v-for="r in rows" :key="r.id" :data-testid="`pool-row-${r.id}`">
               <td>
                 <b><router-link class="name" :to="{ name: 'candidate', params: { candidateId: r.id } }">{{ r.full_name }}</router-link></b>
-                <small v-if="r.email || r.phone" class="sub">{{ [r.email, r.phone].filter(Boolean).join(' · ') }}</small>
+                <small v-if="r.email || r.phone || linkedinHref(r.linkedin_url)" class="sub">
+                  {{ [r.email, r.phone].filter(Boolean).join(' · ') }}<template v-if="(r.email || r.phone) && linkedinHref(r.linkedin_url)"> · </template><a
+                    v-if="linkedinHref(r.linkedin_url)"
+                    class="li-link"
+                    :href="linkedinHref(r.linkedin_url)!"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    :data-testid="`pool-linkedin-${r.id}`"
+                  >LinkedIn ↗</a>
+                </small>
               </td>
               <td>{{ titleLine(r) }}</td>
               <td>{{ skillsLine(r) }}</td>
@@ -325,6 +335,8 @@ td b { font-weight: 600; }
 .name { color: var(--ink); text-decoration: none; }
 .name:hover { color: var(--green); text-decoration: underline; }
 .sub { display: block; font-size: 11px; color: var(--muted); margin-top: 2px; }
+.li-link { color: var(--green-bright); text-decoration: none; font-weight: 550; }
+.li-link:hover { text-decoration: underline; }
 .badges { display: flex; gap: 6px; flex-wrap: wrap; }
 .actions { text-align: right; white-space: nowrap; }
 .action-group { display: inline-flex; gap: 6px; }

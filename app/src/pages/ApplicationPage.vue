@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { linkedinHref } from '@/lib/linkedin'
 import { computed, onMounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import { z } from 'zod'
@@ -536,6 +537,9 @@ onMounted(() => {
             <template v-if="application.candidate?.email">{{ application.candidate.email }}</template>
             <template v-else>no email</template>
             <template v-if="application.candidate?.phone"> · {{ application.candidate.phone }}</template>
+            <template v-if="linkedinHref(application.candidate?.linkedin_url)">
+              · <a :href="linkedinHref(application.candidate?.linkedin_url)!" target="_blank" rel="noopener noreferrer" data-testid="application-linkedin">LinkedIn ↗</a>
+            </template>
             · via {{ viaLabel }}
             · received {{ new Date(application.received_at).toLocaleDateString() }}
           </p>

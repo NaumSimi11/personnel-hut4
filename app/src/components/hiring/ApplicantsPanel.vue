@@ -132,7 +132,7 @@ async function removeApplication(r: ApplicantRow): Promise<void> {
 
 const COLUMNS = `id, company_id, stage_key, sub_status_key, in_play, closed_at, closed_reason, received_at, next_action, next_action_due,
        application_files(count), interviews(count), offers(count),
-       candidate:candidates!inner(full_name, email, last_activity_at),
+       candidate:candidates!inner(full_name, email, linkedin_url, last_activity_at),
        job:jobs(id, title, status, company:companies(name)),
        owner:people!applications_owner_id_fkey(full_name)`
 
@@ -253,7 +253,19 @@ watch(companyId, load)
         </thead>
         <tbody>
           <tr v-for="r in rows" :key="r.id" :data-testid="`applicant-${r.id}`">
-            <td><b>{{ r.name }}</b><small v-if="r.email" class="sub">{{ r.email }}</small></td>
+            <td>
+              <b>{{ r.name }}</b>
+              <small v-if="r.email || r.linkedin" class="sub">
+                <template v-if="r.email">{{ r.email }}</template><template v-if="r.email && r.linkedin"> · </template><a
+                  v-if="r.linkedin"
+                  class="li-link"
+                  :href="r.linkedin"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  :data-testid="`applicant-linkedin-${r.id}`"
+                >LinkedIn ↗</a>
+              </small>
+            </td>
             <td>{{ r.position }}</td>
             <td>{{ r.company }}</td>
             <td>
@@ -305,6 +317,8 @@ th { text-align: left; font-size: 11px; font-weight: 550; color: var(--muted); p
 td { padding: 12px 24px; border-bottom: 1px solid var(--line); vertical-align: middle; }
 td b { font-weight: 600; }
 .sub { display: block; font-size: 11px; color: var(--muted); margin-top: 2px; }
+.li-link { color: var(--green-bright); text-decoration: none; font-weight: 550; }
+.li-link:hover { text-decoration: underline; }
 .sub-badge { display: inline-flex; align-items: center; margin-top: 4px; padding: 2px 8px; border-radius: 999px; font-size: 11px; font-weight: 550; white-space: nowrap; }
 .sub-badge.amber { background: #fbf1da; color: var(--amber); }
 .actions { text-align: right; white-space: nowrap; }

@@ -80,7 +80,8 @@ async function loadCompanies(): Promise<void> {
     console.error('Companies load failed:', err.message)
     return
   }
-  companies.value = (data ?? []).filter((c) => auth.can(c.id, 'candidates.view'))
+  // A hiring manager (candidates.assigned) sees their own openings' applicants there.
+  companies.value = (data ?? []).filter((c) => auth.can(c.id, 'candidates.view') || auth.can(c.id, 'candidates.assigned'))
 }
 
 function badgeClass(stageKey: string, inPlay: boolean): string {

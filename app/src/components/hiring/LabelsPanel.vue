@@ -240,6 +240,7 @@ onMounted(load)
           <div v-for="row in group.rows" :key="row.key" class="row" :data-testid="`label-row-${row.key}`">
             <code class="key">{{ row.key }}</code>
             <span class="outcome" :class="`outcome-${row.outcome}`" :data-testid="`label-outcome-${row.key}`">{{ outcomeLabel(row.outcome) }}</span>
+            <span v-if="row.hm_only" class="outcome" title="Set by the job's hiring manager when the job names one" :data-testid="`label-hm-${row.key}`">Hiring manager</span>
             <input
               class="input"
               type="text"

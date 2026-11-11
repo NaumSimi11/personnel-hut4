@@ -27,7 +27,7 @@ export const useHiringLookupsStore = defineStore('hiringLookups', () => {
       supabase.from('application_stages').select('key, label, sort_order, is_terminal').order('sort_order'),
       supabase
         .from('application_sub_statuses')
-        .select('key, stage_key, label, sort_order, outcome, archived_at')
+        .select('key, stage_key, label, sort_order, outcome, archived_at, hm_only')
         .order('stage_key')
         .order('sort_order'),
       supabase.from('candidate_sources').select('key, label, sort_order, archived_at').order('sort_order'),

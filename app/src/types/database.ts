@@ -298,6 +298,7 @@ export type Database = {
       application_sub_statuses: {
         Row: {
           archived_at: string | null
+          hm_only: boolean
           key: string
           label: string
           outcome: string
@@ -306,6 +307,7 @@ export type Database = {
         }
         Insert: {
           archived_at?: string | null
+          hm_only?: boolean
           key: string
           label: string
           outcome: string
@@ -314,6 +316,7 @@ export type Database = {
         }
         Update: {
           archived_at?: string | null
+          hm_only?: boolean
           key?: string
           label?: string
           outcome?: string
@@ -2974,6 +2977,7 @@ export type Database = {
           custom: Json
           description: string | null
           description_revision: number
+          hiring_manager_id: string | null
           hiring_request_id: string | null
           opened_at: string | null
           id: string
@@ -2992,6 +2996,7 @@ export type Database = {
           custom?: Json
           description?: string | null
           description_revision?: number
+          hiring_manager_id?: string | null
           hiring_request_id?: string | null
           opened_at?: string | null
           id?: string
@@ -3010,6 +3015,7 @@ export type Database = {
           custom?: Json
           description?: string | null
           description_revision?: number
+          hiring_manager_id?: string | null
           hiring_request_id?: string | null
           opened_at?: string | null
           id?: string
@@ -3032,6 +3038,13 @@ export type Database = {
             columns: ["company_id"]
             isOneToOne: false
             referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "jobs_hiring_manager_id_fkey"
+            columns: ["hiring_manager_id"]
+            isOneToOne: false
+            referencedRelation: "people"
             referencedColumns: ["id"]
           },
           {
@@ -5464,6 +5477,10 @@ export type Database = {
           full_name: string
           id: string
         }[]
+      }
+      hm_set_status: {
+        Args: { p_application_id: string; p_note?: string; p_sub_status_key: string }
+        Returns: Json
       }
       hr_people: {
         Args: { p_company_id: string }

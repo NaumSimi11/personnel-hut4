@@ -12,6 +12,7 @@ import ApplicationOfferCard from '@/components/ApplicationOfferCard.vue'
 import AddEmployeeDialog from '@/components/AddEmployeeDialog.vue'
 import CandidateFilesCard from '@/components/CandidateFilesCard.vue'
 import ImportedHireCard, { type ZohoHire } from '@/components/ImportedHireCard.vue'
+import HiringManagerCard from '@/components/HiringManagerCard.vue'
 import RejectApplicationDialog from '@/components/RejectApplicationDialog.vue'
 import { friendlyRecruitmentError, salvageQuestions } from '@/lib/jobWorkspace'
 import { contactBadge, type ContactRule } from '@/lib/candidatePool'
@@ -85,6 +86,7 @@ type Application = {
     id: string
     title: string
     status: string
+    hiring_manager_id: string | null
     screening_questions: unknown
     scorecard_criteria: unknown
     company: { name: string } | null
@@ -240,6 +242,14 @@ const canReview = computed(() =>
   application.value ? auth.can(application.value.company_id, 'candidates.review') : false,
 )
 const isTerminal = computed(() => !(application.value?.in_play ?? true))
+// The job's hiring manager gets their own panel (0100); the database decides what they may do.
+const isHiringManager = computed(() => Boolean(auth.personId && application.value?.job?.hiring_manager_id === auth.personId))
+const hmApplication = computed(() => ({
+  stage_key: application.value?.stage_key ?? '',
+  sub_status_key: application.value?.sub_status_key ?? null,
+  closed_at: application.value?.closed_at ?? null,
+  job_status: application.value?.job?.status ?? '',
+}))
 // Closing the job marked it (plan 075): the mark shows where the status would, and no status is set until the job reopens.
 const closure = computed(() => (application.value ? closureLine(application.value.closed_at, application.value.closed_reason) : null))
 const statusLocked = computed(() => Boolean(closure.value) || application.value?.stage_key === 'hired')
@@ -325,7 +335,7 @@ async function load(): Promise<void> {
          received_at, rejected_reason, withdrawn_reason, screening_answers, employment_period_id, custom,
          candidate:candidates(id, full_name, email, phone, linkedin_url, do_not_contact, do_not_contact_reason,
            contact_later, contact_again_after, custom),
-         job:jobs(id, title, status, screening_questions, scorecard_criteria, company:companies(name)),
+         job:jobs(id, title, status, hiring_manager_id, screening_questions, scorecard_criteria, company:companies(name)),
          owner:people!applications_owner_id_fkey(full_name),
          employment_period:employment_periods!applications_employment_period_id_fkey(person_id)`,
       )
@@ -576,6 +586,13 @@ onMounted(() => {
         <button v-else class="button secondary" type="button" @click="focusSection(guidance.target)">{{ guidance.label }}</button>
       </section>
 
+      <HiringManagerCard
+        :application-id="application.id"
+        :application="hmApplication"
+        :rows="subStatusRows"
+        :is-hiring-manager="isHiringManager"
+        @decided="load"
+      />
       <p v-if="handoffNotice" class="handoff-notice" role="status">{{ handoffNotice }}</p>
       <section v-if="application.stage_key === 'hired'" class="card journey-focus" aria-label="Onboarding handoff">
         <div><div class="eyebrow">Onboarding</div>

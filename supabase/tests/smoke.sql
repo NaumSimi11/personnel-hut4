@@ -5651,10 +5651,10 @@ update public.applications set stage_key = 'interview' where id = '90000000-0000
 -- their keys until HR names them, and the defaults the trigger and the stage give.
 do $$
 begin
-  assert (select count(*) from public.application_sub_statuses) = 18, 'HR''s eighteen statuses, nothing else';
+  assert (select count(*) from public.application_sub_statuses) = 19, 'HR''s eighteen statuses plus the HM''s contact (0100), nothing else';
   assert (select string_agg(key, ',' order by sort_order) from public.application_sub_statuses
           where stage_key = 'screening')
-    = 'sourced,contacted,interested,no_response,not_interested,unqualified,contact_in_future,do_not_contact',
+    = 'sourced,contact,contacted,interested,no_response,not_interested,unqualified,contact_in_future,do_not_contact',
     'Screening, in order';
   assert (select string_agg(key, ',' order by sort_order) from public.application_sub_statuses
           where stage_key = 'interview')
@@ -7902,7 +7902,7 @@ insert into public.applications (id, job_id, company_id, candidate_id, stage_key
 -- 1. The vocabulary: every stage has one, in order, one outcome each.
 do $$
 begin
-  assert (select count(*) from public.application_sub_statuses) = 18, 'the 18 statuses of 0098';
+  assert (select count(*) from public.application_sub_statuses) = 19, 'the 18 statuses of 0098 and 0100''s contact';
   assert (select string_agg(key, ',' order by sort_order) from public.application_sub_statuses where stage_key = 'offer')
     = 'offer_made,offer_declined', 'Offered: made, then declined';
   assert (select string_agg(key, ',' order by sort_order) from public.application_sub_statuses where stage_key = 'hired')
@@ -7910,7 +7910,7 @@ begin
   assert (select count(*) from public.application_sub_statuses where stage_key = 'interview') = 7, 'seven at Interview';
   assert (select string_agg(outcome || '=' || n, ',' order by outcome)
             from (select outcome, count(*) n from public.application_sub_statuses group by outcome) o)
-    = 'hired=1,open=8,rejected=3,withdrew=6', 'the outcomes: 8 open, 3 rejected, 6 withdrew, 1 hired';
+    = 'hired=1,open=9,rejected=3,withdrew=6', 'the outcomes: 9 open, 3 rejected, 6 withdrew, 1 hired';
   assert app.default_sub_status('interview', null) = 'interview_to_schedule'
      and app.default_sub_status('offer', null) = 'offer_made'
      and app.default_sub_status('hired', null) = 'hired',
@@ -8742,7 +8742,7 @@ declare v_a uuid; v_b uuid; v_c uuid;
   c constant uuid := '80000000-0000-0000-0000-000000000951';
   co constant uuid := '10000000-0000-0000-0000-00000000000a';
 begin
-  assert (select count(*) from public.application_sub_statuses) = 18, 'HR''s 18 statuses (0098)';
+  assert (select count(*) from public.application_sub_statuses) = 19, 'HR''s 18 statuses (0098) and the HM''s contact (0100)';
   assert (select string_agg(key, ',' order by sort_order) from public.application_stages) = 'screening,interview,offer,hired',
     'four stages';
 
@@ -9516,5 +9516,153 @@ delete from public.candidates where provider_ref like 'ZZ97_C%' or id = '8000000
 delete from public.jobs where id in ('70000000-0000-0000-0000-000000000975', '70000000-0000-0000-0000-000000000976',
                                     '70000000-0000-0000-0000-000000000977', '70000000-0000-0000-0000-000000000978');
 delete from public.activity_log where entity_type = 'imports' and action = 'zoho_job_view';
+
+-- ------------------------------------------------ the hiring manager (0100)
+-- Hana holds the Hiring Manager preset in A and is named on one job (J1).
+-- Rita is HR in A. J2 names nobody. Hana sees J1's candidate and nothing
+-- else, sets the three HM statuses at Screening only, never HR's; Rita sets
+-- HR's statuses, not Hana's on J1, but may on J2.
+insert into auth.users (id, email) values
+  ('00000000-0000-0000-0000-000000000a01', 'hana@a.test'),
+  ('00000000-0000-0000-0000-000000000a02', 'rita@a.test');
+insert into public.people (id, user_id, full_name, work_email) values
+  ('20000000-0000-0000-0000-000000000a01', '00000000-0000-0000-0000-000000000a01', 'Hana Manager', 'hana@a.test'),
+  ('20000000-0000-0000-0000-000000000a02', '00000000-0000-0000-0000-000000000a02', 'Rita Recruiter', 'rita@a.test');
+insert into public.access_grants (id, person_id, company_id, source_preset_id) values
+  ('40000000-0000-0000-0000-000000000a01', '20000000-0000-0000-0000-000000000a01', '10000000-0000-0000-0000-00000000000a',
+    (select id from public.permission_presets where name = 'Hiring Manager')),
+  ('40000000-0000-0000-0000-000000000a02', '20000000-0000-0000-0000-000000000a02', '10000000-0000-0000-0000-00000000000a',
+    (select id from public.permission_presets where name = 'Company HR'));
+insert into public.grant_capabilities (grant_id, capability_key)
+select '40000000-0000-0000-0000-000000000a01', capability_key from public.preset_capabilities
+ where preset_id = (select id from public.permission_presets where name = 'Hiring Manager');
+insert into public.grant_capabilities (grant_id, capability_key)
+select '40000000-0000-0000-0000-000000000a02', capability_key from public.preset_capabilities
+ where preset_id = (select id from public.permission_presets where name = 'Company HR');
+
+insert into public.hiring_requests (id, company_id, title, hiring_manager_id, status) values
+  ('60000000-0000-0000-0000-000000000a01', '10000000-0000-0000-0000-00000000000a', 'HM role', '20000000-0000-0000-0000-000000000a01', 'approved');
+insert into public.jobs (id, company_id, hiring_request_id, title, status) values
+  ('70000000-0000-0000-0000-000000000a01', '10000000-0000-0000-0000-00000000000a', '60000000-0000-0000-0000-000000000a01', 'HM job', 'open'),
+  ('70000000-0000-0000-0000-000000000a02', '10000000-0000-0000-0000-00000000000a', null, 'No-HM job', 'open');
+insert into public.candidates (id, full_name, email) values
+  ('80000000-0000-0000-0000-000000000a01', 'Hm Candidate', 'hm1@a.test'),
+  ('80000000-0000-0000-0000-000000000a02', 'Other Candidate', 'hm2@a.test');
+insert into public.applications (id, job_id, company_id, candidate_id, stage_key, sub_status_key) values
+  ('90000000-0000-0000-0000-000000000a01', '70000000-0000-0000-0000-000000000a01', '10000000-0000-0000-0000-00000000000a',
+   '80000000-0000-0000-0000-000000000a01', 'screening', 'sourced'),
+  ('90000000-0000-0000-0000-000000000a02', '70000000-0000-0000-0000-000000000a02', '10000000-0000-0000-0000-00000000000a',
+   '80000000-0000-0000-0000-000000000a02', 'screening', 'sourced');
+
+do $$
+begin
+  assert (select hiring_manager_id from public.jobs where id = '70000000-0000-0000-0000-000000000a01')
+       = '20000000-0000-0000-0000-000000000a01', '0100: a job takes its request''s hiring manager';
+  assert not exists (select 1 from public.preset_capabilities pc join public.permission_presets p on p.id = pc.preset_id
+                      where p.name = 'Hiring Manager' and pc.capability_key in ('candidates.view', 'candidates.review'))
+     and exists (select 1 from public.preset_capabilities pc join public.permission_presets p on p.id = pc.preset_id
+                  where p.name = 'Hiring Manager' and pc.capability_key = 'candidates.assigned'),
+    '0100: the Hiring Manager preset sees own openings only';
+  assert (select string_agg(key, ',' order by key) from public.application_sub_statuses where hm_only)
+       = 'contact,contact_in_future,do_not_contact', '0100: three HM statuses';
+  assert exists (select 1 from public.hiring_managers('10000000-0000-0000-0000-00000000000a')
+                  where id = '20000000-0000-0000-0000-000000000a01'), '0100: Hana can be named hiring manager';
+end $$;
+
+set app.test_uid = '00000000-0000-0000-0000-000000000a01';  -- Hana
+set role authenticated;
+do $$
+declare v_msg text;
+begin
+  assert (select string_agg(id::text, ',') from public.applications where id::text like '90000000-0000-0000-0000-000000000a0%')
+       = '90000000-0000-0000-0000-000000000a01', '0100: Hana sees the application on her job only';
+  assert (select count(*) from public.candidates where id in ('80000000-0000-0000-0000-000000000a01', '80000000-0000-0000-0000-000000000a02')) = 1,
+    '0100: and only that candidate';
+  assert (select count(*) from public.applications where company_id = '10000000-0000-0000-0000-00000000000a') = 1,
+    '0100: nothing else in Company A';
+  assert (select o.total from public.opening_counts(array['70000000-0000-0000-0000-000000000a01'::uuid]) o) = 1,
+    '0100: her opening counts what came in';
+
+  begin
+    perform public.set_application_status(array['90000000-0000-0000-0000-000000000a01'::uuid], 'contacted', null);
+    assert false, '0100: Hana must not set HR''s statuses';
+  exception when insufficient_privilege then null;
+  end;
+  begin
+    perform public.hm_set_status('90000000-0000-0000-0000-000000000a01', 'contacted');
+    assert false, '0100: the HM door takes HM statuses only';
+  exception when invalid_parameter_value then null;
+  end;
+  begin
+    perform public.hm_set_status('90000000-0000-0000-0000-000000000a02', 'contact');
+    assert false, '0100: not on somebody else''s job';
+  exception when insufficient_privilege then null;
+  end;
+  begin
+    perform public.delete_job_application('90000000-0000-0000-0000-000000000a01', false);
+    assert false, '0100: Hana cannot delete';
+  exception when insufficient_privilege then null;
+  end;
+
+  perform public.hm_set_status('90000000-0000-0000-0000-000000000a01', 'contact', 'Strong CV');
+  assert (select sub_status_key || '|' || in_play from public.applications where id = '90000000-0000-0000-0000-000000000a01') = 'contact|true',
+    '0100: Hana says contact';
+  perform public.hm_set_status('90000000-0000-0000-0000-000000000a01', 'do_not_contact');
+  assert (select sub_status_key || '|' || in_play || '|' || withdrawn_reason from public.applications
+           where id = '90000000-0000-0000-0000-000000000a01') = 'do_not_contact|false|do_not_contact',
+    '0100: then changes her mind to do_not_contact';
+  perform public.hm_set_status('90000000-0000-0000-0000-000000000a01', 'contact_in_future');
+  perform public.hm_set_status('90000000-0000-0000-0000-000000000a01', 'contact');
+  assert (select sub_status_key || '|' || in_play || '|' || coalesce(withdrawn_reason, '-') from public.applications
+           where id = '90000000-0000-0000-0000-000000000a01') = 'contact|true|-',
+    '0100: and back to contact, the reason cleared';
+end $$;
+reset role;
+
+set app.test_uid = '00000000-0000-0000-0000-000000000a02';  -- Rita, HR
+set role authenticated;
+do $$
+begin
+  begin
+    perform public.set_application_status(array['90000000-0000-0000-0000-000000000a01'::uuid], 'do_not_contact', null);
+    assert false, '0100: HR must not set an HM status on a job with an HM';
+  exception when insufficient_privilege then
+    assert sqlerrm like '%Hana Manager sets it%', '0100: the refusal names the HM: ' || sqlerrm;
+  end;
+  perform public.set_application_status(array['90000000-0000-0000-0000-000000000a02'::uuid], 'do_not_contact', null);
+  assert (select sub_status_key from public.applications where id = '90000000-0000-0000-0000-000000000a02') = 'do_not_contact',
+    '0100: on a job with no HM, HR keeps the HM statuses';
+  perform public.set_application_status(array['90000000-0000-0000-0000-000000000a01'::uuid], 'contacted', 'Called');
+  perform public.set_application_status(array['90000000-0000-0000-0000-000000000a01'::uuid], 'offer_made', null);
+end $$;
+reset role;
+
+do $$
+begin
+  assert exists (select 1 from public.notifications where kind = 'candidate.offer'
+                  and person_id = '20000000-0000-0000-0000-000000000a01'
+                  and entity_id = '90000000-0000-0000-0000-000000000a01'), '0100: Hana is told at Offer';
+end $$;
+
+set app.test_uid = '00000000-0000-0000-0000-000000000a01';  -- Hana again
+set role authenticated;
+do $$
+begin
+  begin
+    perform public.hm_set_status('90000000-0000-0000-0000-000000000a01', 'contact');
+    assert false, '0100: at Offer the HM fills nothing in';
+  exception when invalid_parameter_value then
+    assert sqlerrm like '%past screening%', '0100: says why: ' || sqlerrm;
+  end;
+  assert (select count(*) from public.application_events where application_id = '90000000-0000-0000-0000-000000000a01') >= 5,
+    '0100: Hana reads the timeline';
+end $$;
+reset role;
+set app.test_uid = '';
+delete from public.notifications where entity_id in ('90000000-0000-0000-0000-000000000a01', '90000000-0000-0000-0000-000000000a02');
+delete from public.application_events where application_id in ('90000000-0000-0000-0000-000000000a01', '90000000-0000-0000-0000-000000000a02');
+delete from public.applications where id in ('90000000-0000-0000-0000-000000000a01', '90000000-0000-0000-0000-000000000a02');
+delete from public.candidates where id in ('80000000-0000-0000-0000-000000000a01', '80000000-0000-0000-0000-000000000a02');
+delete from public.jobs where id in ('70000000-0000-0000-0000-000000000a01', '70000000-0000-0000-0000-000000000a02');
 
 select 'SMOKE TESTS PASSED' as result;

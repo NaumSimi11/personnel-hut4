@@ -20,6 +20,7 @@ import JobInterviewsPanel from '@/components/JobInterviewsPanel.vue'
 import { criteriaFor, criteriaInput, type Criterion } from '@/lib/interviews'
 import { missingRecordMessage } from '@/lib/missingRecord'
 import StatusDialog, { type OutreachApplication } from '@/components/StatusDialog.vue'
+import JobHiringManagerField from '@/components/JobHiringManagerField.vue'
 import { NOT_RESPONDING_DAYS, notResponding, type SubStatusRow } from '@/lib/outreach'
 import {
   STAGES,
@@ -82,6 +83,8 @@ type Job = {
   company_id: string
   custom: Record<string, unknown> | null
   company: { name: string; short_code: string } | null
+  hiring_manager_id: string | null
+  hiring_manager: { full_name: string } | null
   request: {
     title: string
     headcount: number
@@ -304,8 +307,9 @@ async function loadJob(): Promise<void> {
   const { data, error: err } = await supabase
     .from('jobs')
     .select(
-      `id, title, description, description_revision, screening_questions, scorecard_criteria, status, company_id, custom,
+      `id, title, description, description_revision, screening_questions, scorecard_criteria, status, company_id, custom, hiring_manager_id,
        company:companies(name, short_code),
+       hiring_manager:people!jobs_hiring_manager_id_fkey(full_name),
        request:hiring_requests(title, headcount, target_start_date,
          hiring_manager:people!hiring_requests_hiring_manager_id_fkey(full_name))`,
     )
@@ -724,7 +728,6 @@ onMounted(async () => {
           <p v-if="job.request" class="job-meta">
             From hiring request "{{ job.request.title }}" · headcount {{ job.request.headcount }}
             <template v-if="job.request.target_start_date"> · target start {{ job.request.target_start_date }}</template>
-            <template v-if="job.request.hiring_manager"> · hiring manager {{ job.request.hiring_manager.full_name }}</template>
           </p>
         </div>
         <span class="badge" :class="jobBadgeClass(job.status)">{{ job.status.replace('_', ' ') }}</span>
@@ -754,7 +757,14 @@ onMounted(async () => {
           <h2>{{ appError ? 'Candidate status unavailable' : actionQueue.length ? 'Keep candidates moving' : hiredCount ? 'Continue the hiring handoff' : job.status === 'draft' ? 'Prepare this role' : 'Find your next colleague' }}</h2>
           <p>{{ appError ? 'Reload the page to check candidate progress.' : actionQueue.length ? `${actionQueue.length} active candidates. Review due actions and assign an owner to each candidate.` : hiredCount ? 'Open a hired candidate to continue to their employee record and onboarding.' : job.status === 'draft' ? 'Complete the description, then mark the role ready from Overview.' : 'Review your channels or add candidates directly to the role.' }}</p>
           <p v-if="['on_hold', 'closed', 'filled'].includes(job.status)">This role is {{ job.status.replace('_', ' ') }}. Review its status before starting new recruitment activity.</p>
-          <small>Hiring manager: {{ job.request?.hiring_manager?.full_name ?? 'Not assigned' }}<template v-if="job.request?.target_start_date"> &middot; Target start: {{ job.request.target_start_date }}</template></small>
+          <small><JobHiringManagerField
+            :job-id="job.id"
+            :company-id="job.company_id"
+            :hiring-manager-id="job.hiring_manager_id"
+            :hiring-manager-name="job.hiring_manager?.full_name ?? null"
+            :can-edit="canEdit"
+            @changed="loadJob"
+          /><template v-if="job.request?.target_start_date"> &middot; Target start: {{ job.request.target_start_date }}</template></small>
         </div>
         <button class="button" type="button" @click="selectTab(actionQueue.length || hiredCount ? 'applications' : job.status === 'draft' ? 'description' : 'channels')">{{ actionQueue.length || hiredCount ? 'View candidates' : job.status === 'draft' ? 'Review description' : 'Review channels' }}</button>
       </section>

@@ -45,7 +45,13 @@ export const OUTCOME_CHOICES: ReadonlyArray<{ value: Outcome; label: string }> =
 export function outcomeLabel(outcome: Outcome): string {
   return OUTCOME_LABEL[outcome]
 }
-export type SubStatusRow = LookupRow & { stage_key: string; outcome: Outcome; archived_at: string | null }
+export type SubStatusRow = LookupRow & {
+  stage_key: string
+  outcome: Outcome
+  archived_at: string | null
+  /** Set only by the job's hiring manager when the job names one (0100). */
+  hm_only?: boolean
+}
 export type SubStatusGroup = { stageKey: string; stageLabel: string; rows: SubStatusRow[]; retired: SubStatusRow[] }
 
 /** What gets stored: the trimmed text, so surrounding space never reaches the database. */

@@ -4869,7 +4869,7 @@ begin
           join public.permission_presets p on p.id = pc.preset_id
           where pc.capability_key = 'candidates.source' and p.company_id is null) = 'Holding HR,Recruiter',
     'Holding HR and Recruiter carry the pool; Company HR and Hiring Manager do not';
-  assert (select string_agg(key || '=' || label, ';' order by sort_order) from public.candidate_sources)
+  assert (select string_agg(key || '=' || label, ';' order by sort_order) from public.candidate_sources where key <> 'internal_board')
     = 'head_hunt=Head hunt;linkedin_profile=LinkedIn profile capture;linkedin_ad=LinkedIn advertisement;'
       'careers_page=Company careers page;job_board=Job board or advertisement;referral=Referral;'
       'added_by_hand=Added by hand;imported=Imported, source unknown',
@@ -5651,10 +5651,10 @@ update public.applications set stage_key = 'interview' where id = '90000000-0000
 -- their keys until HR names them, and the defaults the trigger and the stage give.
 do $$
 begin
-  assert (select count(*) from public.application_sub_statuses) = 19, 'HR''s eighteen statuses plus the HM''s contact (0100), nothing else';
+  assert (select count(*) from public.application_sub_statuses) = 21, 'HR''s eighteen statuses, the HM''s contact (0100), applied and shortlisted (0105)';
   assert (select string_agg(key, ',' order by sort_order) from public.application_sub_statuses
           where stage_key = 'screening')
-    = 'sourced,contact,contacted,interested,no_response,not_interested,unqualified,contact_in_future,do_not_contact',
+    = 'applied,sourced,shortlisted,contact,contacted,interested,no_response,not_interested,unqualified,contact_in_future,do_not_contact',
     'Screening, in order';
   assert (select string_agg(key, ',' order by sort_order) from public.application_sub_statuses
           where stage_key = 'interview')
@@ -5662,8 +5662,8 @@ begin
     'Interview, in order';
   assert not exists (select 1 from public.application_sub_statuses where label <> key), 'every label is its key';
   assert app.default_sub_status('screening', 'head_hunt') = 'sourced'
-     and app.default_sub_status('screening', 'careers_page') = 'sourced'
-     and app.default_sub_status('screening', null) = 'sourced', 'at Screening everyone starts sourced';
+     and app.default_sub_status('screening', 'careers_page') = 'applied'
+     and app.default_sub_status('screening', null) = 'sourced', 'at Screening a found candidate starts sourced, an applicant applied (0105)';
   assert app.default_sub_status('interview', 'head_hunt') = 'interview_to_schedule'
      and app.default_sub_status('offer', null) = 'offer_made'
      and app.default_sub_status('hired', null) = 'hired'
@@ -5687,8 +5687,8 @@ begin
     'full_name', 'Outreach Applicant', 'email', 'applicant@outreach.test', 'source_key', 'careers_page',
     'job_id', '70000000-0000-0000-0000-000000000691'));
   assert (select stage_key || '|' || source_key || '|' || sub_status_key from public.applications
-          where id = (r->>'application_id')::uuid) = 'screening|careers_page|sourced',
-    'someone who came to us starts sourced too';
+          where id = (r->>'application_id')::uuid) = 'screening|careers_page|applied',
+    'someone who came to us starts at Applied (0105)';
   assert (select sub_status_key from public.applications where id = '90000000-0000-0000-0000-000000000696') = 'sourced',
     'and so does a careers-site insert with no source at all';
   assert (select sub_status_key from public.applications where id = '90000000-0000-0000-0000-000000000691') = 'sourced',
@@ -5696,7 +5696,7 @@ begin
   assert (select sub_status_key from public.applications where id = '90000000-0000-0000-0000-000000000695') = 'interview_to_schedule',
     'a row moved to Interview carries that stage''s first status';
   assert (select sub_status_key from public.applications where id = '90000000-0000-0000-0000-00000000069c') = 'sourced'
-     and (select sub_status_key from public.applications where id = '90000000-0000-0000-0000-00000000069e') = 'sourced',
+     and (select sub_status_key from public.applications where id = '90000000-0000-0000-0000-00000000069e') = 'applied',
     'an Interview key on an inserted Screening row is corrected to the stage default';
   assert (select sub_status_key from public.applications where id = '90000000-0000-0000-0000-00000000069d') = 'contacted',
     'a key of the right stage is kept as given';
@@ -7902,7 +7902,7 @@ insert into public.applications (id, job_id, company_id, candidate_id, stage_key
 -- 1. The vocabulary: every stage has one, in order, one outcome each.
 do $$
 begin
-  assert (select count(*) from public.application_sub_statuses) = 19, 'the 18 statuses of 0098 and 0100''s contact';
+  assert (select count(*) from public.application_sub_statuses) = 21, 'the 18 statuses of 0098, 0100''s contact, 0105''s two';
   assert (select string_agg(key, ',' order by sort_order) from public.application_sub_statuses where stage_key = 'offer')
     = 'offer_made,offer_declined', 'Offered: made, then declined';
   assert (select string_agg(key, ',' order by sort_order) from public.application_sub_statuses where stage_key = 'hired')
@@ -7910,7 +7910,7 @@ begin
   assert (select count(*) from public.application_sub_statuses where stage_key = 'interview') = 7, 'seven at Interview';
   assert (select string_agg(outcome || '=' || n, ',' order by outcome)
             from (select outcome, count(*) n from public.application_sub_statuses group by outcome) o)
-    = 'hired=1,open=9,rejected=3,withdrew=6', 'the outcomes: 9 open, 3 rejected, 6 withdrew, 1 hired';
+    = 'hired=1,open=11,rejected=3,withdrew=6', 'the outcomes: 11 open, 3 rejected, 6 withdrew, 1 hired';
   assert app.default_sub_status('interview', null) = 'interview_to_schedule'
      and app.default_sub_status('offer', null) = 'offer_made'
      and app.default_sub_status('hired', null) = 'hired',
@@ -8077,7 +8077,7 @@ begin
     end loop;
   end;
   update public.application_sub_statuses set label = 'Came to us' where key = 'sourced';
-  assert app.default_sub_status('screening', 'careers_page') = 'sourced', 'a rule key can still be renamed';
+  assert app.default_sub_status('screening', 'head_hunt') = 'sourced', 'a rule key can still be renamed';
   update public.application_sub_statuses set label = 'sourced' where key = 'sourced';
 end $$;
 set app.test_uid = '00000000-0000-0000-0000-000000000005';
@@ -8742,7 +8742,7 @@ declare v_a uuid; v_b uuid; v_c uuid;
   c constant uuid := '80000000-0000-0000-0000-000000000951';
   co constant uuid := '10000000-0000-0000-0000-00000000000a';
 begin
-  assert (select count(*) from public.application_sub_statuses) = 19, 'HR''s 18 statuses (0098) and the HM''s contact (0100)';
+  assert (select count(*) from public.application_sub_statuses) = 21, 'HR''s 18 statuses (0098), contact (0100), applied and shortlisted (0105)';
   assert (select string_agg(key, ',' order by sort_order) from public.application_stages) = 'screening,interview,offer,hired',
     'four stages';
 
@@ -8838,8 +8838,8 @@ do $$
 declare v uuid;
 begin
   v := app.open_application('80000000-0000-0000-0000-000000000967', '70000000-0000-0000-0000-000000000963', 'careers_page', false);
-  assert (select stage_key = 'screening' and sub_status_key = 'sourced' and in_play from public.applications where id = v),
-    '0096: open_application lands on Screening / New';
+  assert (select stage_key = 'screening' and sub_status_key = 'applied' and in_play from public.applications where id = v),
+    '0096: open_application lands on Screening, at Applied for a careers source (0105)';
   delete from public.applications where id = v;
 end $$;
 
@@ -9811,5 +9811,410 @@ delete from public.offers where id = 'a1000000-0000-0000-0000-000000000b01';
 delete from public.application_events where application_id::text like '90000000-0000-0000-0000-000000000b0%';
 delete from public.applications where id::text like '90000000-0000-0000-0000-000000000b0%';
 delete from public.candidates where id::text like '80000000-0000-0000-0000-000000000b0%';
+
+-- ------------------------------------------------------- approval routes (0104)
+-- Company A's request route: Rita (HR), then Alex (director). Fiona covers
+-- Alex while he is on leave. Hana requests.
+insert into public.approval_routes (company_id, kind, position, label, approver_id) values
+  ('10000000-0000-0000-0000-00000000000a', 'request', 1, 'HR', '20000000-0000-0000-0000-000000000a02'),
+  ('10000000-0000-0000-0000-00000000000a', 'request', 2, 'Director', '20000000-0000-0000-0000-000000000001');
+insert into public.approval_delegates (person_id, delegate_id) values
+  ('20000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000002');
+insert into public.hiring_requests (id, company_id, title, requested_by, status, budget) values
+  ('60000000-0000-0000-0000-000000000c01', '10000000-0000-0000-0000-00000000000a', 'Routed role',
+   '20000000-0000-0000-0000-000000000a01', 'submitted', '{"min": 30000, "max": 40000, "currency": "EUR"}');
+
+do $$ begin
+  assert (select string_agg(label || ':' || status, ',' order by position) from public.approval_tasks
+           where subject_id = '60000000-0000-0000-0000-000000000c01') = 'HR:open,Director:open', '0104: the route is laid out';
+  assert exists (select 1 from public.notifications where kind = 'approval.task' and person_id = '20000000-0000-0000-0000-000000000a02'),
+    '0104: the first approver is told';
+end $$;
+
+set app.test_uid = '00000000-0000-0000-0000-000000000001';  -- Alex: not his step yet
+set role authenticated;
+do $$
+declare t uuid := (select id from public.approval_tasks where subject_id = '60000000-0000-0000-0000-000000000c01' and position = 2);
+begin
+  begin
+    perform public.decide_approval(t, 'approved');
+    assert false, '0104: step 2 waits for step 1';
+  exception when invalid_parameter_value then null;
+  end;
+  assert jsonb_array_length(public.my_approvals()) = 0, '0104: nothing in Alex''s list yet';
+end $$;
+reset role;
+
+set app.test_uid = '00000000-0000-0000-0000-000000000a02';  -- Rita
+set role authenticated;
+do $$
+declare t uuid := (select id from public.approval_tasks where subject_id = '60000000-0000-0000-0000-000000000c01' and position = 1);
+begin
+  assert (select count(*) from jsonb_array_elements(public.my_approvals()) e where e->>'id' = t::text) = 1, '0104: Rita sees her step';
+  perform public.decide_approval(t, 'approved');
+  assert (select status from public.hiring_requests where id = '60000000-0000-0000-0000-000000000c01') = 'submitted', '0104: one step is not the route';
+end $$;
+reset role;
+
+-- Alex goes on leave; Fiona decides for him and asks for changes.
+insert into public.leave_requests (person_id, employment_period_id, company_id, leave_type_key, deducts_balance, requires_document,
+                                   start_date, end_date, working_days, status)
+select '20000000-0000-0000-0000-000000000001', '30000000-0000-0000-0000-000000000001', '10000000-0000-0000-0000-00000000000a',
+       (select key from public.leave_types limit 1), false, false, current_date - 1, current_date + 1, 3, 'approved';
+set app.test_uid = '00000000-0000-0000-0000-000000000002';  -- Fiona, Alex's delegate
+set role authenticated;
+do $$
+declare t uuid := (select id from public.approval_tasks where subject_id = '60000000-0000-0000-0000-000000000c01' and position = 2 and status = 'open');
+begin
+  assert (select (e->>'as_delegate')::boolean from jsonb_array_elements(public.my_approvals()) e where e->>'id' = t::text), '0104: Fiona sees it as delegate';
+  begin
+    perform public.decide_approval(t, 'changes_requested', '');
+    assert false, '0104: changes need a comment';
+  exception when invalid_parameter_value then null;
+  end;
+  perform public.decide_approval(t, 'changes_requested', 'Lower the headcount');
+  assert (select status || '|' || change_reason from public.hiring_requests where id = '60000000-0000-0000-0000-000000000c01')
+       = 'changes_requested|Lower the headcount', '0104: the request goes back';
+end $$;
+reset role;
+delete from public.leave_requests where person_id = '20000000-0000-0000-0000-000000000001' and start_date = current_date - 1;
+
+-- Resubmitted: back at the Director step, HR's approval stands (2.3).
+set app.test_uid = '00000000-0000-0000-0000-000000000a01';  -- Hana
+update public.hiring_requests set status = 'submitted' where id = '60000000-0000-0000-0000-000000000c01';
+set app.test_uid = '';
+do $$ begin
+  assert (select label from public.approval_tasks where subject_id = '60000000-0000-0000-0000-000000000c01' and status = 'open') = 'Director',
+    '0104: the resubmission restarts at the step that asked';
+end $$;
+
+set app.test_uid = '00000000-0000-0000-0000-000000000001';  -- Alex, back
+set role authenticated;
+do $$
+declare t uuid := (select id from public.approval_tasks where subject_id = '60000000-0000-0000-0000-000000000c01' and status = 'open');
+begin
+  perform public.decide_approval(t, 'approved');
+  assert (select status || '|' || decided_by from public.hiring_requests where id = '60000000-0000-0000-0000-000000000c01')
+       = 'approved|20000000-0000-0000-0000-000000000001', '0104: last step approves the request';
+end $$;
+reset role;
+set app.test_uid = '';
+
+-- Offers: outside the band goes to HR, Finance and Director; a send-back returns it to its author.
+insert into public.jobs (id, company_id, hiring_request_id, title, status) values
+  ('70000000-0000-0000-0000-000000000c01', '10000000-0000-0000-0000-00000000000a', '60000000-0000-0000-0000-000000000c01', 'Routed job', 'open');
+insert into public.candidates (id, full_name, email) values ('80000000-0000-0000-0000-000000000c01', 'Bo Band', 'bo@cand.test');
+insert into public.applications (id, job_id, company_id, candidate_id, stage_key, sub_status_key) values
+  ('90000000-0000-0000-0000-000000000c01', '70000000-0000-0000-0000-000000000c01', '10000000-0000-0000-0000-00000000000a',
+   '80000000-0000-0000-0000-000000000c01', 'offer', 'offer_made');
+insert into public.offers (id, application_id, company_id, terms, created_by) values
+  ('d0000000-0000-0000-0000-000000000c01', '90000000-0000-0000-0000-000000000c01', '10000000-0000-0000-0000-00000000000a',
+   '{"salary": 45000, "currency": "EUR"}', '20000000-0000-0000-0000-000000000a02');
+set app.test_uid = '00000000-0000-0000-0000-000000000a02';  -- Rita
+set role authenticated;
+do $$ begin
+  perform public.advance_offer('d0000000-0000-0000-0000-000000000c01', 'in_approval');
+end $$;
+reset role;
+do $$ begin
+  assert (select in_band from public.offers where id = 'd0000000-0000-0000-0000-000000000c01') = false, '0104: 45,000 is outside 30–40k';
+  assert (select string_agg(label, ',' order by position) from public.approval_tasks
+           where subject_id = 'd0000000-0000-0000-0000-000000000c01' and status = 'open') = 'HR,Finance,Director', '0104: three steps outside the band';
+end $$;
+set app.test_uid = '00000000-0000-0000-0000-000000000002';  -- Fiona: offer.approve (HR step)
+set role authenticated;
+do $$ begin
+  perform public.advance_offer('d0000000-0000-0000-0000-000000000c01', 'approved');
+  assert (select status from public.offers where id = 'd0000000-0000-0000-0000-000000000c01') = 'in_approval', '0104: HR alone is not enough';
+  perform public.advance_offer('d0000000-0000-0000-0000-000000000c01', 'draft', 'Too high');
+  assert (select status || '|' || returned_reason from public.offers where id = 'd0000000-0000-0000-0000-000000000c01') = 'draft|Too high',
+    '0104: Finance sends it back with the reason';
+  assert not exists (select 1 from public.approval_tasks where subject_id = 'd0000000-0000-0000-0000-000000000c01' and status = 'open'),
+    '0104: nothing left open';
+end $$;
+reset role;
+set app.test_uid = '';
+delete from public.approval_tasks where subject_id in ('d0000000-0000-0000-0000-000000000c01', '60000000-0000-0000-0000-000000000c01');
+delete from public.offers where id = 'd0000000-0000-0000-0000-000000000c01';
+delete from public.applications where id = '90000000-0000-0000-0000-000000000c01';
+delete from public.approval_routes where company_id = '10000000-0000-0000-0000-00000000000a';
+delete from public.approval_delegates where person_id = '20000000-0000-0000-0000-000000000001';
+
+-- --------------------------------------------- optional stages per job (0105)
+insert into public.jobs (id, company_id, title, status) values
+  ('70000000-0000-0000-0000-000000000d01', '10000000-0000-0000-0000-00000000000a', 'Board job', 'draft');
+update public.jobs set skip_statuses = array['interview_task'] where id = '70000000-0000-0000-0000-000000000d01';
+insert into public.candidates (id, full_name, email) values ('80000000-0000-0000-0000-000000000d01', 'Dee Board', 'dee@cand.test');
+insert into public.applications (id, job_id, company_id, candidate_id, source_key) values
+  ('90000000-0000-0000-0000-000000000d01', '70000000-0000-0000-0000-000000000d01', '10000000-0000-0000-0000-00000000000a',
+   '80000000-0000-0000-0000-000000000d01', 'careers_page');
+do $$
+begin
+  assert (select sub_status_key from public.applications where id = '90000000-0000-0000-0000-000000000d01') = 'applied',
+    '0105: a careers applicant lands at Applied';
+  begin
+    update public.applications set stage_key = 'interview', sub_status_key = 'interview_task' where id = '90000000-0000-0000-0000-000000000d01';
+    assert false, '0105: a skipped stage is refused';
+  exception when invalid_parameter_value then null;
+  end;
+  update public.jobs set status = 'open' where id = '70000000-0000-0000-0000-000000000d01';
+  begin
+    update public.jobs set skip_statuses = '{}' where id = '70000000-0000-0000-0000-000000000d01';
+    assert false, '0105: the pipeline locks once the job opens';
+  exception when invalid_parameter_value then null;
+  end;
+end $$;
+delete from public.candidate_emails where application_id = '90000000-0000-0000-0000-000000000d01';
+delete from public.applications where id = '90000000-0000-0000-0000-000000000d01';
+
+-- ----------------------------------------------- the candidate's offer (0106)
+insert into public.candidates (id, full_name, email) values ('80000000-0000-0000-0000-000000000e01', 'Oli Offer', 'oli@cand.test');
+insert into public.applications (id, job_id, company_id, candidate_id, stage_key, sub_status_key) values
+  ('90000000-0000-0000-0000-000000000e01', '70000000-0000-0000-0000-000000000d01', '10000000-0000-0000-0000-00000000000a',
+   '80000000-0000-0000-0000-000000000e01', 'offer', 'offer_made');
+insert into public.offers (id, application_id, company_id, terms, status, created_by) values
+  ('d0000000-0000-0000-0000-000000000e01', '90000000-0000-0000-0000-000000000e01', '10000000-0000-0000-0000-00000000000a',
+   '{"salary": 1000, "currency": "EUR", "start_date": "2027-01-04"}', 'approved', '20000000-0000-0000-0000-000000000a02');
+update public.offers set status = 'extended' where id = 'd0000000-0000-0000-0000-000000000e01';
+do $$
+declare t text := (select candidate_token from public.offers where id = 'd0000000-0000-0000-0000-000000000e01');
+declare r jsonb;
+begin
+  assert length(t) = 64, '0106: a sent offer gets a private link';
+  assert (select data->>'token' from public.candidate_emails where offer_id = 'd0000000-0000-0000-0000-000000000e01' and kind = 'offer') = t,
+    '0106: the candidate is emailed the link';
+  r := public.offer_for_candidate(t);
+  assert r->>'job' = 'Board job' and r->>'salary' = '1000', '0106: the page shows the terms: ' || r::text;
+  assert public.offer_for_candidate('nope') is null, '0106: a bad link shows nothing';
+  begin
+    perform public.answer_offer_by_token(t, 'declined', '');
+    assert false, '0106: a decline asks why';
+  exception when invalid_parameter_value then null;
+  end;
+  perform public.answer_offer_by_token(t, 'accepted');
+  assert (select status from public.offers where id = 'd0000000-0000-0000-0000-000000000e01') = 'accepted', '0106: accepted by the candidate';
+  assert exists (select 1 from public.notifications where kind = 'offer.answered' and person_id = '20000000-0000-0000-0000-000000000a02'),
+    '0106: the author hears';
+  begin
+    perform public.answer_offer_by_token(t, 'declined', 'Changed my mind');
+    assert false, '0106: one answer only';
+  exception when invalid_parameter_value then null;
+  end;
+  begin
+    update public.applications set stage_key = 'hired', sub_status_key = 'hired' where id = '90000000-0000-0000-0000-000000000e01';
+    assert false, '0106: no hire without the signed contract';
+  exception when invalid_parameter_value then null;
+  end;
+  assert not has_function_privilege('authenticated', 'public.answer_offer_by_token(text, text, text)', 'execute'),
+    '0106: only the server answers for the candidate';
+end $$;
+delete from public.notifications where entity_id = 'd0000000-0000-0000-0000-000000000e01';
+delete from public.candidate_emails where application_id = '90000000-0000-0000-0000-000000000e01';
+delete from public.offers where id = 'd0000000-0000-0000-0000-000000000e01';
+delete from public.applications where id = '90000000-0000-0000-0000-000000000e01';
+
+-- ----------------------------- team, internal board, exceptions (0107, 0108)
+-- Omar (no grants) joins the Board job's team and sees its candidate.
+insert into public.candidates (id, full_name, email) values ('80000000-0000-0000-0000-000000000f01', 'Tia Team', 'tia@cand.test');
+insert into public.applications (id, job_id, company_id, candidate_id, source_key) values
+  ('90000000-0000-0000-0000-000000000f01', '70000000-0000-0000-0000-000000000d01', '10000000-0000-0000-0000-00000000000a',
+   '80000000-0000-0000-0000-000000000f01', 'head_hunt');
+insert into public.job_team (job_id, person_id, role) values
+  ('70000000-0000-0000-0000-000000000d01', '20000000-0000-0000-0000-000000000003', 'assessor');
+set app.test_uid = '00000000-0000-0000-0000-000000000003';  -- Omar
+set role authenticated;
+do $$ begin
+  assert (select count(*) from public.applications where id = '90000000-0000-0000-0000-000000000f01') = 1, '0107: the team sees the job''s candidates';
+  assert (select count(*) from public.applications where company_id = '10000000-0000-0000-0000-00000000000a'
+           and job_id <> '70000000-0000-0000-0000-000000000d01') = 0, '0107: and nothing else';
+  assert (select headcount || '/' || filled || '/' || open from public.job_positions(array['70000000-0000-0000-0000-000000000d01'::uuid])) = '1/0/1',
+    '0107: the team sees the job''s positions';
+end $$;
+reset role;
+set app.test_uid = '';
+
+-- The internal board: Ivy applies; her manager Rita (HR in A) cannot see it before Offer.
+insert into auth.users (id, email) values ('00000000-0000-0000-0000-000000000f02', 'ivy@a.test');
+insert into public.people (id, user_id, full_name, work_email) values
+  ('20000000-0000-0000-0000-000000000f02', '00000000-0000-0000-0000-000000000f02', 'Ivy Internal', 'ivy@a.test');
+insert into public.employment_periods (id, person_id, company_id, job_title, status, start_date, manager_id) values
+  ('30000000-0000-0000-0000-000000000f02', '20000000-0000-0000-0000-000000000f02', '10000000-0000-0000-0000-00000000000a',
+   'Coordinator', 'active', '2025-01-01', '20000000-0000-0000-0000-000000000a02');
+insert into public.job_channels (job_id, channel_key, status, posting_title, publish_until) values
+  ('70000000-0000-0000-0000-000000000d01', 'internal', 'live', 'Board job (internal)', current_date + 10);
+set app.test_uid = '00000000-0000-0000-0000-000000000f02';  -- Ivy
+set role authenticated;
+do $$
+declare r jsonb;
+begin
+  assert (select count(*) from jsonb_array_elements(public.internal_jobs()) e where e->>'title' = 'Board job (internal)') = 1,
+    '0107: the internal board lists the job';
+  r := public.apply_internally('70000000-0000-0000-0000-000000000d01', 'Keen to move teams');
+  assert r->>'application_id' is not null, '0107: applied from the board';
+  assert (select (e->>'applied')::boolean from jsonb_array_elements(public.internal_jobs()) e where e->>'title' = 'Board job (internal)'),
+    '0107: the board shows she applied';
+end $$;
+reset role;
+do $$ begin
+  assert (select a.source_key || '|' || a.credited_source_key from public.applications a join public.candidates c on c.id = a.candidate_id
+           where c.person_id = '20000000-0000-0000-0000-000000000f02') = 'internal_board|internal_board', '0107: from the internal board';
+end $$;
+set app.test_uid = '00000000-0000-0000-0000-000000000a02';  -- Rita, her manager (candidates.view in A)
+set role authenticated;
+do $$ begin
+  assert not exists (select 1 from public.applications a join public.candidates c on c.id = a.candidate_id
+                      where c.person_id = '20000000-0000-0000-0000-000000000f02'),
+    '0107: her manager does not see her application before Offer';
+end $$;
+reset role;
+set app.test_uid = '';
+
+-- 0108: source credit and the candidate's flags.
+insert into public.applications (id, job_id, company_id, candidate_id, source_key) values
+  ('90000000-0000-0000-0000-000000000f02', '70000000-0000-0000-0000-000000000b02', '10000000-0000-0000-0000-00000000000a',
+   '80000000-0000-0000-0000-000000000f01', 'referral');
+do $$ begin
+  assert (select credited_source_key from public.applications where id = '90000000-0000-0000-0000-000000000f02') = 'head_hunt',
+    '0108: the earliest source keeps the credit';
+end $$;
+set app.test_uid = '00000000-0000-0000-0000-000000000004';  -- Ada (admin)
+set role authenticated;
+do $$ begin
+  assert (public.candidate_flags('80000000-0000-0000-0000-000000000f01')->>'other_applications')::int = 1, '0108: one other application';
+  assert (public.candidate_flags('80000000-0000-0000-0000-000000000f01')->>'former_employee')::boolean = false, '0108: not a former employee';
+end $$;
+reset role;
+set app.test_uid = '';
+
+-- 0108: feedback reminders after 24 h, the HM after 48 h.
+update public.jobs set hiring_manager_id = '20000000-0000-0000-0000-000000000a01' where id = '70000000-0000-0000-0000-000000000d01';
+insert into public.interviews (id, application_id, company_id, kind, scheduled_at, duration_minutes) values
+  ('b0000000-0000-0000-0000-000000000f01', '90000000-0000-0000-0000-000000000f01', '10000000-0000-0000-0000-00000000000a',
+   'technical', now() - interval '3 days', 60);
+insert into public.interview_panel (interview_id, person_id) values ('b0000000-0000-0000-0000-000000000f01', '20000000-0000-0000-0000-000000000003');
+do $$ begin
+  perform public.run_hiring_clocks();
+  assert exists (select 1 from public.notifications where kind = 'interview.feedback_due' and person_id = '20000000-0000-0000-0000-000000000003'),
+    '0108: the panel member is reminded';
+  assert exists (select 1 from public.notifications where kind = 'interview.feedback_missing' and person_id = '20000000-0000-0000-0000-000000000a01'),
+    '0108: the hiring manager hears after 48 hours';
+end $$;
+
+-- 0108: Did not start.
+insert into public.people (id, full_name, work_email) values ('20000000-0000-0000-0000-000000000f09', 'Nat Nostart', 'nat@a.test');
+insert into public.employment_periods (id, person_id, company_id, job_title, status, start_date) values
+  ('30000000-0000-0000-0000-000000000f09', '20000000-0000-0000-0000-000000000f09', '10000000-0000-0000-0000-00000000000a', 'Analyst', 'pre_start', current_date + 7);
+update public.applications set employment_period_id = '30000000-0000-0000-0000-000000000f09' where id = '90000000-0000-0000-0000-000000000f02';
+set app.test_uid = '00000000-0000-0000-0000-000000000a02';  -- Rita: employment.edit
+set role authenticated;
+do $$
+declare r jsonb;
+begin
+  begin
+    perform public.mark_did_not_start('30000000-0000-0000-0000-000000000f09', '');
+    assert false, '0108: a reason is needed';
+  exception when invalid_parameter_value then null;
+  end;
+  r := public.mark_did_not_start('30000000-0000-0000-0000-000000000f09', 'Took another job');
+  assert r->>'status' = 'did_not_start', '0108: marked';
+end $$;
+reset role;
+set app.test_uid = '';
+do $$ begin
+  assert (select status from public.employment_periods where id = '30000000-0000-0000-0000-000000000f09') = 'did_not_start', '0108: the period says so';
+  assert (select sub_status_key || '|' || coalesce(employment_period_id::text, '-') from public.applications
+           where id = '90000000-0000-0000-0000-000000000f02') = 'withdrawn|-', '0108: the hire''s application is withdrawn and unlinked';
+end $$;
+
+-- ----------------------------------------------- settings and finish (0109, 0110)
+do $$ begin
+  assert app.hiring_setting('10000000-0000-0000-0000-00000000000a', 'offer_expiry_days') = 7, '0109: built-in default';
+end $$;
+insert into public.hiring_settings (company_id, key, value) values (null, 'offer_expiry_days', 10),
+  ('10000000-0000-0000-0000-00000000000a', 'offer_expiry_days', 5);
+do $$ begin
+  assert app.hiring_setting('10000000-0000-0000-0000-00000000000a', 'offer_expiry_days') = 5, '0109: the company wins';
+  assert app.hiring_setting('10000000-0000-0000-0000-00000000000b', 'offer_expiry_days') = 10, '0109: then the holding';
+end $$;
+delete from public.hiring_settings;
+
+-- 5.x: the panel hears when an interview is scheduled.
+insert into public.interviews (id, application_id, company_id, kind, scheduled_at, duration_minutes) values
+  ('b0000000-0000-0000-0000-000000000f11', '90000000-0000-0000-0000-000000000f01', '10000000-0000-0000-0000-00000000000a',
+   'technical', now() + interval '2 days', 45);
+insert into public.interview_panel (interview_id, person_id) values ('b0000000-0000-0000-0000-000000000f11', '20000000-0000-0000-0000-000000000a02');
+do $$ begin
+  assert exists (select 1 from public.notifications where kind = 'interview.scheduled' and person_id = '20000000-0000-0000-0000-000000000a02'),
+    '0110: the panel is told';
+end $$;
+
+-- 7.5: the job fills; Rita decides on what is left.
+insert into public.candidates (id, full_name, email) values
+  ('80000000-0000-0000-0000-000000000f21', 'Rae Left', 'rae@cand.test'), ('80000000-0000-0000-0000-000000000f22', 'Sam Left', 'sam@cand.test');
+insert into public.jobs (id, company_id, title, status) values ('70000000-0000-0000-0000-000000000f20', '10000000-0000-0000-0000-00000000000a', 'Fill job', 'open');
+insert into public.applications (id, job_id, company_id, candidate_id, stage_key, sub_status_key) values
+  ('90000000-0000-0000-0000-000000000f21', '70000000-0000-0000-0000-000000000f20', '10000000-0000-0000-0000-00000000000a', '80000000-0000-0000-0000-000000000f21', 'interview', 'interview_hr'),
+  ('90000000-0000-0000-0000-000000000f22', '70000000-0000-0000-0000-000000000f20', '10000000-0000-0000-0000-00000000000a', '80000000-0000-0000-0000-000000000f22', 'screening', 'contacted');
+update public.jobs set status = 'filled' where id = '70000000-0000-0000-0000-000000000f20';
+select app.close_in_play('70000000-0000-0000-0000-000000000f20', null, 'Position filled.');
+set app.test_uid = '00000000-0000-0000-0000-000000000a02';  -- Rita
+set role authenticated;
+do $$
+declare r jsonb;
+begin
+  r := public.decide_after_fill(array['90000000-0000-0000-0000-000000000f21'::uuid], 'rejected');
+  assert (r->>'emailed')::int = 1, '0110: the rejection email is queued: ' || r::text;
+  r := public.decide_after_fill(array['90000000-0000-0000-0000-000000000f22'::uuid], 'pool');
+  assert (r->>'decided')::int = 1, '0110: kept in the pool';
+end $$;
+reset role;
+set app.test_uid = '';
+do $$ begin
+  assert (select sub_status_key || '|' || reason_code || '|' || after_fill from public.applications where id = '90000000-0000-0000-0000-000000000f21')
+       = 'rejected_by_hr|position_filled|rejected', '0110: rejected with the position-filled code';
+  assert (select sub_status_key || '|' || after_fill from public.applications where id = '90000000-0000-0000-0000-000000000f22')
+       = 'contacted|pool', '0110: the pool keeps the status';
+end $$;
+
+-- 7.6: the first day.
+insert into public.people (id, full_name, work_email) values ('20000000-0000-0000-0000-000000000f31', 'Fay First', 'fay@a.test');
+insert into public.employment_periods (id, person_id, company_id, job_title, status, start_date) values
+  ('30000000-0000-0000-0000-000000000f31', '20000000-0000-0000-0000-000000000f31', '10000000-0000-0000-0000-00000000000a', 'Clerk', 'pre_start', current_date);
+set app.test_uid = '00000000-0000-0000-0000-000000000a02';
+set role authenticated;
+do $$ begin
+  perform public.confirm_first_day('30000000-0000-0000-0000-000000000f31');
+end $$;
+reset role;
+set app.test_uid = '';
+do $$ begin
+  assert (select status from public.employment_periods where id = '30000000-0000-0000-0000-000000000f31') = 'active', '0110: first day confirmed';
+end $$;
+
+-- 10.4: an approved request — a new start date is fine, a bigger headcount goes back for approval.
+insert into public.hiring_requests (id, company_id, title, requested_by, status, headcount) values
+  ('60000000-0000-0000-0000-000000000f41', '10000000-0000-0000-0000-00000000000a', 'Amend role', '20000000-0000-0000-0000-000000000a01', 'approved', 1);
+set app.test_uid = '00000000-0000-0000-0000-000000000a02';
+set role authenticated;
+do $$
+declare r jsonb;
+begin
+  r := public.amend_hiring_request('60000000-0000-0000-0000-000000000f41', jsonb_build_object('target_start_date', '2027-03-01'));
+  assert r->>'status' = 'approved', '0110: a date change needs no approval';
+  r := public.amend_hiring_request('60000000-0000-0000-0000-000000000f41', jsonb_build_object('headcount', 2));
+  assert r->>'status' = 'submitted', '0110: more headcount goes back for approval';
+end $$;
+reset role;
+set app.test_uid = '';
+do $$ begin
+  assert exists (select 1 from public.approval_tasks where subject_id = '60000000-0000-0000-0000-000000000f41' and status = 'open'),
+    '0110: a new approval round';
+  -- 10.8: that step has waited four days.
+  update public.approval_tasks set created_at = now() - interval '4 days' where subject_id = '60000000-0000-0000-0000-000000000f41';
+  perform public.run_hiring_clocks();
+  assert exists (select 1 from public.notifications where kind = 'approval.overdue' and entity_id =
+                  (select id from public.approval_tasks where subject_id = '60000000-0000-0000-0000-000000000f41' and status = 'open')),
+    '0110: overdue approvers are reminded';
+end $$;
 
 select 'SMOKE TESTS PASSED' as result;

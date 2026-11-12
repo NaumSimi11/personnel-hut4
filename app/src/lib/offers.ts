@@ -15,6 +15,10 @@ export type OfferTerms = {
   start_date: string
   employment_type: string
   notes?: string
+  // 0110 (spec 6.1): drafted from an offer template, shown to the candidate.
+  bonus?: string
+  benefits?: string
+  conditions?: string
 }
 
 export const offerTermsInput = z
@@ -29,6 +33,9 @@ export const offerTermsInput = z
     startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Choose the start date.'),
     employmentType: z.string().min(1, 'Choose the employment type.'),
     notes: z.string().trim().max(1000, 'Keep the notes under 1000 characters.'),
+    bonus: z.string().trim().max(300, 'Keep the bonus under 300 characters.').default(''),
+    benefits: z.string().trim().max(2000, 'Keep the benefits under 2000 characters.').default(''),
+    conditions: z.string().trim().max(2000, 'Keep the conditions under 2000 characters.').default(''),
   })
   .transform((input) => ({ ...input, salary: Math.round(input.salary * 100) / 100 }))
 
@@ -40,6 +47,9 @@ export type OfferTermsForm = {
   startDate: string
   employmentType: string
   notes: string
+  bonus?: string
+  benefits?: string
+  conditions?: string
 }
 
 export function termsToRow(input: z.infer<typeof offerTermsInput>): OfferTerms {
@@ -50,6 +60,9 @@ export function termsToRow(input: z.infer<typeof offerTermsInput>): OfferTerms {
     start_date: input.startDate,
     employment_type: input.employmentType,
     ...(input.notes && { notes: input.notes }),
+    ...(input.bonus && { bonus: input.bonus }),
+    ...(input.benefits && { benefits: input.benefits }),
+    ...(input.conditions && { conditions: input.conditions }),
   }
 }
 
@@ -63,6 +76,9 @@ export function termsFromOffer(raw: unknown): OfferTermsForm {
     startDate: str('start_date'),
     employmentType: str('employment_type') || 'full_time',
     notes: str('notes'),
+    bonus: str('bonus'),
+    benefits: str('benefits'),
+    conditions: str('conditions'),
   }
 }
 

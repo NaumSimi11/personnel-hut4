@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
+import { supabase } from '@/lib/supabase'
 import type { Outcome, SubStatusRow } from '@/lib/hiringLabels'
 import { setApplicationStatus } from '@/lib/applicationStatus'
 import { emailCandidates } from '@/lib/candidateEmails'
@@ -34,6 +35,14 @@ const warning = computed(() => contactHint(statusKey.value))
 // manager's own calls (contact in future, do not contact) are not a withdrawal
 // by the candidate, so there is nothing to confirm to them.
 const emailCandidate = ref(true)
+// 0109: every rejection records a reason code from the list HR keeps.
+const reasons = ref<{ key: string; label: string }[]>([])
+const reasonCode = ref('')
+onMounted(async () => {
+  const { data, error: err } = await supabase.from('rejection_reasons').select('key, label').is('archived_at', null).order('sort_order')
+  if (err) console.error('Rejection reasons load failed:', err.message)
+  reasons.value = data ?? []
+})
 const canEmail = computed(() => {
   const picked = props.rows.find((r) => r.key === statusKey.value)
   return !picked?.hm_only
@@ -48,6 +57,7 @@ function open(next: Mode, name: string, ids: string[], stageKey?: string): void 
   statusKey.value = ''
   note.value = ''
   emailCandidate.value = true
+  reasonCode.value = ''
   error.value = null
   dialog.value?.showModal()
 }
@@ -59,12 +69,20 @@ async function submit(): Promise<void> {
     error.value = mode.value === 'reject' ? 'Pick why the application is rejected.' : 'Pick why the candidate withdrew.'
     return
   }
+  if (mode.value === 'reject' && reasons.value.length && !reasonCode.value) {
+    error.value = 'Pick the reason code.'
+    return
+  }
   busy.value = true
   const result = await setApplicationStatus(applicationIds.value, statusKey.value, note.value)
   if (result.error) {
     busy.value = false
     error.value = result.error
     return
+  }
+  if (mode.value === 'reject' && reasonCode.value) {
+    const { error: codeErr } = await supabase.rpc('set_reason_code', { p_application_ids: applicationIds.value, p_reason_code: reasonCode.value })
+    if (codeErr) console.error('set_reason_code failed:', codeErr.message)
   }
   if (emailCandidate.value && canEmail.value) {
     const sent = await emailCandidates(applicationIds.value, mode.value === 'reject' ? 'rejected' : 'withdrawn')
@@ -108,6 +126,13 @@ async function submit(): Promise<void> {
           </div>
         </fieldset>
         <p v-if="warning" class="hint warning" role="note" data-testid="reject-contact-hint">{{ warning }}</p>
+        <div v-if="mode === 'reject' && reasons.length" class="field">
+          <label for="reject-code">Reason code</label>
+          <select id="reject-code" v-model="reasonCode" :disabled="busy" data-testid="reject-code">
+            <option value="">Pick one…</option>
+            <option v-for="r in reasons" :key="r.key" :value="r.key">{{ r.label }}</option>
+          </select>
+        </div>
         <div class="field">
           <label for="reject-reason">Anything to add? (optional)</label>
           <textarea id="reject-reason" v-model="note" rows="4" maxlength="2000" :disabled="busy"></textarea>

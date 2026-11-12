@@ -30,6 +30,13 @@ export const router = createRouter({
       component: () => import('@/pages/CareersJobPage.vue'),
       meta: { public: true },
     },
+    // The candidate's offer (0106): reached from the emailed link, no sign-in.
+    {
+      path: '/offer/:token',
+      name: 'candidate-offer',
+      component: () => import('@/pages/CandidateOfferPage.vue'),
+      meta: { public: true },
+    },
     {
       path: '/',
       component: () => import('@/components/AppShell.vue'),
@@ -159,6 +166,11 @@ export const router = createRouter({
           path: 'me',
           name: 'my-workspace',
           component: () => import('@/pages/MyWorkspacePage.vue'),
+        },
+        {
+          path: 'internal-jobs',
+          name: 'internal-jobs',
+          component: () => import('@/pages/InternalJobsPage.vue'),
         },
       ],
     },

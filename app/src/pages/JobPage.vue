@@ -21,6 +21,9 @@ import { criteriaFor, criteriaInput, type Criterion } from '@/lib/interviews'
 import { missingRecordMessage } from '@/lib/missingRecord'
 import StatusDialog, { type OutreachApplication } from '@/components/StatusDialog.vue'
 import JobHiringManagerField from '@/components/JobHiringManagerField.vue'
+import JobPipelineBoard from '@/components/JobPipelineBoard.vue'
+import JobTeamCard from '@/components/JobTeamCard.vue'
+import AfterFillCard from '@/components/AfterFillCard.vue'
 import { NOT_RESPONDING_DAYS, notResponding, type SubStatusRow } from '@/lib/outreach'
 import {
   STAGES,
@@ -60,12 +63,13 @@ import {
  * arrives with plan 018.
  */
 
-type TabId = 'overview' | 'description' | 'channels' | 'applications' | 'interviews' | 'promotion' | 'activity'
+type TabId = 'overview' | 'description' | 'channels' | 'board' | 'applications' | 'interviews' | 'promotion' | 'activity'
 
 const TABS: { id: TabId; label: string }[] = [
   { id: 'overview', label: 'Overview' },
   { id: 'description', label: 'Description' },
   { id: 'channels', label: 'Channels' },
+  { id: 'board', label: 'Board' },
   { id: 'applications', label: 'Applications' },
   { id: 'interviews', label: 'Interviews & Offer' },
   { id: 'promotion', label: 'Promotion' },
@@ -85,6 +89,7 @@ type Job = {
   company: { name: string; short_code: string } | null
   hiring_manager_id: string | null
   hiring_manager: { full_name: string } | null
+  skip_statuses: string[]
   request: {
     title: string
     headcount: number
@@ -307,7 +312,7 @@ async function loadJob(): Promise<void> {
   const { data, error: err } = await supabase
     .from('jobs')
     .select(
-      `id, title, description, description_revision, screening_questions, scorecard_criteria, status, company_id, custom, hiring_manager_id,
+      `id, title, description, description_revision, screening_questions, scorecard_criteria, status, company_id, custom, hiring_manager_id, skip_statuses,
        company:companies(name, short_code),
        hiring_manager:people!jobs_hiring_manager_id_fkey(full_name),
        request:hiring_requests(title, headcount, target_start_date,
@@ -771,6 +776,8 @@ onMounted(async () => {
 
       <!-- Overview -->
       <div v-if="activeTab === 'overview'">
+        <AfterFillCard v-if="job.status === 'filled'" :job-id="job.id" :can-review="canReview" @changed="loadApplications()" />
+        <JobTeamCard :job-id="job.id" :can-edit="canEdit" />
         <section class="card journey-queue" aria-label="Candidate next actions">
           <div class="card-head"><div><h2>Candidate next actions</h2><p>Due dates first. Open a candidate to review, interview, or agree an offer.</p></div></div>
           <p v-if="appError" class="error-note" role="alert">{{ appError }}</p>
@@ -974,6 +981,15 @@ onMounted(async () => {
       />
 
       <!-- Applications -->
+      <JobPipelineBoard
+        v-else-if="activeTab === 'board'"
+        :job-id="job.id"
+        :job-status="job.status"
+        :skip-statuses="job.skip_statuses ?? []"
+        :can-review="canReview"
+        :can-edit="canEdit"
+        @changed="loadJob(); loadApplications()"
+      />
       <div v-else-if="activeTab === 'applications'" class="card applications-card">
         <div class="card-head">
           <div>

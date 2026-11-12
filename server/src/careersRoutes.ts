@@ -60,13 +60,28 @@ type JobRow = { id: string; title: string; description: string | null; screening
 async function listedJobs(companyId: string): Promise<JobRow[]> {
   const { data } = await serviceDb()
     .from('jobs')
-    .select('id, title, description, screening_questions, job_channels!inner(channel_key, status)')
+    .select('id, title, description, screening_questions, job_channels!inner(channel_key, status, posting_title, posting_text, publish_from, publish_until)')
     .eq('company_id', companyId)
     .eq('status', 'open')
     .eq('job_channels.channel_key', 'careers')
     .eq('job_channels.status', 'live')
     .order('title')
-  return (data ?? []) as JobRow[]
+  return ((data ?? []) as (JobRow & { job_channels: PostingRow[] })[])
+    .filter((j) => inWindow(j.job_channels[0], todayIso()))
+    .map((j) => withPosting(j, j.job_channels[0]))
+}
+
+/** The careers posting (0107; spec 3.4): its own title and text when set, shown only inside its window. */
+type PostingRow = { posting_title?: string | null; posting_text?: string | null; publish_from?: string | null; publish_until?: string | null }
+function todayIso(): string {
+  return new Date().toISOString().slice(0, 10)
+}
+export function inWindow(p: PostingRow | undefined, today: string): boolean {
+  if (!p) return true
+  return (!p.publish_from || p.publish_from <= today) && (!p.publish_until || p.publish_until >= today)
+}
+function withPosting(j: JobRow, p: PostingRow | undefined): JobRow {
+  return { ...j, title: p?.posting_title || j.title, description: p?.posting_text || j.description }
 }
 
 type Part = { field: string; value?: string; file?: { buffer: Buffer; filename: string; mimetype: string } }

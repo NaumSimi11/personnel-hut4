@@ -17,7 +17,14 @@ import { friendlyRecruitmentError, type ChannelLite } from '@/lib/jobWorkspace'
  */
 
 type Channel = { key: string; label: string; kind: string }
-type JobChannel = ChannelLite & {
+type PostingFields = {
+  posting_title: string | null
+  posting_text: string | null
+  salary_display: string | null
+  publish_from: string | null
+  publish_until: string | null
+}
+type JobChannel = ChannelLite & Partial<PostingFields> & {
   id: string
   publication_url: string | null
   updated_at: string
@@ -92,6 +99,7 @@ async function load(): Promise<void> {
       .from('job_channels')
       .select(
         `id, channel_key, status, published_revision, publication_url, updated_at,
+         posting_title, posting_text, salary_display, publish_from, publish_until,
          verified_by:people!job_channels_verified_by_fkey(full_name),
          published_by:people!job_channels_published_by_fkey(full_name)`,
       )
@@ -146,8 +154,9 @@ async function openJobIfNeeded(): Promise<void> {
   emit('opened')
 }
 
-async function publishCareers(): Promise<void> {
-  const ok = await upsert('careers', {
+// The careers page and the internal job board (0107) publish the same way.
+async function publishCareers(key = 'careers'): Promise<void> {
+  const ok = await upsert(key, {
     status: 'live',
     published_revision: props.descriptionRevision,
     published_by: auth.personId,
@@ -156,8 +165,39 @@ async function publishCareers(): Promise<void> {
   if (ok) await openJobIfNeeded()
 }
 
-async function unpublishCareers(): Promise<void> {
-  await upsert('careers', { status: 'closed' })
+async function unpublishCareers(key = 'careers'): Promise<void> {
+  await upsert(key, { status: 'closed' })
+}
+
+// 0107: each channel's own posting — title, text, salary line, publish window (spec 3.4).
+const editingPosting = ref<string | null>(null)
+const posting = ref({ title: '', text: '', salary: '', from: '', until: '' })
+function startPosting(key: string): void {
+  const r = rowFor(key) as (JobChannel & PostingFields) | null
+  posting.value = {
+    title: r?.posting_title ?? '',
+    text: r?.posting_text ?? '',
+    salary: r?.salary_display ?? '',
+    from: r?.publish_from ?? '',
+    until: r?.publish_until ?? '',
+  }
+  editingPosting.value = key
+  error.value = null
+}
+async function savePosting(key: string): Promise<void> {
+  const p = posting.value
+  if (p.from && p.until && p.until < p.from) {
+    error.value = 'The posting ends before it starts.'
+    return
+  }
+  const ok = await upsert(key, {
+    posting_title: p.title.trim() || null,
+    posting_text: p.text.trim() || null,
+    salary_display: p.salary.trim() || null,
+    publish_from: p.from || null,
+    publish_until: p.until || null,
+  })
+  if (ok) editingPosting.value = null
 }
 
 function startRecording(key: string): void {
@@ -212,7 +252,8 @@ defineExpose({ reload: load })
         <div class="row-text">
           <strong>{{ c.label }}</strong>
           <small>
-            <template v-if="c.kind === 'careers'">
+            <template v-if="c.key === 'internal'">Seen by everyone in the group under Internal jobs; employees apply in one step.</template>
+            <template v-else-if="c.kind === 'careers'">
               Owned listing ·
               <a v-if="statusOf(c.key) === 'live'" :href="`/careers/${companyCode.toLowerCase()}/${jobId}`" target="_blank" rel="noopener">open the public page</a>
               <template v-else>publishes to /careers/{{ companyCode.toLowerCase() }}</template>
@@ -229,6 +270,24 @@ defineExpose({ reload: load })
             <template v-if="rowFor(c.key)?.verified_by"> · verified by {{ rowFor(c.key)!.verified_by!.full_name }}</template>
             <template v-else-if="rowFor(c.key)?.published_by"> · by {{ rowFor(c.key)!.published_by!.full_name }}</template>
           </small>
+          <small v-if="rowFor(c.key)?.publish_from || rowFor(c.key)?.publish_until" class="window">
+            Shown {{ rowFor(c.key)?.publish_from ? `from ${rowFor(c.key)!.publish_from}` : '' }} {{ rowFor(c.key)?.publish_until ? `until ${rowFor(c.key)!.publish_until}` : '' }}
+          </small>
+          <form v-if="editingPosting === c.key" class="posting-form" @submit.prevent="savePosting(c.key)">
+            <input :id="`posting-title-${c.key}`" v-model="posting.title" maxlength="120" placeholder="Posting title (defaults to the job title)" aria-label="Posting title" />
+            <textarea :id="`posting-text-${c.key}`" v-model="posting.text" rows="5" maxlength="20000" placeholder="Posting text (defaults to the job description)" aria-label="Posting text"></textarea>
+            <input :id="`posting-salary-${c.key}`" v-model="posting.salary" maxlength="120" placeholder="Salary shown, e.g. EUR 30–40k (optional)" aria-label="Salary shown" />
+            <div class="dates">
+              <label :for="`posting-from-${c.key}`">From</label>
+              <input :id="`posting-from-${c.key}`" v-model="posting.from" type="date" />
+              <label :for="`posting-until-${c.key}`">Until</label>
+              <input :id="`posting-until-${c.key}`" v-model="posting.until" type="date" />
+            </div>
+            <div class="dates">
+              <button class="button small-btn" type="submit" :disabled="busyKey === c.key">Save posting</button>
+              <button class="button secondary small-btn" type="button" @click="editingPosting = null">Cancel</button>
+            </div>
+          </form>
           <form v-if="recordingKey === c.key" class="manual-form" @submit.prevent="saveManual(c.key)">
             <input id="manual-url" v-model="manualUrl" inputmode="url" placeholder="https://…" aria-label="Posting address" />
             <button class="button small-btn" type="submit" :disabled="busyKey === c.key">Save posting</button>
@@ -238,6 +297,7 @@ defineExpose({ reload: load })
         <span v-if="isOutOfDate(c.key)" class="badge amber">Out of date</span>
         <span class="badge" :class="badgeClass(statusOf(c.key))">{{ statusOf(c.key).replace('_', ' ') }}</span>
         <div v-if="canPublish" class="row-actions">
+          <button v-if="editingPosting !== c.key" class="button secondary small-btn" type="button" @click="startPosting(c.key)">Posting</button>
           <template v-if="c.kind === 'careers'">
             <button
               v-if="statusOf(c.key) !== 'live' || isOutOfDate(c.key)"
@@ -245,7 +305,7 @@ defineExpose({ reload: load })
               type="button"
               :disabled="busyKey === c.key || jobStatus === 'draft'"
               :title="jobStatus === 'draft' ? 'Mark the job ready first' : undefined"
-              @click="publishCareers"
+              @click="publishCareers(c.key)"
             >
               {{ isOutOfDate(c.key) ? 'Republish' : 'Publish' }}
             </button>
@@ -254,7 +314,7 @@ defineExpose({ reload: load })
               class="button secondary small-btn"
               type="button"
               :disabled="busyKey === c.key"
-              @click="unpublishCareers"
+              @click="unpublishCareers(c.key)"
             >
               Unpublish
             </button>
@@ -287,6 +347,11 @@ defineExpose({ reload: load })
 </template>
 
 <style scoped>
+.posting-form { display: grid; gap: 6px; margin-top: 8px; }
+.posting-form input, .posting-form textarea { min-width: 0; width: 100%; }
+.posting-form .dates { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.posting-form .dates input { width: auto; }
+.window { display: block; color: var(--muted); }
 .channel-row {
   display: flex;
   align-items: center;

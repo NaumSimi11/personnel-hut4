@@ -241,6 +241,51 @@ async function cancelDeparture(emp: Employment): Promise<void> {
   await load()
 }
 
+/** 0110 (spec 7.6): HR or the manager confirms the first day; pre-start becomes active. */
+async function confirmFirstDay(emp: Employment): Promise<void> {
+  const ok = await dialogs.confirmAction({
+    title: `${person.value?.full_name} started today?`,
+    hint: 'Their employment becomes active.',
+    confirmLabel: 'Confirm first day',
+  })
+  if (!ok) return
+  busy.value = true
+  error.value = null
+  const { error: err } = await supabase.rpc('confirm_first_day', { p_period_id: emp.id })
+  busy.value = false
+  if (err) {
+    console.error('confirm_first_day failed:', err.message)
+    error.value = err.message
+    return
+  }
+  notice.value = 'First day confirmed. The employment is active.'
+  await load()
+}
+
+/** 0108 (spec 8.4): a hire who never started — onboarding cancelled, IT and payroll told, the position reopened. */
+async function markDidNotStart(emp: Employment): Promise<void> {
+  const answer = await dialogs.askReason({
+    title: `${person.value?.full_name} did not start?`,
+    eyebrow: emp.job_title,
+    hint: 'Onboarding is cancelled, IT and payroll are told, the hire’s application is withdrawn and the position reopens for the runners-up.',
+    label: 'What happened (withdrew, did not show up, offer rescinded…)',
+    confirmLabel: 'Mark Did not start',
+  })
+  if (!answer) return
+  busy.value = true
+  error.value = null
+  const { data, error: err } = await supabase.rpc('mark_did_not_start', { p_period_id: emp.id, p_reason: answer.reason })
+  busy.value = false
+  if (err) {
+    console.error('mark_did_not_start failed:', err.message)
+    error.value = err.message
+    return
+  }
+  const runners = (data as { runners_up?: number } | null)?.runners_up ?? 0
+  notice.value = `Marked Did not start. ${runners ? `${runners} candidate${runners === 1 ? ' is' : 's are'} still in play on the job.` : 'No other candidates are in play on the job.'}`
+  await load()
+}
+
 /** The explicit act of becoming Former (complete_departure, migration 0010). */
 async function markAsFormer(emp: Employment): Promise<void> {
   const ok = await dialogs.confirmAction({
@@ -546,6 +591,26 @@ onMounted(async () => {
               @click="transferDialog?.open(emp, person.full_name)"
             >
               Transfer
+            </button>
+            <button
+              v-if="emp.status === 'pre_start' && emp.start_date <= todayDb() && (auth.can(emp.company_id, 'employment.edit') || emp.manager_id === auth.personId)"
+              class="button small-btn"
+              type="button"
+              :disabled="busy"
+              data-testid="confirm-first-day"
+              @click="confirmFirstDay(emp)"
+            >
+              Confirm first day
+            </button>
+            <button
+              v-if="emp.status === 'pre_start' && auth.can(emp.company_id, 'employment.edit')"
+              class="button secondary small-btn danger-text"
+              type="button"
+              :disabled="busy"
+              data-testid="did-not-start"
+              @click="markDidNotStart(emp)"
+            >
+              Did not start
             </button>
             <template v-if="canStartDeparture(emp)">
               <button

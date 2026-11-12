@@ -10,7 +10,11 @@ import JobOpeningsPanel from '@/components/hiring/JobOpeningsPanel.vue'
 import ApplicantsPanel from '@/components/hiring/ApplicantsPanel.vue'
 import TalentPoolPanel from '@/components/hiring/TalentPoolPanel.vue'
 import LabelsPanel from '@/components/hiring/LabelsPanel.vue'
+import MyApprovalsPanel from '@/components/hiring/MyApprovalsPanel.vue'
+import ApprovalRoutesPanel from '@/components/hiring/ApprovalRoutesPanel.vue'
+import HiringSettingsPanel from '@/components/hiring/HiringSettingsPanel.vue'
 import { useAuthStore } from '@/stores/auth'
+import { latestRoundSteps, stepLine, type TrailRow, type TrailStep } from '@/lib/approvalTrail'
 import { awaitingLabel } from '@/lib/companyOps'
 import { deliverNotifications, deliverySentence } from '@/lib/notificationsApi'
 import { todayDb } from '@/lib/compensation'
@@ -32,6 +36,7 @@ type HiringRequestRow = {
   target_start_date: string | null
   status: string
   change_reason: string | null
+  budget: unknown
   hold_reason: string | null
   hold_review_on: string | null
   cancel_reason: string | null
@@ -58,13 +63,16 @@ const dialogs = useDialogStore()
 // for pool holders; Labels renames the hiring vocabulary and is admin-only
 // (both lookups are admin_write). An unknown or hidden tab falls back to the
 // requests.
-type TabId = 'requests' | 'openings' | 'applicants' | 'pool' | 'labels'
+type TabId = 'requests' | 'approvals' | 'openings' | 'applicants' | 'pool' | 'labels' | 'routes' | 'settings'
 const TABS = computed<{ id: TabId; label: string }[]>(() => [
   { id: 'requests', label: 'Hiring requests' },
+  { id: 'approvals', label: 'My approvals' },
   { id: 'openings', label: 'Job openings' },
   { id: 'applicants', label: 'Applicants' },
   ...(auth.isAdmin || auth.canAnywhere('candidates.source') ? [{ id: 'pool' as const, label: 'Talent pool' }] : []),
   ...(auth.isAdmin ? [{ id: 'labels' as const, label: 'Labels' }] : []),
+  ...(auth.isAdmin || auth.canAnywhere('access.manage') ? [{ id: 'routes' as const, label: 'Approval routes' }] : []),
+  ...(auth.isAdmin || auth.canAnywhere('access.manage') ? [{ id: 'settings' as const, label: 'Settings' }] : []),
 ])
 const activeTab = computed<TabId>(() => {
   const raw = route.query.tab
@@ -176,7 +184,7 @@ async function load(): Promise<void> {
   const { data, error: err } = await supabase
     .from('hiring_requests')
     .select(
-      `id, title, reason, headcount, target_start_date, status, change_reason, hold_reason, hold_review_on, cancel_reason,
+      `id, title, reason, headcount, target_start_date, status, change_reason, budget, hold_reason, hold_review_on, cancel_reason,
        requested_by, hiring_manager_id, decided_at, company_id,
        company:companies(name),
        requester:people!hiring_requests_requested_by_fkey(full_name),
@@ -194,27 +202,25 @@ async function load(): Promise<void> {
       ...r,
       history: [...(r.history ?? [])].sort((a, b) => a.at.localeCompare(b.at)),
     }))
+    await loadTrails(requests.value.map((r) => r.id))
   }
   loading.value = false
 }
 
-type Decision = { status: 'approved' | 'rejected' | 'changes_requested'; change_reason?: string }
-
-async function performUpdate(row: HiringRequestRow, patch: Decision): Promise<void> {
+async function approve(row: HiringRequestRow): Promise<void> {
   actionError.value = null
   busyId.value = row.id
-  const { error: err } = await supabase.from('hiring_requests').update(patch).eq('id', row.id)
+  // The current step of the route (0104); the request is approved when the last step is.
+  const { data, error: err } = await supabase.rpc('decide_hiring_request', { p_request_id: row.id, p_decision: 'approved' })
   busyId.value = null
   if (err) {
+    console.error('decide_hiring_request failed:', err.message)
     actionError.value = friendlyDecisionError(err.message)
     return
   }
+  const done = (data as { subject_status?: string } | null)?.subject_status === 'approved'
   await load()
-}
-
-async function approve(row: HiringRequestRow): Promise<void> {
-  await performUpdate(row, { status: 'approved' })
-  if (!actionError.value) notice.value = `Approved. ${deliverySentence(await deliverNotifications())}`
+  notice.value = `${done ? 'Approved.' : 'Your step is approved; the next approver is told.'} ${deliverySentence(await deliverNotifications())}`
 }
 
 function requestChanges(row: HiringRequestRow): void {
@@ -230,6 +236,25 @@ async function onDecided(status: 'changes_requested' | 'rejected'): Promise<void
   void load()
   notice.value = `${status === 'changes_requested' ? 'Sent back with your note; the requester can revise and resubmit it.' : 'Request rejected.'} ${deliverySentence(await deliverNotifications())}`
 }
+// The approval route of each request (0104; spec 1.4): every step of the latest round.
+const trails = ref<Record<string, TrailStep[]>>({})
+async function loadTrails(ids: string[]): Promise<void> {
+  if (!ids.length) {
+    trails.value = {}
+    return
+  }
+  const { data, error: err } = await supabase
+    .from('approval_tasks')
+    .select('subject_id, round, position, label, status, comment, acted_at, approver:people!approval_tasks_approver_id_fkey(full_name), actor:people!approval_tasks_acted_by_fkey(full_name)')
+    .eq('subject_type', 'request')
+    .in('subject_id', ids)
+  if (err) {
+    console.error('Approval trail load failed:', err.message)
+    return
+  }
+  trails.value = latestRoundSteps((data ?? []) as unknown as TrailRow[])
+}
+
 const viewer = computed(() => ({ personId: auth.personId, can: (c: string, cap: string) => auth.can(c, cap) }))
 function actionsFor(row: HiringRequestRow) {
   return lifecycleActions(row, viewer.value)
@@ -374,6 +399,9 @@ onMounted(load)
 
     <JobOpeningsPanel v-if="activeTab === 'openings'" />
     <ApplicantsPanel v-else-if="activeTab === 'applicants'" />
+    <MyApprovalsPanel v-else-if="activeTab === 'approvals'" />
+    <ApprovalRoutesPanel v-else-if="activeTab === 'routes'" />
+    <HiringSettingsPanel v-else-if="activeTab === 'settings'" />
     <TalentPoolPanel v-else-if="activeTab === 'pool'" />
     <LabelsPanel v-else-if="activeTab === 'labels'" />
     <div v-else class="card">
@@ -409,7 +437,10 @@ onMounted(load)
               <p v-else-if="r.change_reason && r.status === 'rejected'" class="change-reason rejected">
                 <b>Rejected<template v-if="r.decider"> by {{ r.decider.full_name }}</template>:</b> {{ r.change_reason }}
               </p>
-              <p v-if="r.status === 'submitted'" class="awaiting">{{ awaitingLabel(approvers[r.company_id]) }}</p>
+              <p v-if="r.status === 'submitted' && !trails[r.id]?.length" class="awaiting">{{ awaitingLabel(approvers[r.company_id]) }}</p>
+              <ol v-if="trails[r.id]?.length" class="trail" :data-testid="`trail-${r.id}`">
+                <li v-for="st in trails[r.id]" :key="st.position" :class="`trail-${st.state}`">{{ stepLine(st) }}</li>
+              </ol>
               <p v-if="r.status === 'on_hold'" class="change-reason" :data-testid="`on-hold-${r.id}`">
                 <b>On hold<template v-if="r.hold_review_on"> · review {{ r.hold_review_on }}</template>:</b> {{ r.hold_reason }}
               </p>
@@ -438,6 +469,7 @@ onMounted(load)
               </button>
             </div>
             <div v-if="actionsFor(r).hold || actionsFor(r).resume || actionsFor(r).cancel" class="row-actions">
+              <button v-if="r.status === 'approved'" class="button secondary small-btn" type="button" :disabled="busyId === r.id" :data-testid="`amend-request-${r.id}`" @click="requestDialog?.openAmend(r)">Change</button>
               <button v-if="actionsFor(r).hold" class="button secondary small-btn" type="button" :disabled="busyId === r.id" :data-testid="`hold-request-${r.id}`" @click="hold(r)">Put on hold</button>
               <button v-if="actionsFor(r).resume" class="button small-btn" type="button" :disabled="busyId === r.id" :data-testid="`resume-request-${r.id}`" @click="resume(r)">Resume</button>
               <button v-if="actionsFor(r).cancel" class="button secondary small-btn danger-text" type="button" :disabled="busyId === r.id" :data-testid="`cancel-request-${r.id}`" @click="cancelIt(r)">Cancel request</button>
@@ -539,6 +571,10 @@ h1 { margin-bottom: 24px; }
 .row-text small { display: block; font-size: 11px; color: var(--muted); margin-top: 4px; }
 .change-reason { margin: 6px 0 0; font-size: 11px; color: var(--amber); }
 .awaiting { margin: 4px 0 0; font-size: 11px; color: var(--amber); }
+.trail { margin: 6px 0 0; padding-left: 18px; font-size: 11px; color: var(--muted); display: grid; gap: 2px; }
+.trail-waiting { color: var(--amber); font-weight: 600; }
+.trail-done { color: var(--green); }
+.trail-returned, .trail-stopped { color: var(--red, #b42318); }
 .row-actions { display: flex; gap: 7px; flex-wrap: wrap; }
 .small-btn { font-size: 11px; padding: 7px 11px; }
 .change-reason.rejected { background: #fbeeee; color: var(--red); }

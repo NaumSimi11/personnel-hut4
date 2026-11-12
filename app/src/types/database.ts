@@ -210,6 +210,54 @@ export type Database = {
           },
         ]
       }
+      approval_delegates: {
+        Row: { delegate_id: string; person_id: string; updated_at: string }
+        Insert: { delegate_id: string; person_id: string; updated_at?: string }
+        Update: { delegate_id?: string; person_id?: string; updated_at?: string }
+        Relationships: []
+      }
+      approval_routes: {
+        Row: { approver_id: string | null; capability: string | null; company_id: string; id: string; kind: string; label: string; position: number }
+        Insert: { approver_id?: string | null; capability?: string | null; company_id: string; id?: string; kind: string; label: string; position: number }
+        Update: { approver_id?: string | null; capability?: string | null; company_id?: string; id?: string; kind?: string; label?: string; position?: number }
+        Relationships: []
+      }
+      approval_tasks: {
+        Row: {
+          acted_at: string | null
+          acted_by: string | null
+          approver_id: string | null
+          capability: string | null
+          comment: string | null
+          company_id: string
+          created_at: string
+          id: string
+          label: string
+          position: number
+          round: number
+          status: string
+          subject_id: string
+          subject_type: string
+        }
+        Insert: { company_id: string; label: string; position: number; round: number; subject_id: string; subject_type: string; status?: string }
+        Update: { status?: string }
+        Relationships: [
+          {
+            foreignKeyName: "approval_tasks_approver_id_fkey"
+            columns: ["approver_id"]
+            isOneToOne: false
+            referencedRelation: "people"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "approval_tasks_acted_by_fkey"
+            columns: ["acted_by"]
+            isOneToOne: false
+            referencedRelation: "people"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       application_files: {
         Row: {
           application_id: string
@@ -335,10 +383,12 @@ export type Database = {
       }
       applications: {
         Row: {
+          after_fill: string | null
           candidate_id: string
           closed_at: string | null
           closed_reason: string | null
           company_id: string
+          credited_source_key: string | null
           created_at: string
           custom: Json
           employment_period_id: string | null
@@ -387,10 +437,12 @@ export type Database = {
           withdrawn_reason?: string | null
         }
         Update: {
+          after_fill?: string | null
           candidate_id?: string
           closed_at?: string | null
           closed_reason?: string | null
           company_id?: string
+          credited_source_key?: string | null
           created_at?: string
           custom?: Json
           employment_period_id?: string | null
@@ -1781,6 +1833,36 @@ export type Database = {
           },
         ]
       }
+      email_templates: {
+        Row: { body: string; company_id: string | null; id: string; kind: string; subject: string; updated_at: string }
+        Insert: { body: string; company_id?: string | null; id?: string; kind: string; subject: string; updated_at?: string }
+        Update: { body?: string; company_id?: string | null; kind?: string; subject?: string; updated_at?: string }
+        Relationships: []
+      }
+      hiring_settings: {
+        Row: { company_id: string | null; id: string; key: string; updated_at: string; value: number }
+        Insert: { company_id?: string | null; id?: string; key: string; updated_at?: string; value: number }
+        Update: { company_id?: string | null; key?: string; value?: number }
+        Relationships: []
+      }
+      offer_templates: {
+        Row: { benefits: string | null; bonus: string | null; company_id: string | null; conditions: string | null; id: string; name: string; notes: string | null }
+        Insert: { benefits?: string | null; bonus?: string | null; company_id?: string | null; conditions?: string | null; id?: string; name: string; notes?: string | null }
+        Update: { benefits?: string | null; bonus?: string | null; company_id?: string | null; conditions?: string | null; name?: string; notes?: string | null }
+        Relationships: []
+      }
+      pipeline_templates: {
+        Row: { company_id: string | null; id: string; name: string; skip_statuses: string[] }
+        Insert: { company_id?: string | null; id?: string; name: string; skip_statuses?: string[] }
+        Update: { company_id?: string | null; name?: string; skip_statuses?: string[] }
+        Relationships: []
+      }
+      rejection_reasons: {
+        Row: { archived_at: string | null; key: string; label: string; sort_order: number }
+        Insert: { archived_at?: string | null; key: string; label: string; sort_order?: number }
+        Update: { archived_at?: string | null; key?: string; label?: string; sort_order?: number }
+        Relationships: []
+      }
       employment_corrections: {
         Row: {
           company_id: string
@@ -2919,6 +3001,11 @@ export type Database = {
           published_by: string | null
           published_revision: number | null
           status: string
+          posting_text: string | null
+          posting_title: string | null
+          publish_from: string | null
+          publish_until: string | null
+          salary_display: string | null
           updated_at: string
           verified_by: string | null
         }
@@ -2932,6 +3019,11 @@ export type Database = {
           published_by?: string | null
           published_revision?: number | null
           status?: string
+          posting_text?: string | null
+          posting_title?: string | null
+          publish_from?: string | null
+          publish_until?: string | null
+          salary_display?: string | null
           updated_at?: string
           verified_by?: string | null
         }
@@ -2945,6 +3037,11 @@ export type Database = {
           published_by?: string | null
           published_revision?: number | null
           status?: string
+          posting_text?: string | null
+          posting_title?: string | null
+          publish_from?: string | null
+          publish_until?: string | null
+          salary_display?: string | null
           updated_at?: string
           verified_by?: string | null
         }
@@ -2979,6 +3076,20 @@ export type Database = {
           },
         ]
       }
+      job_team: {
+        Row: { added_by: string | null; created_at: string; job_id: string; person_id: string; role: string }
+        Insert: { added_by?: string | null; created_at?: string; job_id: string; person_id: string; role?: string }
+        Update: { role?: string }
+        Relationships: [
+          {
+            foreignKeyName: "job_team_person_id_fkey"
+            columns: ["person_id"]
+            isOneToOne: false
+            referencedRelation: "people"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       jobs: {
         Row: {
           closed_at: string | null
@@ -2996,6 +3107,7 @@ export type Database = {
           scorecard_criteria: Json
           screening_questions: Json
           status: string
+          skip_statuses: string[]
           status_before_hold: string | null
           title: string
           updated_at: string
@@ -3016,6 +3128,7 @@ export type Database = {
           scorecard_criteria?: Json
           screening_questions?: Json
           status?: string
+          skip_statuses?: string[]
           status_before_hold?: string | null
           title: string
           updated_at?: string
@@ -3036,6 +3149,7 @@ export type Database = {
           scorecard_criteria?: Json
           screening_questions?: Json
           status?: string
+          skip_statuses?: string[]
           status_before_hold?: string | null
           title?: string
           updated_at?: string
@@ -3737,6 +3851,15 @@ export type Database = {
           created_by: string | null
           decline_reason: string | null
           expires_on: string | null
+          in_band: boolean | null
+          band_note: string | null
+          returned_reason: string | null
+          answered_by_candidate_at: string | null
+          candidate_token: string | null
+          contract_file_id: string | null
+          contract_recorded_at: string | null
+          contract_recorded_by: string | null
+          contract_required: boolean
           extended_at: string | null
           id: string
           status: string
@@ -3752,6 +3875,15 @@ export type Database = {
           created_by?: string | null
           decline_reason?: string | null
           expires_on?: string | null
+          in_band?: boolean | null
+          band_note?: string | null
+          returned_reason?: string | null
+          answered_by_candidate_at?: string | null
+          candidate_token?: string | null
+          contract_file_id?: string | null
+          contract_recorded_at?: string | null
+          contract_recorded_by?: string | null
+          contract_required?: boolean
           extended_at?: string | null
           id?: string
           status?: string
@@ -3767,6 +3899,15 @@ export type Database = {
           created_by?: string | null
           decline_reason?: string | null
           expires_on?: string | null
+          in_band?: boolean | null
+          band_note?: string | null
+          returned_reason?: string | null
+          answered_by_candidate_at?: string | null
+          candidate_token?: string | null
+          contract_file_id?: string | null
+          contract_recorded_at?: string | null
+          contract_recorded_by?: string | null
+          contract_required?: boolean
           extended_at?: string | null
           id?: string
           status?: string
@@ -5496,8 +5637,56 @@ export type Database = {
           id: string
         }[]
       }
+      amend_hiring_request: {
+        Args: { p: Json; p_request_id: string }
+        Returns: Json
+      }
+      confirm_first_day: {
+        Args: { p_period_id: string }
+        Returns: Json
+      }
+      decide_after_fill: {
+        Args: { p_action: string; p_application_ids: string[] }
+        Returns: Json
+      }
+      set_reason_code: {
+        Args: { p_application_ids: string[]; p_reason_code: string }
+        Returns: Json
+      }
+      apply_internally: {
+        Args: { p_job_id: string; p_note?: string | null }
+        Returns: Json
+      }
+      candidate_flags: {
+        Args: { p_candidate_id: string }
+        Returns: Json
+      }
+      internal_jobs: {
+        Args: Record<PropertyKey, never>
+        Returns: Json
+      }
+      job_positions: {
+        Args: { p_job_ids: string[] }
+        Returns: { filled: number; headcount: number; job_id: string; open: number }[]
+      }
+      mark_did_not_start: {
+        Args: { p_period_id: string; p_reason: string }
+        Returns: Json
+      }
       cancel_hiring_request: {
         Args: { p_reason: string; p_request_id: string }
+        Returns: Json
+      }
+      decide_approval: {
+        Args: { p_comment?: string | null; p_decision: string; p_task_id: string }
+        Returns: Json
+      }
+      decide_hiring_request: {
+        Args: { p_comment?: string | null; p_decision: string; p_request_id: string }
+        Returns: Json
+      }
+      my_approvals: {
+        Args: Record<PropertyKey, never>
         Returns: Json
       }
       email_candidates: {
@@ -5506,6 +5695,10 @@ export type Database = {
       }
       hold_hiring_request: {
         Args: { p_reason: string; p_request_id: string; p_review_on?: string | null }
+        Returns: Json
+      }
+      record_signed_contract: {
+        Args: { p_file_id: string | null; p_offer_id: string }
         Returns: Json
       }
       resume_hiring_request: {

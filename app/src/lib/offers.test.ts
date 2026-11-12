@@ -20,6 +20,9 @@ describe('offerTermsInput', () => {
         startDate: '2026-11-02',
         employmentType: 'full_time',
         notes: 'Laptop provided',
+        bonus: '',
+        benefits: '',
+        conditions: '',
       })
     }
   })
@@ -42,6 +45,9 @@ describe('termsFromOffer', () => {
       startDate: '2026-11-02',
       employmentType: 'full_time',
       notes: '',
+      bonus: '',
+      benefits: '',
+      conditions: '',
     })
     expect(termsFromOffer(null).salary).toBe('')
   })

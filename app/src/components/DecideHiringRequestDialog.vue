@@ -46,15 +46,16 @@ async function submit(): Promise<void> {
   }
   busy.value = true
   const status = mode.value === 'changes' ? 'changes_requested' : 'rejected'
-  const { data, error: err } = await supabase
-    .from('hiring_requests')
-    .update({ status, change_reason: text })
-    .eq('id', target.value.id)
-    .select('id')
-    .maybeSingle()
+  // The current step of the request's approval route decides (0104).
+  const { error: err } = await supabase.rpc('decide_hiring_request', {
+    p_request_id: target.value.id,
+    p_decision: status,
+    p_comment: text,
+  })
   busy.value = false
-  if (err || !data) {
-    error.value = friendly(err?.message ?? 'row-level security')
+  if (err) {
+    console.error('decide_hiring_request failed:', err.message)
+    error.value = friendly(err.message)
     return
   }
   dialog.value?.close()

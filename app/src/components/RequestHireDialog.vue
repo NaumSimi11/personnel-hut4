@@ -5,6 +5,7 @@ import { cleanJobTitle, jobTitleProblem } from '@/lib/jobTitle'
 import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/stores/auth'
 import { deliverNotifications, deliverySentence } from '@/lib/notificationsApi'
+import { bandFields, parseSalaryBand } from '@/lib/salaryBand'
 
 /**
  * Request a new hire — or revise one that was sent back (plan 042). A new
@@ -22,6 +23,7 @@ export type RevisionTarget = {
   target_start_date: string | null
   hiring_manager_id: string | null
   change_reason: string | null
+  budget?: unknown
 }
 
 const emit = defineEmits<{ created: [notice: string | null]; revised: [notice: string | null] }>()
@@ -37,6 +39,9 @@ const form = ref({
   headcount: 1,
   targetStartDate: '',
   hiringManagerId: '',
+  bandMin: '',
+  bandMax: '',
+  bandCurrency: 'EUR',
 })
 const error = ref<string | null>(null)
 const busy = ref(false)
@@ -71,13 +76,24 @@ function open(): void {
     headcount: 1,
     targetStartDate: '',
     hiringManagerId: '',
+    ...bandFields(null),
   }
   dialog.value?.showModal()
+}
+
+// 0110 (spec 10.4): an approved request. A new start date or hiring manager
+// saves as it is; a change to title, reason, headcount or band goes back
+// through the approval route.
+const amending = ref(false)
+function openAmend(target: RevisionTarget): void {
+  openRevision(target)
+  amending.value = true
 }
 
 /** Prefilled with the request that was sent back; saving resubmits it. */
 function openRevision(target: RevisionTarget): void {
   error.value = null
+  amending.value = false
   revising.value = target
   form.value = {
     companyId: target.company_id,
@@ -86,10 +102,11 @@ function openRevision(target: RevisionTarget): void {
     headcount: target.headcount,
     targetStartDate: target.target_start_date ?? '',
     hiringManagerId: target.hiring_manager_id ?? '',
+    ...bandFields(target.budget),
   }
   dialog.value?.showModal()
 }
-defineExpose({ open, openRevision })
+defineExpose({ open, openRevision, openAmend })
 
 async function submit(): Promise<void> {
   error.value = null
@@ -98,8 +115,31 @@ async function submit(): Promise<void> {
     error.value = parsed.error.issues[0]?.message ?? 'Check the form.'
     return
   }
+  const band = parseSalaryBand(form.value.bandMin, form.value.bandMax, form.value.bandCurrency)
+  if (band.error) {
+    error.value = band.error
+    return
+  }
   busy.value = true
   try {
+    if (revising.value && amending.value) {
+      const { data, error: rpcErr } = await supabase.rpc('amend_hiring_request', {
+        p_request_id: revising.value.id,
+        p: {
+          title: parsed.data.title,
+          reason: parsed.data.reason || null,
+          headcount: parsed.data.headcount,
+          target_start_date: parsed.data.targetStartDate || null,
+          hiring_manager_id: parsed.data.hiringManagerId || null,
+          budget: band.band,
+        },
+      })
+      if (rpcErr) throw new Error(friendly(rpcErr.message))
+      dialog.value?.close()
+      const again = (data as { reapproval?: boolean } | null)?.reapproval
+      emit('revised', again ? `Back in approval — the change needs the route again. ${deliverySentence(await deliverNotifications())}` : 'Saved. No new approval was needed.')
+      return
+    }
     if (revising.value) {
       const { data, error: updErr } = await supabase
         .from('hiring_requests')
@@ -109,6 +149,7 @@ async function submit(): Promise<void> {
           headcount: parsed.data.headcount,
           target_start_date: parsed.data.targetStartDate || null,
           hiring_manager_id: parsed.data.hiringManagerId || null,
+          budget: band.band,
           status: 'submitted',
         })
         .eq('id', revising.value.id)
@@ -126,6 +167,7 @@ async function submit(): Promise<void> {
       headcount: parsed.data.headcount,
       target_start_date: parsed.data.targetStartDate || null,
       hiring_manager_id: parsed.data.hiringManagerId || null,
+      budget: band.band,
       requested_by: auth.personId,
       status: 'submitted',
     }).select('id').maybeSingle()
@@ -177,12 +219,14 @@ onMounted(async () => {
   <dialog ref="dialog" class="request-hire" aria-labelledby="request-hire-title">
     <form class="body" novalidate @submit.prevent="submit">
       <div class="eyebrow">Recruitment</div>
-      <h2 id="request-hire-title">{{ revising ? 'Revise and resubmit.' : 'Request a hire.' }}</h2>
-      <p v-if="revising?.change_reason" class="change-reason" data-testid="revision-reason">
+      <h2 id="request-hire-title">{{ amending ? 'Change the approved request.' : revising ? 'Revise and resubmit.' : 'Request a hire.' }}</h2>
+      <p v-if="!amending && revising?.change_reason" class="change-reason" data-testid="revision-reason">
         <b>Changes requested:</b> {{ revising.change_reason }}
       </p>
       <p class="hint">
-        {{ revising
+        {{ amending
+          ? 'A new start date or hiring manager saves straight away. Changing the title, reason, headcount or salary band sends it back for approval.'
+          : revising
           ? 'Edit the request below; saving sends it back to the approval queue for another review.'
           : 'This starts the request stage. An approver with the right capability decides it next — you cannot decide your own request.' }}
       </p>
@@ -201,6 +245,14 @@ onMounted(async () => {
           <label for="rh-headcount">Headcount</label>
           <input id="rh-headcount" v-model="form.headcount" type="number" min="1" required />
         </div>
+        <fieldset class="field band">
+          <legend>Salary band (optional) — offers outside it also go to Finance and the Director</legend>
+          <div class="band-row">
+            <input id="rh-band-min" v-model="form.bandMin" inputmode="decimal" placeholder="From" aria-label="Band from" />
+            <input id="rh-band-max" v-model="form.bandMax" inputmode="decimal" placeholder="To" aria-label="Band to" />
+            <input id="rh-band-currency" v-model="form.bandCurrency" maxlength="3" aria-label="Currency" class="currency" />
+          </div>
+        </fieldset>
         <div class="field">
           <label for="rh-start">Target start date (optional)</label>
           <input id="rh-start" v-model="form.targetStartDate" type="date" />
@@ -222,7 +274,7 @@ onMounted(async () => {
       <div class="actions">
         <button class="button secondary" type="button" @click="dialog?.close()">Cancel</button>
         <button class="button" type="submit" :disabled="busy">
-          {{ busy ? 'Saving…' : revising ? 'Resubmit request' : 'Request hire' }}
+          {{ busy ? 'Saving…' : amending ? 'Save changes' : revising ? 'Resubmit request' : 'Request hire' }}
         </button>
       </div>
     </form>
@@ -230,6 +282,11 @@ onMounted(async () => {
 </template>
 
 <style scoped>
+.band { border: 0; padding: 0; margin: 0; display: grid; gap: 6px; }
+.band legend { font-size: 0.85rem; color: var(--muted); padding: 0; }
+.band-row { display: flex; gap: 8px; flex-wrap: wrap; }
+.band-row input { flex: 1 1 120px; min-width: 0; }
+.band-row .currency { flex: 0 0 70px; text-transform: uppercase; }
 .request-hire {
   border: 0;
   border-radius: 15px;

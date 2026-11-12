@@ -283,6 +283,18 @@ const viaLabel = computed(() => {
   return sourceLabels.value[a.source_key ?? ''] ?? channelLabels.value[a.source_channel_key ?? ''] ?? 'added by hand'
 })
 const contactRule = computed(() => (application.value?.candidate ? contactBadge(application.value.candidate, todayDb()) : ''))
+
+// 0108 (spec 4.3): a former employee, and the candidate's other applications.
+const flags = ref<{ former_employee: boolean; other_applications: number } | null>(null)
+async function loadFlags(candidateId: string | undefined): Promise<void> {
+  if (!candidateId) return
+  const { data, error: err } = await supabase.rpc('candidate_flags', { p_candidate_id: candidateId })
+  if (err) {
+    console.error('candidate_flags failed:', err.message)
+    return
+  }
+  flags.value = (data as { former_employee: boolean; other_applications: number } | null) ?? null
+}
 // The Zoho import never creates a person: a hired application without an
 // employment record asks HR to confirm the proposed one (employment.edit).
 const importedHire = computed<ZohoHire | null>(() => {
@@ -363,6 +375,7 @@ async function load(): Promise<void> {
     return
   }
   application.value = appRes.data as Application
+  void loadFlags(application.value.candidate?.id)
   onboarding.value = null
   onboardingError.value = false
   if (application.value.stage_key === 'hired' && application.value.employment_period_id) {
@@ -559,6 +572,10 @@ onMounted(() => {
           <span v-if="closure" class="badge sub-badge" data-testid="closure-badge">{{ closure }}</span>
           <span v-else-if="subStatusLabel" class="badge sub-badge" data-testid="sub-badge">{{ subStatusLabel }}</span>
           <span v-if="notRespondingNow" class="badge amber" data-testid="not-responding-badge">Not responding</span>
+          <span v-if="flags?.former_employee" class="badge amber" data-testid="former-employee-badge">Former employee</span>
+          <span v-if="flags?.other_applications" class="badge" data-testid="other-applications-badge">
+            {{ flags.other_applications }} other application{{ flags.other_applications === 1 ? '' : 's' }}
+          </span>
           <span
             v-if="contactRule"
             class="badge contact-badge"

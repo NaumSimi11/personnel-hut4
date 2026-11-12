@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
+import { latestRoundSteps, stepLine, type TrailRow, type TrailStep } from '@/lib/approvalTrail'
 import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/stores/auth'
 import { useDialogStore } from '@/stores/dialogs'
@@ -33,6 +34,12 @@ type Offer = {
   accepted_at: string | null
   extended_at: string | null
   expires_on: string | null
+  in_band: boolean | null
+  band_note: string | null
+  returned_reason: string | null
+  answered_by_candidate_at: string | null
+  contract_required: boolean
+  contract_file_id: string | null
   decline_reason: string | null
   created_at: string
   author: { full_name: string } | null
@@ -94,7 +101,7 @@ async function load(): Promise<void> {
     supabase
       .from('offers')
       .select(
-        `id, status, terms, created_by, approved_by, accepted_at, extended_at, expires_on, decline_reason, created_at,
+        `id, status, terms, created_by, approved_by, accepted_at, extended_at, expires_on, in_band, band_note, returned_reason, answered_by_candidate_at, contract_required, contract_file_id, decline_reason, created_at,
          author:people!offers_created_by_fkey(full_name),
          approver:people!offers_approved_by_fkey(full_name)`,
       )
@@ -113,7 +120,31 @@ async function load(): Promise<void> {
   loading.value = false
 }
 
+// 0110 (spec 6.1): offer templates fill the candidate-facing lines; every line stays editable.
+const offerTemplates = ref<{ id: string; name: string; bonus: string | null; benefits: string | null; conditions: string | null; notes: string | null; company_id: string | null }[]>([])
+async function loadOfferTemplates(): Promise<void> {
+  const { data, error: err } = await supabase
+    .from('offer_templates')
+    .select('id, name, bonus, benefits, conditions, notes, company_id')
+    .or(`company_id.is.null,company_id.eq.${props.companyId}`)
+    .order('name')
+  if (err) console.error('Offer templates load failed:', err.message)
+  offerTemplates.value = data ?? []
+}
+function applyTemplate(id: string): void {
+  const t = offerTemplates.value.find((x) => x.id === id)
+  if (!t) return
+  form.value = {
+    ...form.value,
+    bonus: t.bonus ?? form.value.bonus ?? '',
+    benefits: t.benefits ?? form.value.benefits ?? '',
+    conditions: t.conditions ?? form.value.conditions ?? '',
+    notes: form.value.notes || t.notes || '',
+  }
+}
+
 function startEditing(): void {
+  void loadOfferTemplates()
   form.value = termsFromOffer(live.value?.terms ?? null)
   editing.value = true
   error.value = null
@@ -154,6 +185,67 @@ async function saveTerms(): Promise<void> {
     }
   }
   editing.value = false
+  await load()
+}
+
+// 0104: the offer's approval steps, latest round.
+const steps = ref<TrailStep[]>([])
+async function loadSteps(offerId: string | undefined): Promise<void> {
+  if (!offerId) {
+    steps.value = []
+    return
+  }
+  const { data, error: err } = await supabase
+    .from('approval_tasks')
+    .select('subject_id, round, position, label, status, comment, acted_at, approver:people!approval_tasks_approver_id_fkey(full_name), actor:people!approval_tasks_acted_by_fkey(full_name)')
+    .eq('subject_type', 'offer')
+    .eq('subject_id', offerId)
+  if (err) {
+    console.error('Offer approval steps load failed:', err.message)
+    return
+  }
+  steps.value = latestRoundSteps((data ?? []) as unknown as TrailRow[])[offerId] ?? []
+}
+watch(
+  () => live.value?.id + ':' + live.value?.status,
+  () => void loadSteps(live.value?.id),
+)
+
+// 0106: an accepted offer needs its signed contract (one of the application's files) before the hire.
+const files = ref<{ id: string; original_name: string }[]>([])
+const contractPick = ref('')
+async function loadFiles(): Promise<void> {
+  const { data, error: err } = await supabase
+    .from('application_files')
+    .select('id, original_name')
+    .eq('application_id', props.applicationId)
+    .order('created_at', { ascending: false })
+  if (err) {
+    console.error('Application files load failed:', err.message)
+    return
+  }
+  files.value = data ?? []
+}
+watch(
+  () => live.value?.status,
+  (status) => {
+    if (status === 'accepted') {
+      contractPick.value = live.value?.contract_file_id ?? ''
+      void loadFiles()
+    }
+  },
+  { immediate: true },
+)
+async function saveContract(o: Offer): Promise<void> {
+  busy.value = true
+  error.value = null
+  const { error: err } = await supabase.rpc('record_signed_contract', { p_offer_id: o.id, p_file_id: contractPick.value || null })
+  busy.value = false
+  if (err) {
+    console.error('record_signed_contract failed:', err.message)
+    error.value = err.message
+    return
+  }
   await load()
 }
 
@@ -267,6 +359,25 @@ defineExpose({ reload: load, liveTerms: () => (live.value ? terms(live.value) : 
         </div>
       </div>
       <div class="field">
+        <label for="offer-template">Start from a template</label>
+        <select id="offer-template" :value="''" @change="applyTemplate(($event.target as HTMLSelectElement).value)">
+          <option value="">Pick a template…</option>
+          <option v-for="t in offerTemplates" :key="t.id" :value="t.id">{{ t.name }}</option>
+        </select>
+      </div>
+      <div class="field">
+        <label for="offer-bonus">Bonus (shown to the candidate)</label>
+        <input id="offer-bonus" v-model="form.bonus" maxlength="300" />
+      </div>
+      <div class="field">
+        <label for="offer-benefits">Benefits (shown to the candidate)</label>
+        <textarea id="offer-benefits" v-model="form.benefits" rows="2" maxlength="2000"></textarea>
+      </div>
+      <div class="field">
+        <label for="offer-conditions">Conditions (shown to the candidate)</label>
+        <textarea id="offer-conditions" v-model="form.conditions" rows="2" maxlength="2000"></textarea>
+      </div>
+      <div class="field">
         <label for="offer-notes">Notes (internal)</label>
         <textarea id="offer-notes" v-model="form.notes" rows="2" maxlength="1000"></textarea>
       </div>
@@ -303,6 +414,26 @@ defineExpose({ reload: load, liveTerms: () => (live.value ? terms(live.value) : 
             <template v-if="live.extended_at"> · extended {{ new Date(live.extended_at).toLocaleDateString() }}</template>
             <template v-if="live.accepted_at"> · accepted {{ new Date(live.accepted_at).toLocaleDateString() }}</template>
           </small>
+          <small v-if="live.band_note" :class="{ 'band-out': live.in_band === false }" data-testid="offer-band">{{ live.band_note }}</small>
+          <small v-if="live.status === 'draft' && live.returned_reason" class="band-out" data-testid="offer-returned">Sent back: {{ live.returned_reason }}</small>
+          <ol v-if="steps.length && ['in_approval', 'approved', 'extended'].includes(live.status)" class="offer-steps" data-testid="offer-steps">
+            <li v-for="st in steps" :key="st.position">{{ stepLine(st) }}</li>
+          </ol>
+          <small v-if="live.answered_by_candidate_at" data-testid="offer-answered">
+            Answered by the candidate {{ new Date(live.answered_by_candidate_at).toLocaleDateString() }}
+          </small>
+          <div v-if="live.status === 'accepted' && live.contract_required" class="contract" data-testid="offer-contract">
+            <template v-if="canReview">
+              <label for="offer-contract">Signed contract</label>
+              <select id="offer-contract" v-model="contractPick" :disabled="busy">
+                <option value="">Not received yet</option>
+                <option v-for="f in files" :key="f.id" :value="f.id">{{ f.original_name }}</option>
+              </select>
+              <button class="button secondary small-btn" type="button" :disabled="busy || contractPick === (live.contract_file_id ?? '')" @click="saveContract(live)">Save</button>
+            </template>
+            <small v-if="!live.contract_file_id" class="band-out">Upload the signed contract under Files and pick it here — the hire waits for it.</small>
+            <small v-else>Signed contract recorded.</small>
+          </div>
           <small v-if="live.status === 'extended'" class="expiry" data-testid="offer-expiry">
             <template v-if="canReview">
               <label for="offer-expires">Expires</label>
@@ -352,6 +483,9 @@ defineExpose({ reload: load, liveTerms: () => (live.value ? terms(live.value) : 
 
 <style scoped>
 .expiry { display: inline-flex; align-items: center; gap: 6px; }
+.band-out { color: var(--amber); }
+.contract { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; font-size: 12px; }
+.offer-steps { margin: 4px 0 0; padding-left: 18px; font-size: 12px; color: var(--muted); }
 .terms-form { padding: 16px 24px 18px; border-top: 1px solid var(--line); background: #fafbf9; }
 .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(190px, 100%), 1fr)); gap: 0 16px; }
 @media (max-width: 640px) { .grid { grid-template-columns: 1fr; } }

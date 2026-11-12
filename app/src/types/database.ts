@@ -2647,6 +2647,7 @@ export type Database = {
           created_at: string
           custom: Json
           decided_at: string | null
+          department_id: string | null
           decided_by: string | null
           headcount: number
           hiring_manager_id: string | null
@@ -2669,6 +2670,7 @@ export type Database = {
           created_at?: string
           custom?: Json
           decided_at?: string | null
+          department_id?: string | null
           decided_by?: string | null
           headcount?: number
           hiring_manager_id?: string | null
@@ -2691,6 +2693,7 @@ export type Database = {
           created_at?: string
           custom?: Json
           decided_at?: string | null
+          department_id?: string | null
           decided_by?: string | null
           headcount?: number
           hiring_manager_id?: string | null
@@ -5630,6 +5633,10 @@ export type Database = {
         }[]
       }
       handover_fields: { Args: never; Returns: Json }
+      hiring_dashboard: {
+        Args: { p_company_id: string; p_from: string; p_to: string }
+        Returns: Json
+      }
       hiring_managers: {
         Args: { p_company_id: string }
         Returns: {

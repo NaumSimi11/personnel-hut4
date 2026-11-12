@@ -6,7 +6,7 @@ import { expect, test } from '@playwright/test'
  * hand, puts the CV on their record, adds them to a job from the record,
  * finds them again from the pool tab with their latest application, sets
  * the "never contact again" rule, and sees the job-side picker refuse to
- * offer them. A sourced application lands on Screening / Associated (plan
+ * offer them. A sourced application lands on Screening / sourced (plan
  * 075's stages, 0095's statuses). Seeds two open Snowball jobs with the service client; cleans
  * rows and the candidate/<id>/ objects before and after.
  */
@@ -160,7 +160,7 @@ test('add to pool → CV on the record → add to job → found in the pool → 
   await expect(page).toHaveURL(/\/hiring\/applications\/[0-9a-f-]{36}$/)
   await expect(page.getByRole('heading', { name: PERSON_NAME })).toBeVisible()
   await expect(page.locator('.stage-badge')).toHaveText('Screening')
-  await expect(page.getByTestId('sub-badge')).toHaveText('Associated')
+  await expect(page.getByTestId('sub-badge')).toHaveText('sourced')
   const { data: apps } = await db
     .from('applications')
     .select('id, job_id, source_key, stage_key, sub_status_key, in_play')

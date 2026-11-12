@@ -10217,4 +10217,26 @@ do $$ begin
     '0110: overdue approvers are reminded';
 end $$;
 
+-- --------------------------------------------------------- dashboard (0111)
+set app.test_uid = '00000000-0000-0000-0000-000000000004';  -- Ada
+set role authenticated;
+do $$
+declare r jsonb := public.hiring_dashboard('10000000-0000-0000-0000-00000000000a', current_date - 365, current_date);
+begin
+  assert jsonb_typeof(r->'open_requests') = 'array', '0111: open requests listed: ' || r::text;
+  assert (r->'time_to_fill') ? 'median_days' and (r->'offers') ? 'rate', '0111: fill time and offer rate present';
+end $$;
+reset role;
+set app.test_uid = '00000000-0000-0000-0000-000000000003';  -- Omar, no jobs.view
+set role authenticated;
+do $$ begin
+  begin
+    perform public.hiring_dashboard('10000000-0000-0000-0000-00000000000a', current_date - 30, current_date);
+    assert false, '0111: needs jobs.view';
+  exception when insufficient_privilege then null;
+  end;
+end $$;
+reset role;
+set app.test_uid = '';
+
 select 'SMOKE TESTS PASSED' as result;

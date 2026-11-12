@@ -161,7 +161,7 @@ test('approved request → prepare job → candidate pipeline → confirm hire',
   // Step 4: advance Screening -> Interview -> Offered, each on its stage's first open status.
   await appRow.getByRole('button', { name: 'Move to interview' }).click()
   await expect(appRow.locator('.badge')).toHaveText('Interview')
-  await expect(appRow.getByTestId('sub-badge')).toHaveText('Interview-to-be-Scheduled')
+  await expect(appRow.getByTestId('sub-badge')).toHaveText('interview_to_schedule')
   await appRow.getByRole('button', { name: 'Prepare offer' }).click()
   await expect(appRow.locator('.badge')).toHaveText('Offered')
   await expect(appRow.getByTestId('sub-badge')).toHaveText('To-be-Offered')

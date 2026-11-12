@@ -26,12 +26,13 @@ const QUIET_DAYS = 31
 const DAY_MS = 86_400_000
 
 // Zoho's wording, as migration 0095 ships it.
+// HR's statuses (0098) are labelled by their keys until HR renames them on Hiring → Labels.
 const LABEL = {
-  sourced: 'Associated',
-  contactAttempted: 'Attempted to Contact',
-  contacted: 'Contacted',
-  interested: 'Interested',
-  interviewFirst: 'Interview-to-be-Scheduled',
+  sourced: 'sourced',
+  contactAttempted: 'contacted',
+  contacted: 'contacted',
+  interested: 'interested',
+  interviewFirst: 'interview_to_schedule',
 } as const
 
 function serviceClient() {
@@ -203,7 +204,7 @@ test('sub-status badges → bulk Set status → not-responding filter → the ti
   await expect(dialog.getByTestId('outreach-sub-contacted')).toBeVisible()
   await expect(dialog.getByTestId('outreach-sub-interview_to_schedule')).toBeVisible()
   await expect(dialog.getByTestId('outreach-sub-hired')).toHaveCount(0)
-  await dialog.getByTestId('outreach-sub-contact_attempted').check()
+  await dialog.getByTestId('outreach-sub-contacted').check()
   await dialog.getByTestId('outreach-note').fill(VOICEMAIL_NOTE)
   await dialog.getByTestId('outreach-save').click()
   await expect(dialog).toBeHidden()
@@ -223,15 +224,15 @@ test('sub-status badges → bulk Set status → not-responding filter → the ti
   for (const e of bulkEvents ?? []) {
     expect(e.body).toBe(VOICEMAIL_NOTE)
     expect(e.from_sub_status_key).toBe('sourced')
-    expect(e.to_sub_status_key).toBe('contact_attempted')
+    expect(e.to_sub_status_key).toBe('contacted')
     expect(e.actor_id).toBeTruthy()
   }
   const { data: afterBulk } = await db
     .from('applications')
     .select('id, stage_key, sub_status_key')
     .in('id', [appIds.Ana, appIds.Ben, appIds.Cal])
-  expect(afterBulk?.find((a) => a.id === appIds.Ana)?.sub_status_key).toBe('contact_attempted')
-  expect(afterBulk?.find((a) => a.id === appIds.Ben)?.sub_status_key).toBe('contact_attempted')
+  expect(afterBulk?.find((a) => a.id === appIds.Ana)?.sub_status_key).toBe('contacted')
+  expect(afterBulk?.find((a) => a.id === appIds.Ben)?.sub_status_key).toBe('contacted')
   expect(afterBulk?.find((a) => a.id === appIds.Cal)?.sub_status_key).toBe('sourced')
   expect((afterBulk ?? []).every((a) => a.stage_key === 'screening')).toBe(true)
 

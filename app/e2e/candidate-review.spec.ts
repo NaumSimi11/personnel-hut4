@@ -221,22 +221,24 @@ test('candidate page: files behind signed links, screening answers, decision, no
   await page.getByRole('dialog').locator('#handoff-due').fill('2030-01-22')
   await page.getByRole('dialog').getByRole('button', { name: 'Save outcome and next step' }).click()
   await expect(page.locator('.stage-badge')).toHaveText('Interview')
-  await expect(page.getByTestId('sub-badge')).toHaveText('Interview-to-be-Scheduled')
+  await expect(page.getByTestId('sub-badge')).toHaveText('interview_to_schedule')
   await page.locator('.decision-panel').getByRole('button', { name: 'Reject', exact: true }).click()
   const dialog = page.getByTestId('reject-dialog')
   // Only statuses whose outcome is Rejected are offered; nothing picked is refused.
   await expect(dialog.getByTestId('reject-status-rejected_by_hr')).toBeVisible()
-  await expect(dialog.getByTestId('reject-status-candidate_withdrew')).toHaveCount(0)
+  await expect(dialog.getByTestId('reject-status-withdrawn')).toHaveCount(0)
   await dialog.getByRole('button', { name: 'Reject application' }).click()
   await expect(dialog.getByText('Pick why the application is rejected.')).toBeVisible()
   await dialog.getByTestId('reject-status-rejected_by_hr').check()
+  // 0109: a rejection carries a reason code.
+  await dialog.getByTestId('reject-code').selectOption('skills')
   await dialog.locator('#reject-reason').fill('Not enough scheduling experience for this role.')
   await dialog.getByRole('button', { name: 'Reject application' }).click()
   await expect(dialog).not.toBeVisible()
   await expect(page.locator('.stage-badge')).toHaveText('Interview')
   await expect(page.getByTestId('sub-badge')).toHaveText('Rejected by HR')
   await expect(
-    timeline.locator('.event-row', { hasText: 'Status: Interview-to-be-Scheduled → Rejected by HR · Not enough scheduling experience' }),
+    timeline.locator('.event-row', { hasText: 'Status: interview_to_schedule → rejected_by_hr · Not enough scheduling experience' }),
   ).toBeVisible()
 
   const { data: rejected } = await db

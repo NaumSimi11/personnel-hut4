@@ -3,6 +3,7 @@ import { computed, onMounted, ref, watch } from 'vue'
 import { supabase } from '@/lib/supabase'
 import CompanyFilter from '@/components/CompanyFilter.vue'
 import RecruitmentTiming from '@/components/reports/RecruitmentTiming.vue'
+import HiringDashboard from '@/components/reports/HiringDashboard.vue'
 import { useAuthStore } from '@/stores/auth'
 import {
   STAGE_HEADER,
@@ -249,6 +250,7 @@ watch([companyId, () => range.value.from, () => range.value.to], load)
         </div>
 
         <RecruitmentTiming :company-id="companyId" :from="range.from" :to="range.to" />
+        <HiringDashboard :company-id="companyId" :from="range.from" :to="range.to" />
       </div>
     </template>
   </div>

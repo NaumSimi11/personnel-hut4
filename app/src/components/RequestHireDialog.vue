@@ -6,6 +6,7 @@ import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/stores/auth'
 import { deliverNotifications, deliverySentence } from '@/lib/notificationsApi'
 import { bandFields, parseSalaryBand } from '@/lib/salaryBand'
+import { loadCompanyStructure } from '@/lib/companyStructure'
 
 /**
  * Request a new hire — or revise one that was sent back (plan 042). A new
@@ -24,6 +25,7 @@ export type RevisionTarget = {
   hiring_manager_id: string | null
   change_reason: string | null
   budget?: unknown
+  department_id?: string | null
 }
 
 const emit = defineEmits<{ created: [notice: string | null]; revised: [notice: string | null] }>()
@@ -42,7 +44,23 @@ const form = ref({
   bandMin: '',
   bandMax: '',
   bandCurrency: 'EUR',
+  departmentId: '',
 })
+// 0111: the department a request hires for, for the dashboard.
+const departments = ref<{ id: string; name: string }[]>([])
+watch(
+  () => form.value.companyId,
+  async (id) => {
+    departments.value = []
+    if (!id) return
+    try {
+      departments.value = (await loadCompanyStructure(id)).departments
+    } catch (e) {
+      console.error('Departments load failed:', e instanceof Error ? e.message : e)
+    }
+    if (!departments.value.some((d) => d.id === form.value.departmentId)) form.value = { ...form.value, departmentId: '' }
+  },
+)
 const error = ref<string | null>(null)
 const busy = ref(false)
 const revising = ref<RevisionTarget | null>(null)
@@ -76,6 +94,7 @@ function open(): void {
     headcount: 1,
     targetStartDate: '',
     hiringManagerId: '',
+    departmentId: '',
     ...bandFields(null),
   }
   dialog.value?.showModal()
@@ -102,6 +121,7 @@ function openRevision(target: RevisionTarget): void {
     headcount: target.headcount,
     targetStartDate: target.target_start_date ?? '',
     hiringManagerId: target.hiring_manager_id ?? '',
+    departmentId: target.department_id ?? '',
     ...bandFields(target.budget),
   }
   dialog.value?.showModal()
@@ -132,6 +152,7 @@ async function submit(): Promise<void> {
           target_start_date: parsed.data.targetStartDate || null,
           hiring_manager_id: parsed.data.hiringManagerId || null,
           budget: band.band,
+          department_id: form.value.departmentId || null,
         },
       })
       if (rpcErr) throw new Error(friendly(rpcErr.message))
@@ -150,6 +171,7 @@ async function submit(): Promise<void> {
           target_start_date: parsed.data.targetStartDate || null,
           hiring_manager_id: parsed.data.hiringManagerId || null,
           budget: band.band,
+          department_id: form.value.departmentId || null,
           status: 'submitted',
         })
         .eq('id', revising.value.id)
@@ -168,6 +190,7 @@ async function submit(): Promise<void> {
       target_start_date: parsed.data.targetStartDate || null,
       hiring_manager_id: parsed.data.hiringManagerId || null,
       budget: band.band,
+      department_id: form.value.departmentId || null,
       requested_by: auth.personId,
       status: 'submitted',
     }).select('id').maybeSingle()
@@ -244,6 +267,13 @@ onMounted(async () => {
         <div class="field">
           <label for="rh-headcount">Headcount</label>
           <input id="rh-headcount" v-model="form.headcount" type="number" min="1" required />
+        </div>
+        <div class="field">
+          <label for="rh-department">Department (optional)</label>
+          <select id="rh-department" v-model="form.departmentId">
+            <option value="">No department</option>
+            <option v-for="d in departments" :key="d.id" :value="d.id">{{ d.name }}</option>
+          </select>
         </div>
         <fieldset class="field band">
           <legend>Salary band (optional) — offers outside it also go to Finance and the Director</legend>

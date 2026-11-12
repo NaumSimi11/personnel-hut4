@@ -117,6 +117,7 @@ onMounted(async () => {
         <p>Who approves, in order. A step names a person, or anyone in a group. A named person on leave is covered by their delegate.</p>
       </div>
     </div>
+    <div class="card-body">
     <div class="filters">
       <label for="route-company">Company</label>
       <select id="route-company" v-model="companyId">
@@ -155,6 +156,7 @@ onMounted(async () => {
     </template>
     <p v-if="notice" class="notice" role="status">{{ notice }}</p>
     <p v-if="error" class="error" role="alert">{{ error }}</p>
+    </div>
   </div>
 </template>
 

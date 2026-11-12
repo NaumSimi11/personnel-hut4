@@ -70,7 +70,7 @@ onMounted(load)
     </div>
     <p v-if="notice" class="notice" role="status">{{ notice }}</p>
     <p v-if="error" class="error" role="alert">{{ error }}</p>
-    <div class="card">
+    <div class="card jobs-card">
       <div v-if="loading" class="empty">Loading…</div>
       <div v-else-if="!jobs.length" class="empty" data-testid="internal-jobs-empty">No internal openings right now.</div>
       <article v-for="j in jobs" :key="j.id" class="job" :data-testid="`internal-job-${j.id}`">
@@ -89,6 +89,7 @@ onMounted(load)
 </template>
 
 <style scoped>
+.jobs-card { padding: 0 24px; }
 .lede { margin: 4px 0 0; color: var(--muted); }
 .job { display: flex; justify-content: space-between; gap: 12px; padding: 12px 0; border-top: 1px solid var(--line); flex-wrap: wrap; align-items: flex-start; }
 .job-main { display: grid; gap: 2px; min-width: 0; flex: 1 1 280px; }

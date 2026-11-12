@@ -51,6 +51,7 @@ watch(() => [props.companyId, props.from, props.to], load, { immediate: true })
         <p>Open requests now; time to fill and offer answers in the range.</p>
       </div>
     </div>
+    <div class="card-body">
     <p v-if="error" class="error" role="alert">{{ error }}</p>
     <template v-else-if="data">
       <div class="tiles">
@@ -80,6 +81,7 @@ watch(() => [props.companyId, props.from, props.to], load, { immediate: true })
       </div>
       <p v-else class="empty-line">No open hiring requests.</p>
     </template>
+    </div>
   </section>
 </template>
 

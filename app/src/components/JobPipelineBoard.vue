@@ -30,6 +30,7 @@ const error = ref<string | null>(null)
 const busyId = ref<string | null>(null)
 const dragging = ref<string | null>(null)
 const savingPipeline = ref(false)
+const closedCount = ref(0)
 
 const columns = computed(() => columnsFor(props.skipStatuses))
 const arranged = computed(() => arrange(cards.value, props.skipStatuses))
@@ -41,14 +42,25 @@ async function load(): Promise<void> {
   loading.value = true
   error.value = null
   await lookups.ensure()
-  const { data, error: err } = await supabase
-    .from('applications')
-    .select('id, stage_key, sub_status_key, in_play, candidate:candidates(full_name)')
-    .eq('job_id', props.jobId)
-    .or('in_play.eq.true,stage_key.eq.hired')
-    .order('received_at', { ascending: false })
-    .limit(BOARD_LIMIT)
+  const [{ data, error: err }, closedRes] = await Promise.all([
+    supabase
+      .from('applications')
+      .select('id, stage_key, sub_status_key, in_play, candidate:candidates(full_name)')
+      .eq('job_id', props.jobId)
+      .or('in_play.eq.true,stage_key.eq.hired')
+      .order('received_at', { ascending: false })
+      .limit(BOARD_LIMIT),
+    // Closed ones are not loaded onto the board; only their number is shown.
+    supabase
+      .from('applications')
+      .select('id', { count: 'exact', head: true })
+      .eq('job_id', props.jobId)
+      .eq('in_play', false)
+      .neq('stage_key', 'hired'),
+  ])
   loading.value = false
+  if (closedRes.error) console.error('Closed count failed:', closedRes.error.message)
+  closedCount.value = closedRes.count ?? 0
   if (err) {
     console.error('Board load failed:', err.message)
     error.value = 'Could not load the board.'
@@ -190,13 +202,14 @@ onMounted(() => {
         </article>
       </section>
     </div>
-    <p v-if="!loading" class="hint">{{ arranged.closed }} closed application{{ arranged.closed === 1 ? '' : 's' }} (rejected or withdrawn) are not on the board — see Applications.</p>
+    <p v-if="!loading" class="hint">{{ closedCount }} closed application{{ closedCount === 1 ? ' is' : 's are' }} not on the board (rejected, withdrawn or closed with the job) — see Applications.</p>
   </div>
 </template>
 
 <style scoped>
 .board-wrap { display: grid; gap: 12px; }
-.pipeline-setup { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.pipeline-setup { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; padding: 18px 24px; }
+.pipeline-setup h2 { margin: 0; }
 .pipeline-setup p { margin: 4px 0 0; color: var(--muted); font-size: 12px; }
 .toggles { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; }
 .toggle { display: inline-flex; gap: 6px; align-items: center; font-size: 13px; }

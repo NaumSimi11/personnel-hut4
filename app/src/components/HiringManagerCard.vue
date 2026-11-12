@@ -80,7 +80,7 @@ async function decide(key: string): Promise<void> {
 </template>
 
 <style scoped>
-.hm-card { display: grid; gap: 8px; }
+.hm-card { display: grid; gap: 8px; padding: 20px 24px; }
 .choices { display: flex; flex-wrap: wrap; gap: 8px; }
 .hint { margin: 0; color: var(--muted); }
 .note-label { font-size: 0.85rem; color: var(--muted); }

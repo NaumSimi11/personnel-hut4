@@ -156,7 +156,7 @@ onMounted(load)
           <p>On days you are on approved leave, this person decides the steps named for you.</p>
         </div>
       </div>
-      <div class="delegate">
+      <div class="card-body delegate">
         <label for="approval-delegate">Delegate</label>
         <select id="approval-delegate" v-model="delegateId" :disabled="delegateBusy">
           <option value="">Nobody</option>

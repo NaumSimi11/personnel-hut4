@@ -1,7 +1,13 @@
 <script setup lang="ts">
-import { onMounted, ref, watch } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { supabase } from '@/lib/supabase'
 import { deliverNotifications } from '@/lib/notificationsApi'
+import { useHiringLookupsStore } from '@/stores/hiringLookups'
+
+// The mark the fill puts on the applications it closes (app.close_in_play,
+// 0096). Applications closed any other way (by hand, or imported already
+// closed from Zoho) were decided before and do not wait here.
+const FILL_REASON = 'Position filled.'
 
 /**
  * After the last position is filled (0110; spec 7.5): every application the
@@ -18,13 +24,22 @@ const picked = ref<Set<string>>(new Set())
 const busy = ref(false)
 const error = ref<string | null>(null)
 const notice = ref<string | null>(null)
+const lookups = useHiringLookupsStore()
+const stageLabel = computed<Record<string, string>>(() => Object.fromEntries(lookups.stages.map((st) => [st.key, st.label])))
+const allPicked = computed(() => rows.value.length > 0 && picked.value.size === rows.value.length)
+
+function toggleAll(): void {
+  picked.value = allPicked.value ? new Set() : new Set(rows.value.map((r) => r.id))
+}
 
 async function load(): Promise<void> {
+  void lookups.ensure()
   const { data, error: err } = await supabase
     .from('applications')
     .select('id, stage_key, after_fill, candidate:candidates(full_name)')
     .eq('job_id', props.jobId)
     .not('closed_at', 'is', null)
+    .eq('closed_reason', FILL_REASON)
     .or('after_fill.is.null,after_fill.eq.hold')
     .order('received_at', { ascending: false })
     .limit(200)
@@ -80,13 +95,18 @@ onMounted(load)
         <p>The position is filled. Decide what happens to the other applications — nothing is sent until you do.</p>
       </div>
     </div>
+    <div class="card-body">
+    <label v-if="canReview && rows.length > 1" class="select-all">
+      <input type="checkbox" :checked="allPicked" :disabled="busy" data-testid="after-fill-all" @change="toggleAll" />
+      Select all {{ rows.length }}
+    </label>
     <ul class="rows">
       <li v-for="r in rows" :key="r.id">
         <label>
           <input type="checkbox" :checked="picked.has(r.id)" :disabled="!canReview || busy" @change="toggle(r.id)" />
           {{ r.candidate?.full_name ?? '—' }}
         </label>
-        <small>{{ r.stage_key }}<template v-if="r.after_fill === 'hold'"> · on hold</template></small>
+        <small>{{ stageLabel[r.stage_key] ?? r.stage_key }}<template v-if="r.after_fill === 'hold'"> · on hold</template></small>
       </li>
     </ul>
     <div v-if="canReview" class="actions">
@@ -96,11 +116,13 @@ onMounted(load)
     </div>
     <p v-if="notice" class="notice" role="status">{{ notice }}</p>
     <p v-if="error" class="error" role="alert">{{ error }}</p>
+    </div>
   </div>
 </template>
 
 <style scoped>
 .after-fill { display: grid; gap: 10px; }
+.select-all { display: inline-flex; gap: 6px; align-items: center; font-weight: 600; margin-bottom: 8px; }
 .rows { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; }
 .rows li { display: flex; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
 .rows small { color: var(--muted); }

@@ -87,6 +87,7 @@ onMounted(load)
         <p v-if="positions">{{ positions.open }} of {{ positions.headcount }} position{{ positions.headcount === 1 ? '' : 's' }} open · {{ positions.filled }} filled</p>
       </div>
     </div>
+    <div class="card-body">
     <ul v-if="team.length" class="team">
       <li v-for="m in team" :key="m.person_id">
         <span>{{ m.person?.full_name ?? '—' }}</span>
@@ -106,6 +107,7 @@ onMounted(load)
       <button class="button small-btn" type="submit" :disabled="busy || !pickPerson">Add</button>
     </form>
     <p v-if="error" class="error" role="alert">{{ error }}</p>
+    </div>
   </div>
 </template>
 

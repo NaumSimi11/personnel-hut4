@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { BOARD_COLUMNS } from '@/lib/pipelineBoard'
 import { computed, onMounted, ref, watch } from 'vue'
 import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/stores/auth'
@@ -106,6 +107,8 @@ async function resetTemplate(): Promise<void> {
 }
 
 // ----------------------------------------------------- reasons and templates
+// A pipeline template names stages by status key; show the board's stage name.
+const stageLabel = (key: string): string => BOARD_COLUMNS.find((c) => c.optional === key)?.label ?? key
 const reasons = ref<{ key: string; label: string; archived_at: string | null }[]>([])
 const newReason = ref('')
 const pipelines = ref<{ id: string; name: string; skip_statuses: string[]; company_id: string | null }[]>([])
@@ -282,7 +285,7 @@ onMounted(async () => {
       <ul class="list">
         <li v-for="p in pipelines" :key="p.id">
           <span>{{ p.name }}</span>
-          <small>{{ p.skip_statuses.length ? `skips ${p.skip_statuses.join(', ')}` : 'every stage' }}</small>
+          <small>{{ p.skip_statuses.length ? `skips ${p.skip_statuses.map(stageLabel).join(', ')}` : 'every stage' }}</small>
         </li>
       </ul>
     </section>
@@ -291,7 +294,8 @@ onMounted(async () => {
 
 <style scoped>
 .settings { display: grid; gap: 16px; }
-.settings .card { display: grid; gap: 10px; }
+.settings .card { display: grid; gap: 10px; padding: 20px 24px; }
+.settings .card > button { justify-self: start; }
 .settings h2 { margin: 0; }
 .scope, .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 .hint { margin: 0; color: var(--muted); font-size: 12px; }

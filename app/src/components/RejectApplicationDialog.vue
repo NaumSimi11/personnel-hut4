@@ -2,6 +2,7 @@
 import { computed, ref } from 'vue'
 import type { Outcome, SubStatusRow } from '@/lib/hiringLabels'
 import { setApplicationStatus } from '@/lib/applicationStatus'
+import { emailCandidates } from '@/lib/candidateEmails'
 import { contactHint, pickableStatusGroups } from '@/lib/stageStatuses'
 
 /**
@@ -29,6 +30,14 @@ const error = ref<string | null>(null)
 const currentStage = ref<string | undefined>(undefined)
 const groups = computed(() => pickableStatusGroups(props.rows, OUTCOME_OF[mode.value], currentStage.value))
 const warning = computed(() => contactHint(statusKey.value))
+// 0102: the candidate hears by email unless HR untick it. The hiring
+// manager's own calls (contact in future, do not contact) are not a withdrawal
+// by the candidate, so there is nothing to confirm to them.
+const emailCandidate = ref(true)
+const canEmail = computed(() => {
+  const picked = props.rows.find((r) => r.key === statusKey.value)
+  return !picked?.hm_only
+})
 
 /** `stageKey`: the application's current stage, whose statuses are listed first. */
 function open(next: Mode, name: string, ids: string[], stageKey?: string): void {
@@ -38,6 +47,7 @@ function open(next: Mode, name: string, ids: string[], stageKey?: string): void 
   applicationIds.value = ids
   statusKey.value = ''
   note.value = ''
+  emailCandidate.value = true
   error.value = null
   dialog.value?.showModal()
 }
@@ -51,11 +61,21 @@ async function submit(): Promise<void> {
   }
   busy.value = true
   const result = await setApplicationStatus(applicationIds.value, statusKey.value, note.value)
-  busy.value = false
   if (result.error) {
+    busy.value = false
     error.value = result.error
     return
   }
+  if (emailCandidate.value && canEmail.value) {
+    const sent = await emailCandidates(applicationIds.value, mode.value === 'reject' ? 'rejected' : 'withdrawn')
+    if (sent.error) {
+      busy.value = false
+      error.value = `The status is saved, but the email was not: ${sent.error}`
+      emit('decided', mode.value)
+      return
+    }
+  }
+  busy.value = false
   dialog.value?.close()
   emit('decided', mode.value)
 }
@@ -92,6 +112,10 @@ async function submit(): Promise<void> {
           <label for="reject-reason">Anything to add? (optional)</label>
           <textarea id="reject-reason" v-model="note" rows="4" maxlength="2000" :disabled="busy"></textarea>
         </div>
+        <label v-if="canEmail" class="option" data-testid="reject-email">
+          <input id="reject-email" v-model="emailCandidate" type="checkbox" :disabled="busy" />
+          <span>{{ mode === 'reject' ? 'Email the candidate a polite decline (no reason is given)' : 'Email the candidate a confirmation of the withdrawal' }}</span>
+        </label>
       </template>
       <p v-if="error" class="error-note" role="alert">{{ error }}</p>
       <div class="actions">

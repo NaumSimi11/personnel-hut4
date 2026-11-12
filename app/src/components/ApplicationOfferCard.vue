@@ -32,6 +32,7 @@ type Offer = {
   approved_by: string | null
   accepted_at: string | null
   extended_at: string | null
+  expires_on: string | null
   decline_reason: string | null
   created_at: string
   author: { full_name: string } | null
@@ -93,7 +94,7 @@ async function load(): Promise<void> {
     supabase
       .from('offers')
       .select(
-        `id, status, terms, created_by, approved_by, accepted_at, extended_at, decline_reason, created_at,
+        `id, status, terms, created_by, approved_by, accepted_at, extended_at, expires_on, decline_reason, created_at,
          author:people!offers_created_by_fkey(full_name),
          approver:people!offers_approved_by_fkey(full_name)`,
       )
@@ -153,6 +154,23 @@ async function saveTerms(): Promise<void> {
     }
   }
   editing.value = false
+  await load()
+}
+
+// 0103: a sent offer expires (a week by default); its author is reminded two days before.
+const expiryDraft = ref('')
+async function saveExpiry(o: Offer): Promise<void> {
+  if (!expiryDraft.value || expiryDraft.value === o.expires_on) return
+  busy.value = true
+  error.value = null
+  const { error: err } = await supabase.rpc('set_offer_expiry', { p_offer_id: o.id, p_expires_on: expiryDraft.value })
+  busy.value = false
+  if (err) {
+    console.error('set_offer_expiry failed:', err.message)
+    error.value = err.message
+    expiryDraft.value = o.expires_on ?? ''
+    return
+  }
   await load()
 }
 
@@ -285,6 +303,21 @@ defineExpose({ reload: load, liveTerms: () => (live.value ? terms(live.value) : 
             <template v-if="live.extended_at"> · extended {{ new Date(live.extended_at).toLocaleDateString() }}</template>
             <template v-if="live.accepted_at"> · accepted {{ new Date(live.accepted_at).toLocaleDateString() }}</template>
           </small>
+          <small v-if="live.status === 'extended'" class="expiry" data-testid="offer-expiry">
+            <template v-if="canReview">
+              <label for="offer-expires">Expires</label>
+              <input
+                id="offer-expires"
+                type="date"
+                :value="live.expires_on ?? ''"
+                :min="new Date().toISOString().slice(0, 10)"
+                :disabled="busy"
+                @input="expiryDraft = ($event.target as HTMLInputElement).value"
+                @change="saveExpiry(live)"
+              />
+            </template>
+            <template v-else-if="live.expires_on">Expires {{ live.expires_on }}</template>
+          </small>
           <small v-if="terms(live)?.notes">{{ terms(live)!.notes }}</small>
         </div>
         <span class="badge" :class="badgeClass(live.status)">{{ offerStatusLabel(live.status) }}</span>
@@ -318,6 +351,7 @@ defineExpose({ reload: load, liveTerms: () => (live.value ? terms(live.value) : 
 </template>
 
 <style scoped>
+.expiry { display: inline-flex; align-items: center; gap: 6px; }
 .terms-form { padding: 16px 24px 18px; border-top: 1px solid var(--line); background: #fafbf9; }
 .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(190px, 100%), 1fr)); gap: 0 16px; }
 @media (max-width: 640px) { .grid { grid-template-columns: 1fr; } }

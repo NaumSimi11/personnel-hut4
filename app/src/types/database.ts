@@ -2557,6 +2557,10 @@ export type Database = {
         Row: {
           budget: Json | null
           change_reason: string | null
+          cancel_reason: string | null
+          hold_reason: string | null
+          hold_review_on: string | null
+          status_before_hold: string | null
           company_id: string
           created_at: string
           custom: Json
@@ -2575,6 +2579,10 @@ export type Database = {
         Insert: {
           budget?: Json | null
           change_reason?: string | null
+          cancel_reason?: string | null
+          hold_reason?: string | null
+          hold_review_on?: string | null
+          status_before_hold?: string | null
           company_id: string
           created_at?: string
           custom?: Json
@@ -2593,6 +2601,10 @@ export type Database = {
         Update: {
           budget?: Json | null
           change_reason?: string | null
+          cancel_reason?: string | null
+          hold_reason?: string | null
+          hold_review_on?: string | null
+          status_before_hold?: string | null
           company_id?: string
           created_at?: string
           custom?: Json
@@ -2984,6 +2996,7 @@ export type Database = {
           scorecard_criteria: Json
           screening_questions: Json
           status: string
+          status_before_hold: string | null
           title: string
           updated_at: string
         }
@@ -3003,6 +3016,7 @@ export type Database = {
           scorecard_criteria?: Json
           screening_questions?: Json
           status?: string
+          status_before_hold?: string | null
           title: string
           updated_at?: string
         }
@@ -3022,6 +3036,7 @@ export type Database = {
           scorecard_criteria?: Json
           screening_questions?: Json
           status?: string
+          status_before_hold?: string | null
           title?: string
           updated_at?: string
         }
@@ -3721,6 +3736,7 @@ export type Database = {
           created_at: string
           created_by: string | null
           decline_reason: string | null
+          expires_on: string | null
           extended_at: string | null
           id: string
           status: string
@@ -3735,6 +3751,7 @@ export type Database = {
           created_at?: string
           created_by?: string | null
           decline_reason?: string | null
+          expires_on?: string | null
           extended_at?: string | null
           id?: string
           status?: string
@@ -3749,6 +3766,7 @@ export type Database = {
           created_at?: string
           created_by?: string | null
           decline_reason?: string | null
+          expires_on?: string | null
           extended_at?: string | null
           id?: string
           status?: string
@@ -5477,6 +5495,26 @@ export type Database = {
           full_name: string
           id: string
         }[]
+      }
+      cancel_hiring_request: {
+        Args: { p_reason: string; p_request_id: string }
+        Returns: Json
+      }
+      email_candidates: {
+        Args: { p_application_ids: string[]; p_kind: string }
+        Returns: Json
+      }
+      hold_hiring_request: {
+        Args: { p_reason: string; p_request_id: string; p_review_on?: string | null }
+        Returns: Json
+      }
+      resume_hiring_request: {
+        Args: { p_request_id: string }
+        Returns: Json
+      }
+      set_offer_expiry: {
+        Args: { p_expires_on: string; p_offer_id: string }
+        Returns: Json
       }
       hm_set_status: {
         Args: { p_application_id: string; p_note?: string; p_sub_status_key: string }

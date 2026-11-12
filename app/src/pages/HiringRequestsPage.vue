@@ -13,6 +13,16 @@ import LabelsPanel from '@/components/hiring/LabelsPanel.vue'
 import { useAuthStore } from '@/stores/auth'
 import { awaitingLabel } from '@/lib/companyOps'
 import { deliverNotifications, deliverySentence } from '@/lib/notificationsApi'
+import { todayDb } from '@/lib/compensation'
+import {
+  DEFAULT_REVIEW_DAYS,
+  cancelNotice,
+  cancelRequest,
+  holdRequest,
+  lifecycleActions,
+  resumeRequest,
+  reviewDate,
+} from '@/lib/requestLifecycle'
 
 type HiringRequestRow = {
   id: string
@@ -22,6 +32,9 @@ type HiringRequestRow = {
   target_start_date: string | null
   status: string
   change_reason: string | null
+  hold_reason: string | null
+  hold_review_on: string | null
+  cancel_reason: string | null
   requested_by: string | null
   hiring_manager_id: string | null
   decided_at: string | null
@@ -78,6 +91,8 @@ function badgeClass(status: string): string {
   if (status === 'approved') return 'green'
   if (status === 'submitted') return 'amber'
   if (status === 'changes_requested') return 'blue'
+  if (status === 'on_hold') return 'amber'
+  if (status === 'filled') return 'green'
   return ''
 }
 
@@ -96,6 +111,10 @@ const HISTORY_LABEL: Record<string, string> = {
   approved: 'Approved',
   rejected: 'Rejected',
   cancelled: 'Cancelled',
+  on_hold: 'Put on hold',
+  resumed: 'Resumed',
+  filled: 'Filled',
+  reopened: 'Reopened',
 }
 function stamp(iso: string): string {
   return new Date(iso).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })
@@ -157,7 +176,7 @@ async function load(): Promise<void> {
   const { data, error: err } = await supabase
     .from('hiring_requests')
     .select(
-      `id, title, reason, headcount, target_start_date, status, change_reason,
+      `id, title, reason, headcount, target_start_date, status, change_reason, hold_reason, hold_review_on, cancel_reason,
        requested_by, hiring_manager_id, decided_at, company_id,
        company:companies(name),
        requester:people!hiring_requests_requested_by_fkey(full_name),
@@ -211,6 +230,58 @@ async function onDecided(status: 'changes_requested' | 'rejected'): Promise<void
   void load()
   notice.value = `${status === 'changes_requested' ? 'Sent back with your note; the requester can revise and resubmit it.' : 'Request rejected.'} ${deliverySentence(await deliverNotifications())}`
 }
+const viewer = computed(() => ({ personId: auth.personId, can: (c: string, cap: string) => auth.can(c, cap) }))
+function actionsFor(row: HiringRequestRow) {
+  return lifecycleActions(row, viewer.value)
+}
+
+async function hold(row: HiringRequestRow): Promise<void> {
+  const answer = await dialogs.askReason({
+    title: `Put "${row.title}" on hold?`,
+    eyebrow: 'Hiring request',
+    hint: 'Its job openings pause too and come off the careers page. Resume puts everything back where it was.',
+    label: 'Why it is on hold',
+    value: { label: 'Review again in (days)', initial: DEFAULT_REVIEW_DAYS, min: 1 },
+    confirmLabel: 'Put on hold',
+  })
+  if (!answer) return
+  await runLifecycle(row, () => holdRequest(row.id, answer.reason, reviewDate(todayDb(), answer.value ?? DEFAULT_REVIEW_DAYS)), () => 'Request on hold. Its job openings are paused.')
+}
+
+async function resume(row: HiringRequestRow): Promise<void> {
+  await runLifecycle(row, () => resumeRequest(row.id), () => 'Request resumed; its job openings are back where they were.')
+}
+
+async function cancelIt(row: HiringRequestRow): Promise<void> {
+  const answer = await dialogs.askReason({
+    title: `Cancel "${row.title}"?`,
+    eyebrow: 'Hiring request',
+    hint: 'Its open job openings close with this reason. Cancelling is final; a new request can be raised later.',
+    label: 'Why it is cancelled',
+    confirmLabel: 'Cancel request',
+  })
+  if (!answer) return
+  await runLifecycle(row, () => cancelRequest(row.id, answer.reason), cancelNotice)
+}
+
+async function runLifecycle(
+  row: HiringRequestRow,
+  act: () => ReturnType<typeof resumeRequest>,
+  done: (data: Record<string, unknown>) => string,
+): Promise<void> {
+  actionError.value = null
+  notice.value = null
+  busyId.value = row.id
+  const result = await act()
+  busyId.value = null
+  if (!result.ok) {
+    actionError.value = result.error
+    return
+  }
+  notice.value = done(result.data)
+  await load()
+}
+
 function revise(row: HiringRequestRow): void {
   actionError.value = null
   requestDialog.value?.openRevision(row)
@@ -339,6 +410,10 @@ onMounted(load)
                 <b>Rejected<template v-if="r.decider"> by {{ r.decider.full_name }}</template>:</b> {{ r.change_reason }}
               </p>
               <p v-if="r.status === 'submitted'" class="awaiting">{{ awaitingLabel(approvers[r.company_id]) }}</p>
+              <p v-if="r.status === 'on_hold'" class="change-reason" :data-testid="`on-hold-${r.id}`">
+                <b>On hold<template v-if="r.hold_review_on"> · review {{ r.hold_review_on }}</template>:</b> {{ r.hold_reason }}
+              </p>
+              <p v-if="r.status === 'cancelled' && r.cancel_reason" class="change-reason rejected"><b>Cancelled:</b> {{ r.cancel_reason }}</p>
               <button v-if="r.history.length > 1" class="linkish" type="button" @click="toggleHistory(r.id)">
                 {{ openHistory[r.id] ? 'Hide history' : `History (${r.history.length})` }}
               </button>
@@ -361,6 +436,11 @@ onMounted(load)
               >
                 Delete
               </button>
+            </div>
+            <div v-if="actionsFor(r).hold || actionsFor(r).resume || actionsFor(r).cancel" class="row-actions">
+              <button v-if="actionsFor(r).hold" class="button secondary small-btn" type="button" :disabled="busyId === r.id" :data-testid="`hold-request-${r.id}`" @click="hold(r)">Put on hold</button>
+              <button v-if="actionsFor(r).resume" class="button small-btn" type="button" :disabled="busyId === r.id" :data-testid="`resume-request-${r.id}`" @click="resume(r)">Resume</button>
+              <button v-if="actionsFor(r).cancel" class="button secondary small-btn danger-text" type="button" :disabled="busyId === r.id" :data-testid="`cancel-request-${r.id}`" @click="cancelIt(r)">Cancel request</button>
             </div>
             <div v-if="canRevise(r)" class="row-actions">
               <button class="button small-btn" type="button" :disabled="busyId === r.id" @click="revise(r)">Edit and resubmit</button>

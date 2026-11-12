@@ -2,6 +2,7 @@ import type { FastifyInstance } from 'fastify'
 import { env } from './env.js'
 import { identityFromToken, serviceDb } from './supabaseAdmin.js'
 import { renderNotificationEmail } from './notificationEmails.js'
+import { deliverCandidateEmails, runHiringClocks } from './candidateEmails.js'
 
 /**
  * POST /api/notifications/deliver — sends the queued notification emails
@@ -88,7 +89,14 @@ export function registerNotificationRoutes(app: FastifyInstance): void {
     if (running) return { sent: 0, failed: 0, skipped: 0, pending: 0, busy: true }
     running = true
     try {
-      return { ...(await deliverPending()), configured: Boolean(env('RESEND_API_KEY') && env('EMAIL_FROM')) }
+      // The hiring deadlines run first so their alerts go out in this same kick (0103).
+      await runHiringClocks()
+      const delivered = await deliverPending()
+      const candidates = await deliverCandidateEmails().catch((e: unknown) => {
+        console.error('[candidate-emails] delivery failed:', e instanceof Error ? e.message : e)
+        return null
+      })
+      return { ...delivered, candidates, configured: Boolean(env('RESEND_API_KEY') && env('EMAIL_FROM')) }
     } catch (e) {
       console.error('[notifications] delivery failed:', e instanceof Error ? e.message : e)
       return reply.status(500).send({ error: 'Delivery failed; the notifications are still queued.' })

@@ -9665,4 +9665,151 @@ delete from public.applications where id in ('90000000-0000-0000-0000-000000000a
 delete from public.candidates where id in ('80000000-0000-0000-0000-000000000a01', '80000000-0000-0000-0000-000000000a02');
 delete from public.jobs where id in ('70000000-0000-0000-0000-000000000a01', '70000000-0000-0000-0000-000000000a02');
 
+-- ------------------------------- request lifecycle, candidate emails, clocks (0101–0103)
+-- Rita (Company HR in A, from the 0100 block) steers a request Hana raised.
+insert into public.hiring_requests (id, company_id, title, requested_by, status) values
+  ('60000000-0000-0000-0000-000000000b01', '10000000-0000-0000-0000-00000000000a', 'Lifecycle role', '20000000-0000-0000-0000-000000000a01', 'approved');
+insert into public.jobs (id, company_id, hiring_request_id, title, status) values
+  ('70000000-0000-0000-0000-000000000b01', '10000000-0000-0000-0000-00000000000a', '60000000-0000-0000-0000-000000000b01', 'Lifecycle job 1', 'open'),
+  ('70000000-0000-0000-0000-000000000b02', '10000000-0000-0000-0000-00000000000a', '60000000-0000-0000-0000-000000000b01', 'Lifecycle job 2', 'draft');
+
+set app.test_uid = '00000000-0000-0000-0000-000000000003';  -- Omar, no grants, not the requester
+set role authenticated;
+do $$
+begin
+  begin
+    perform public.hold_hiring_request('60000000-0000-0000-0000-000000000b01', 'Budget freeze');
+    assert false, '0101: a bystander cannot hold a request';
+  exception when insufficient_privilege then null;
+  end;
+end $$;
+reset role;
+
+set app.test_uid = '00000000-0000-0000-0000-000000000a02';  -- Rita
+set role authenticated;
+do $$
+declare r jsonb;
+begin
+  begin
+    perform public.hold_hiring_request('60000000-0000-0000-0000-000000000b01', '');
+    assert false, '0101: a hold needs a reason';
+  exception when invalid_parameter_value then null;
+  end;
+  r := public.hold_hiring_request('60000000-0000-0000-0000-000000000b01', 'Budget freeze', current_date + 14);
+  assert (r->>'jobs_paused')::int = 2, '0101: both jobs pause: ' || r::text;
+  assert (select status || '|' || status_before_hold || '|' || hold_reason from public.hiring_requests
+           where id = '60000000-0000-0000-0000-000000000b01') = 'on_hold|approved|Budget freeze', '0101: on hold, remembering approved';
+  assert (select string_agg(status || '<' || status_before_hold, ',' order by title) from public.jobs
+           where hiring_request_id = '60000000-0000-0000-0000-000000000b01') = 'on_hold<open,on_hold<draft', '0101: jobs remember too';
+  begin
+    update public.hiring_requests set status = 'approved' where id = '60000000-0000-0000-0000-000000000b01';
+    assert false, '0101: leaving a hold goes through Resume';
+  exception when insufficient_privilege then null;
+  end;
+  r := public.resume_hiring_request('60000000-0000-0000-0000-000000000b01');
+  assert r->>'status' = 'approved', '0101: resume returns to approved';
+  assert (select string_agg(status, ',' order by title) from public.jobs
+           where hiring_request_id = '60000000-0000-0000-0000-000000000b01') = 'open,draft', '0101: jobs back where they were';
+  assert (select count(*) from public.hiring_request_history
+           where request_id = '60000000-0000-0000-0000-000000000b01' and kind in ('on_hold', 'resumed')) = 2, '0101: history says so';
+end $$;
+reset role;
+
+set app.test_uid = '';
+-- Filled follows the jobs (7.3), and a reopened job takes it back.
+update public.jobs set status = 'filled' where id in ('70000000-0000-0000-0000-000000000b01', '70000000-0000-0000-0000-000000000b02');
+do $$ begin
+  assert (select status from public.hiring_requests where id = '60000000-0000-0000-0000-000000000b01') = 'filled', '0101: all jobs filled, request filled';
+end $$;
+update public.jobs set status = 'open' where id = '70000000-0000-0000-0000-000000000b02';
+do $$ begin
+  assert (select status from public.hiring_requests where id = '60000000-0000-0000-0000-000000000b01') = 'approved', '0101: a job reopens, request approved';
+end $$;
+
+-- 0102: the careers page writes; a head hunt does not.
+insert into public.candidates (id, full_name, email) values
+  ('80000000-0000-0000-0000-000000000b01', 'Cara Careers', 'cara@cand.test'),
+  ('80000000-0000-0000-0000-000000000b02', 'Hugo Hunted', 'hugo@cand.test');
+insert into public.candidates (id, full_name, email) values
+  ('80000000-0000-0000-0000-000000000b03', 'Nora Never', 'nora@cand.test');
+insert into public.applications (id, job_id, company_id, candidate_id, source_key, received_at, owner_id) values
+  ('90000000-0000-0000-0000-000000000b01', '70000000-0000-0000-0000-000000000b02', '10000000-0000-0000-0000-00000000000a',
+   '80000000-0000-0000-0000-000000000b01', 'careers_page', now() - interval '4 days', '20000000-0000-0000-0000-000000000a02'),
+  ('90000000-0000-0000-0000-000000000b02', '70000000-0000-0000-0000-000000000b02', '10000000-0000-0000-0000-00000000000a',
+   '80000000-0000-0000-0000-000000000b02', 'head_hunt', now(), null),
+  ('90000000-0000-0000-0000-000000000b03', '70000000-0000-0000-0000-000000000b02', '10000000-0000-0000-0000-00000000000a',
+   '80000000-0000-0000-0000-000000000b03', 'head_hunt', now(), null);
+update public.candidates set do_not_contact = true, do_not_contact_reason = 'Asked not to be contacted'
+ where id = '80000000-0000-0000-0000-000000000b03';
+do $$ begin
+  assert (select string_agg(application_id::text || ':' || kind || ':' || email_to, ',') from public.candidate_emails
+           where application_id::text like '90000000-0000-0000-0000-000000000b0%')
+       = '90000000-0000-0000-0000-000000000b01:received:cara@cand.test', '0102: only the careers applicant is told we received it';
+end $$;
+
+set app.test_uid = '00000000-0000-0000-0000-000000000a02';  -- Rita
+set role authenticated;
+do $$
+declare r jsonb;
+begin
+  perform public.set_application_status(array['90000000-0000-0000-0000-000000000b02'::uuid, '90000000-0000-0000-0000-000000000b03'::uuid], 'unqualified', null);
+  r := public.email_candidates(array['90000000-0000-0000-0000-000000000b02'::uuid, '90000000-0000-0000-0000-000000000b03'::uuid], 'rejected');
+  assert (r->>'queued')::int = 1 and r->'skipped'->0->>'why' = 'do_not_contact', '0102: Hugo is told, Nora never: ' || r::text;
+  r := public.email_candidates(array['90000000-0000-0000-0000-000000000b02'::uuid], 'rejected');
+  assert (r->>'queued')::int = 0 and r->'skipped'->0->>'why' = 'already', '0102: never twice';
+  r := public.email_candidates(array['90000000-0000-0000-0000-000000000b02'::uuid], 'withdrawn');
+  assert r->'skipped'->0->>'why' = 'status', '0102: a rejection is not a withdrawal';
+  assert (select count(*) from public.candidate_emails where application_id = '90000000-0000-0000-0000-000000000b02') = 1,
+    '0102: Rita reads the queue for her company';
+end $$;
+reset role;
+
+-- 0103: an offer sent gets a week; near the end its author hears.
+insert into public.offers (id, application_id, company_id, status, created_by) values
+  ('a1000000-0000-0000-0000-000000000b01', '90000000-0000-0000-0000-000000000b01', '10000000-0000-0000-0000-00000000000a',
+   'approved', '20000000-0000-0000-0000-000000000a02');
+update public.offers set status = 'extended' where id = 'a1000000-0000-0000-0000-000000000b01';
+do $$
+declare r jsonb;
+begin
+  assert (select expires_on from public.offers where id = 'a1000000-0000-0000-0000-000000000b01') = current_date + 7,
+    '0103: a sent offer expires in a week by default';
+  r := public.run_hiring_clocks();
+  assert not exists (select 1 from public.notifications where kind like 'offer.%' and entity_id = 'a1000000-0000-0000-0000-000000000b01'),
+    '0103: a week out, nobody is chased';
+  assert exists (select 1 from public.notifications where kind = 'application.first_response'
+                  and entity_id = '90000000-0000-0000-0000-000000000b01' and person_id = '20000000-0000-0000-0000-000000000a02'),
+    '0103: four days without a reply, the owner hears';
+  update public.offers set expires_on = current_date + 1 where id = 'a1000000-0000-0000-0000-000000000b01';
+  perform public.run_hiring_clocks();
+  perform public.run_hiring_clocks();
+  assert (select count(*) from public.notifications where kind = 'offer.expiring'
+           and entity_id = 'a1000000-0000-0000-0000-000000000b01' and person_id = '20000000-0000-0000-0000-000000000a02') = 1,
+    '0103: two days before, the author hears once';
+  assert not has_function_privilege('authenticated', 'public.run_hiring_clocks()', 'execute'), '0103: only the server runs the clocks';
+end $$;
+
+-- Cancel (8.3) closes the jobs and counts who is still in play.
+set app.test_uid = '00000000-0000-0000-0000-000000000a02';  -- Rita
+set role authenticated;
+do $$
+declare r jsonb;
+begin
+  r := public.cancel_hiring_request('60000000-0000-0000-0000-000000000b01', 'Role dropped');
+  assert r->>'status' = 'cancelled' and jsonb_array_length(r->'jobs_closed') = 1 and (r->>'in_play')::int = 1,
+    '0101: cancel closes the open job (the filled one stays filled), one candidate still in play: ' || r::text;
+  begin
+    perform public.cancel_hiring_request('60000000-0000-0000-0000-000000000b01', 'Again');
+    assert false, '0101: cancelled is final';
+  exception when invalid_parameter_value then null;
+  end;
+end $$;
+reset role;
+set app.test_uid = '';
+delete from public.notifications where entity_id in ('a1000000-0000-0000-0000-000000000b01', '90000000-0000-0000-0000-000000000b01');
+delete from public.offers where id = 'a1000000-0000-0000-0000-000000000b01';
+delete from public.application_events where application_id::text like '90000000-0000-0000-0000-000000000b0%';
+delete from public.applications where id::text like '90000000-0000-0000-0000-000000000b0%';
+delete from public.candidates where id::text like '80000000-0000-0000-0000-000000000b0%';
+
 select 'SMOKE TESTS PASSED' as result;

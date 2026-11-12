@@ -351,7 +351,7 @@ function removeCriterion(index: number): void {
 }
 
 const APPLICATION_COLUMNS = `id, stage_key, sub_status_key, in_play, closed_at, closed_reason, received_at, employment_period_id, next_action, next_action_due, source_key,
-       source:candidate_sources(label),
+       source:candidate_sources!applications_source_key_fkey(label),
        candidate:candidates(id, full_name, email, phone, do_not_contact, contact_again_after),
        owner:people!applications_owner_id_fkey(full_name),
        employment_period:employment_periods!applications_employment_period_id_fkey(person_id)`

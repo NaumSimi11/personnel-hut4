@@ -9900,7 +9900,7 @@ end $$;
 reset role;
 set app.test_uid = '';
 
--- Offers: outside the band goes to HR, Finance and Director; a send-back returns it to its author.
+-- Offers: no salary band check since 0116 (decision D4) — even 45,000 against a 30–40k band goes to HR alone.
 insert into public.jobs (id, company_id, hiring_request_id, title, status) values
   ('70000000-0000-0000-0000-000000000c01', '10000000-0000-0000-0000-00000000000a', '60000000-0000-0000-0000-000000000c01', 'Routed job', 'open');
 insert into public.candidates (id, full_name, email) values ('80000000-0000-0000-0000-000000000c01', 'Bo Band', 'bo@cand.test');
@@ -9917,18 +9917,15 @@ do $$ begin
 end $$;
 reset role;
 do $$ begin
-  assert (select in_band from public.offers where id = 'd0000000-0000-0000-0000-000000000c01') = false, '0104: 45,000 is outside 30–40k';
+  assert (select band_note from public.offers where id = 'd0000000-0000-0000-0000-000000000c01') is null, '0116: no band verdict is written';
   assert (select string_agg(label, ',' order by position) from public.approval_tasks
-           where subject_id = 'd0000000-0000-0000-0000-000000000c01' and status = 'open') = 'HR,Finance,Director', '0104: three steps outside the band';
+           where subject_id = 'd0000000-0000-0000-0000-000000000c01' and status = 'open') = 'HR', '0116: HR is the only step';
 end $$;
 set app.test_uid = '00000000-0000-0000-0000-000000000002';  -- Fiona: offer.approve (HR step)
 set role authenticated;
 do $$ begin
   perform public.advance_offer('d0000000-0000-0000-0000-000000000c01', 'approved');
-  assert (select status from public.offers where id = 'd0000000-0000-0000-0000-000000000c01') = 'in_approval', '0104: HR alone is not enough';
-  perform public.advance_offer('d0000000-0000-0000-0000-000000000c01', 'draft', 'Too high');
-  assert (select status || '|' || returned_reason from public.offers where id = 'd0000000-0000-0000-0000-000000000c01') = 'draft|Too high',
-    '0104: Finance sends it back with the reason';
+  assert (select status from public.offers where id = 'd0000000-0000-0000-0000-000000000c01') = 'approved', '0116: HR alone approves it';
   assert not exists (select 1 from public.approval_tasks where subject_id = 'd0000000-0000-0000-0000-000000000c01' and status = 'open'),
     '0104: nothing left open';
 end $$;

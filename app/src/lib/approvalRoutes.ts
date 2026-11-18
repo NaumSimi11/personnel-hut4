@@ -6,10 +6,11 @@
 export type RouteKind = 'request' | 'offer_in_band' | 'offer_out_of_band'
 export type StepDraft = { label: string; approverId: string; capability: string }
 
+// No salary band check on offers (decision D4, 0116): every offer takes the
+// one offer route, kept under its old key. The outside-the-band route is unused.
 export const ROUTE_KINDS: ReadonlyArray<{ value: RouteKind; label: string }> = [
   { value: 'request', label: 'Hiring requests' },
-  { value: 'offer_in_band', label: 'Offers inside the salary band' },
-  { value: 'offer_out_of_band', label: 'Offers outside the band (or no band match)' },
+  { value: 'offer_in_band', label: 'Offers' },
 ]
 
 export const STEP_CAPABILITIES: ReadonlyArray<{ value: string; label: string }> = [

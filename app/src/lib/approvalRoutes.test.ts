@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { moveStep, routeRows } from './approvalRoutes'
+import { moveStep, routeRows, ROUTE_KINDS, DEFAULT_ROUTE } from './approvalRoutes'
 
 describe('approval routes', () => {
   it('numbers the steps in order and keeps person or group', () => {
@@ -21,5 +21,13 @@ describe('approval routes', () => {
     const s = [{ label: 'a', approverId: '', capability: 'x' }, { label: 'b', approverId: '', capability: 'x' }]
     expect(moveStep(s, 1, -1).map((x) => x.label)).toEqual(['b', 'a'])
     expect(moveStep(s, 0, -1).map((x) => x.label)).toEqual(['a', 'b'])
+  })
+})
+
+describe('route kinds (decision D4: no salary band check on offers)', () => {
+  it('offers one offer route, HR by default, and no outside-the-band route', () => {
+    expect(ROUTE_KINDS.map((k) => k.value)).toEqual(['request', 'offer_in_band'])
+    expect(ROUTE_KINDS.find((k) => k.value === 'offer_in_band')?.label).toBe('Offers')
+    expect(DEFAULT_ROUTE.offer_in_band).toBe('1. HR (anyone who approves offers)')
   })
 })

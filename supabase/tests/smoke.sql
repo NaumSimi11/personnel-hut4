@@ -3966,7 +3966,7 @@ set app.test_uid = '';
 -- cancelled departure cancels pending sends; IT requests notify.
 do $$
 begin
-  assert (select count(*) from public.handover_recipients where company_id is null and active) = 3, 'three holding defaults';
+  assert (select count(*) from public.handover_recipients where company_id is null and active) = 4, 'four holding defaults: IT, Accountant, Manager, General Administrator (0115)';
   assert (select count(*) from jsonb_array_elements(public.handover_fields())) = 20, 'the catalogue';
 end $$;
 
@@ -10327,6 +10327,16 @@ do $$ begin
                    and person_id = '20000000-0000-0000-0000-000000000004' and body like 'Role: HR · %'),
     '0114: the notice names the role in words';
   delete from public.job_team where job_id = '70000000-0000-0000-0000-000000000d01' and person_id = '20000000-0000-0000-0000-000000000004';
+end $$;
+
+-- ------------------------------------------- General Administrator on new-hire notices (0115)
+-- B5 / D12: a named person per company, changeable under Workflow owners, told of every confirmed hire.
+do $$ begin
+  assert (select label from public.workflow_roles where key = 'general_admin') = 'General Administrator',
+    '0115: the role exists, so each company can name its own';
+  assert exists (select 1 from public.handover_recipients where company_id is null and active and kind = 'role'
+                   and role_key = 'general_admin' and events = array['hire_confirmed'] and not trusted),
+    '0115: the holding default tells the General Administrator of a confirmed hire';
 end $$;
 
 select 'SMOKE TESTS PASSED' as result;

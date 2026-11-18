@@ -10,12 +10,14 @@ import { friendlyRecruitmentError } from '@/lib/jobWorkspace'
  */
 export type StatusResult = { set: number; error: string | null }
 
-export async function setApplicationStatus(applicationIds: ReadonlyArray<string>, subStatusKey: string, note = ''): Promise<StatusResult> {
+/** A rejected status needs one of HR's reason codes (0125, T9); the database refuses it otherwise. */
+export async function setApplicationStatus(applicationIds: ReadonlyArray<string>, subStatusKey: string, note = '', reasonCode = ''): Promise<StatusResult> {
   const ids = [...new Set(applicationIds)]
   const { data, error } = await supabase.rpc('set_application_status', {
     p_application_ids: ids,
     p_sub_status_key: subStatusKey,
     p_note: note.trim(),
+    ...(reasonCode ? { p_reason_code: reasonCode } : {}),
   })
   if (error) {
     console.error('set_application_status failed:', error.message)

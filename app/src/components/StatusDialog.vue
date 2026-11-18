@@ -2,7 +2,7 @@
 import { computed, ref } from 'vue'
 import type { SubStatusRow } from '@/lib/hiringLabels'
 import { setApplicationStatus } from '@/lib/applicationStatus'
-import { contactHint, pickableStatusGroups, statusEventTitle, statusNeedsNote } from '@/lib/stageStatuses'
+import { contactHint, settableStatusGroups, statusEventTitle, statusNeedsNote } from '@/lib/stageStatuses'
 
 /**
  * Set the status of one application or many (plan 068; plan 054 began it as
@@ -31,7 +31,7 @@ const note = ref('')
 const busy = ref(false)
 const error = ref<string | null>(null)
 
-const groups = computed(() => pickableStatusGroups(props.rows))
+const groups = computed(() => settableStatusGroups(props.rows))
 const stages = computed(() => [...new Set(props.applications.map((a) => a.stage_key))])
 const eyebrow = computed(() => statusEventTitle(stages.value.length === 1 ? (stages.value[0] ?? '') : ''))
 const title = computed(() => {

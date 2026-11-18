@@ -75,15 +75,11 @@ async function submit(): Promise<void> {
     return
   }
   busy.value = true
-  const result = await setApplicationStatus(applicationIds.value, statusKey.value, note.value)
+  const result = await setApplicationStatus(applicationIds.value, statusKey.value, note.value, mode.value === 'reject' ? reasonCode.value : '')
   if (result.error) {
     busy.value = false
     error.value = result.error
     return
-  }
-  if (mode.value === 'reject' && reasonCode.value) {
-    const { error: codeErr } = await supabase.rpc('set_reason_code', { p_application_ids: applicationIds.value, p_reason_code: reasonCode.value })
-    if (codeErr) console.error('set_reason_code failed:', codeErr.message)
   }
   if (emailCandidate.value && canEmail.value) {
     const sent = await emailCandidates(applicationIds.value, 'rejected')

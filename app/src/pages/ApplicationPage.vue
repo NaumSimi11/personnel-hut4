@@ -178,7 +178,7 @@ async function saveHandoff(payload: HandoffPayload): Promise<void> {
   let eventFailed = false
   let clearFailed = false
   if (statusKey) {
-    const result = await setApplicationStatus([current.id], statusKey, payload.note)
+    const result = await setApplicationStatus([current.id], statusKey, payload.note, terminal ? payload.reasonCode : '')
     if (result.error) {
       await load()
       throw new Error(`The assignment was saved, but the status was not: ${result.error}`)
@@ -258,6 +258,13 @@ const statusLocked = computed(() => Boolean(closure.value) || application.value?
 // lookup labels the badge and the timeline — a retired status still reads —
 // and the newest event on this page judges "not responding" exactly as D3 does.
 const rejectStatuses = computed(() => statusesByOutcome(subStatusRows.value, 'rejected'))
+// HR's reason codes, for a rejection recorded as a screening outcome (T9).
+const reasonCodes = ref<{ key: string; label: string }[]>([])
+async function loadReasonCodes(): Promise<void> {
+  const { data, error: err } = await supabase.from('rejection_reasons').select('key, label').is('archived_at', null).order('sort_order')
+  if (err) console.error('Rejection reasons load failed:', err.message)
+  reasonCodes.value = data ?? []
+}
 const subStatusLabels = computed<Record<string, string>>(() => statusLabels(subStatusRows.value))
 const subStatusLabel = computed(() => subStatusLabels.value[application.value?.sub_status_key ?? ''] ?? '')
 const notRespondingNow = computed(() => {
@@ -522,6 +529,7 @@ function friendlyReview(message: string): string {
 
 onMounted(() => {
   void load()
+  void loadReasonCodes()
   // The status and source lookups load once per session (the hiring lookups store).
   void lookups.ensure()
 })
@@ -853,6 +861,7 @@ onMounted(() => {
       :people="people"
       :save="saveHandoff"
       :reject-statuses="rejectStatuses"
+      :reasons="reasonCodes"
     />
     <RejectApplicationDialog ref="rejectDialog" :rows="subStatusRows" @decided="load" />
     <StatusDialog ref="statusDialog" :applications="outreachApplications" :rows="subStatusRows" @logged="load" />

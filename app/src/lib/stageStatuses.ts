@@ -119,6 +119,11 @@ export function pickableStatusGroups(
   return [...groups.filter((g) => g.stageKey === currentStage), ...groups.filter((g) => g.stageKey !== currentStage)]
 }
 
+/** What "Set status" offers: every pickable status but the rejected ones, which go through Reject and its reason code (T9). */
+export function settableStatusGroups(rows: ReadonlyArray<SubStatusRow>): StatusFilterGroup[] {
+  return pickableStatusGroups(rows.filter((r) => r.outcome !== 'rejected'))
+}
+
 /**
  * "Job closed — Position filled (6 Nov 2026)": what an application its job's
  * closing marked shows where its status would be. Null when nothing closed it.

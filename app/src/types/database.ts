@@ -5937,6 +5937,7 @@ export type Database = {
         Args: {
           p_application_ids: string[]
           p_note: string
+          p_reason_code?: string
           p_sub_status_key: string
         }
         Returns: Json

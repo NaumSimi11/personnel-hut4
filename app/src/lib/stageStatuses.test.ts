@@ -11,6 +11,7 @@ import {
   liveStatuses,
   noStatusesHint,
   pickableStatusGroups,
+  settableStatusGroups,
   statusChangeLine,
   statusEventTitle,
   statusFilterGroups,
@@ -181,6 +182,12 @@ describe('pickableStatusGroups', () => {
       },
       { stageKey: 'offer', stageLabel: 'Offered', options: [{ key: 'job_closed', label: 'Job closed' }] },
     ])
+  })
+
+  it('Set status leaves the rejected statuses to the Reject dialog, which asks for the reason code (T9)', () => {
+    const keys = settableStatusGroups(pickable).flatMap((g) => g.options.map((o) => o.key))
+    expect(keys).not.toContain('rejected_by_hr')
+    expect(keys).toContain('interview_hr')
   })
 
   it('narrows to one outcome when asked', () => {

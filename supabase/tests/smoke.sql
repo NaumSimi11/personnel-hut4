@@ -7968,7 +7968,7 @@ begin
                    and kind = 'stage_change' and from_stage_key = 'interview' and to_stage_key = 'screening'),
     'Contact in Future is a Screening status, so the application moved there';
   perform public.set_application_status(array['90000000-0000-0000-0000-0000000008a9',
-                                              '90000000-0000-0000-0000-0000000008aa']::uuid[], 'unqualified', '');
+                                              '90000000-0000-0000-0000-0000000008aa']::uuid[], 'unqualified', '', 'skills');
   assert (select rejected_reason from public.applications where id = '90000000-0000-0000-0000-0000000008a9') = 'unqualified',
     'a reason that was only the old status follows the new one';
   assert (select rejected_reason from public.applications where id = '90000000-0000-0000-0000-0000000008aa') = 'Salary expectations far apart.',
@@ -8923,7 +8923,7 @@ begin
   end;
   assert (select sub_status_key = 'rejected_by_hr' and in_play = false from public.applications where id = a3),
     '0096-g: the refused row is unchanged';
-  perform public.set_application_status(array[a3], 'rejected_by_hr', null);
+  perform public.set_application_status(array[a3], 'rejected_by_hr', null, 'skills');
   assert (select sub_status_key = 'rejected_by_hr' from public.applications where id = a3),
     '0096-g: a rejected status is still settable under a closed job';
 
@@ -9757,7 +9757,7 @@ set role authenticated;
 do $$
 declare r jsonb;
 begin
-  perform public.set_application_status(array['90000000-0000-0000-0000-000000000b02'::uuid, '90000000-0000-0000-0000-000000000b03'::uuid], 'unqualified', null);
+  perform public.set_application_status(array['90000000-0000-0000-0000-000000000b02'::uuid, '90000000-0000-0000-0000-000000000b03'::uuid], 'unqualified', null, 'skills');
   r := public.email_candidates(array['90000000-0000-0000-0000-000000000b02'::uuid, '90000000-0000-0000-0000-000000000b03'::uuid], 'rejected');
   assert (r->>'queued')::int = 1 and r->'skipped'->0->>'why' = 'do_not_contact', '0102: Hugo is told, Nora never: ' || r::text;
   r := public.email_candidates(array['90000000-0000-0000-0000-000000000b02'::uuid], 'rejected');
@@ -10276,7 +10276,7 @@ set role authenticated;
 do $$ begin
   perform public.set_application_status(array['90000000-0000-0000-0000-000000000b11']::uuid[], 'withdrawn_screening', '');
   perform public.set_application_status(array['90000000-0000-0000-0000-000000000b12']::uuid[], 'withdrawn_offer', '');
-  perform public.set_application_status(array['90000000-0000-0000-0000-000000000b13']::uuid[], 'rejected_at_offer', '');
+  perform public.set_application_status(array['90000000-0000-0000-0000-000000000b13']::uuid[], 'rejected_at_offer', '', 'salary');
 end $$;
 reset role;
 set app.test_uid = '';
@@ -10544,5 +10544,34 @@ do $$ begin
                     and tt.title = 'Buddy assigned' and tt.default_owner_role = 'manager'),
     '0124: the default onboarding checklist names a buddy, owned by the hiring manager';
 end $$;
+
+-- ------------------------------------------- a rejection carries its reason code (0125, T9)
+set app.test_uid = '00000000-0000-0000-0000-000000000004';  -- Ada, admin
+set role authenticated;
+do $$
+declare v_app uuid;
+begin
+  select a.id into v_app from public.applications a join public.application_sub_statuses s on s.key = a.sub_status_key
+   where s.outcome = 'open' and a.closed_at is null and a.stage_key = 'screening'
+     and not exists (select 1 from public.jobs j where j.id = a.job_id and j.status in ('closed', 'filled'))
+   limit 1;
+  assert v_app is not null, '0125: an open application to reject';
+  begin
+    perform public.set_application_status(array[v_app], 'unqualified', '');
+    assert false, '0125: rejecting without a reason code must be refused';
+  exception when invalid_parameter_value then
+    if sqlerrm <> 'Pick the reason code.' then raise; end if;
+  end;
+  begin
+    perform public.set_application_status(array[v_app], 'unqualified', '', 'no_such_code');
+    assert false, '0125: an unknown reason code must be refused';
+  exception when invalid_parameter_value then
+    if sqlerrm <> 'Pick the reason code.' then raise; end if;
+  end;
+  perform public.set_application_status(array[v_app], 'unqualified', '', 'salary');
+  assert (select reason_code from public.applications where id = v_app) = 'salary', '0125: the code is kept with the rejection';
+end $$;
+reset role;
+set app.test_uid = '';
 
 select 'SMOKE TESTS PASSED' as result;

@@ -6,7 +6,7 @@ import CompanyFilter from '@/components/CompanyFilter.vue'
 import { PIPELINE_STAGES } from '@/lib/dashboard'
 import { applicantRows, type ApplicantLite, type ApplicantRow } from '@/lib/hiringTabs'
 import type { SubStatusRow } from '@/lib/outreach'
-import { NOT_RESPONDING_FILTER, filterStagesFor, statusFilterGroups, statusLabels } from '@/lib/stageStatuses'
+import { filterStagesFor, statusFilterGroups, statusLabels } from '@/lib/stageStatuses'
 import { blockerCount, blockerWords, friendlyHardDeleteError } from '@/lib/hardDelete'
 import { FILE_BUCKET } from '@/lib/applicationFiles'
 import { useAuthStore } from '@/stores/auth'
@@ -37,9 +37,9 @@ import { todayDb } from '@/lib/compensation'
  * page's "Review them first" (plan 069) links here that way. Since plan 075
  * "In progress" is `in_play`, a stage holds everyone who reached it, and a
  * row its job's closing marked says so where its status would be. The
- * company filter and "Not responding" run in the query too: the latter is
- * the database's rule (not_responding_applications, the one Home counts),
- * so the list, its badge and "Showing N of total" agree with the filter.
+ * company filter runs in the query too, so "Showing N of total" agrees with
+ * it. No automatic "Not responding" filter: HR's no_response status is the
+ * real one, and the Status filter finds it.
  */
 const SEARCH_DEBOUNCE_MS = 300
 
@@ -72,7 +72,7 @@ const total = ref(0)
 const loadingMore = ref(false)
 const subStatusLabels = computed<Record<string, string>>(() => statusLabels(subStatusRows.value))
 const route = useRoute()
-const STAGE_FILTERS = new Set<string>(['live', 'all', NOT_RESPONDING_FILTER, ...PIPELINE_STAGES.map((s) => s.key)])
+const STAGE_FILTERS = new Set<string>(['live', 'all', ...PIPELINE_STAGES.map((s) => s.key)])
 function queryText(name: string): string {
   const raw = route.query[name]
   return typeof raw === 'string' ? raw : ''
@@ -85,12 +85,8 @@ const search = ref('')
 const hasMore = computed(() => applications.value.length < total.value)
 
 const companies = ref<{ id: string; name: string }[]>([])
-// The query already filtered; the rows only take their shape here. Every row
-// the "Not responding" filter returned is flagged by the database's rule.
-const rows = computed<ApplicantRow[]>(() => {
-  const shaped = applicantRows(applications.value, { companyId: '', stage: 'all', search: '' })
-  return stage.value === NOT_RESPONDING_FILTER ? shaped.map((r) => ({ ...r, notResponding: true })) : shaped
-})
+// The query already filtered; the rows only take their shape here.
+const rows = computed<ApplicantRow[]>(() => applicantRows(applications.value, { companyId: '', stage: 'all', search: '' }))
 
 /** The companies the viewer may see candidates in (a handful of rows, once). */
 async function loadCompanies(): Promise<void> {
@@ -159,9 +155,7 @@ const COLUMNS = `id, company_id, stage_key, sub_status_key, in_play, closed_at, 
 /** One window of the list; the stage, status, company and name filters all run in the query. */
 function fetchPage(from: number) {
   const plan = applicantsQueryPlan({ stage: stage.value, status: status.value, companyId: companyId.value, search: search.value })
-  let query = plan.notResponding
-    ? supabase.rpc('not_responding_applications', {}, { count: 'exact' }).select(COLUMNS)
-    : supabase.from('applications').select(COLUMNS, { count: 'exact' })
+  let query = supabase.from('applications').select(COLUMNS, { count: 'exact' })
   for (const [column, value] of plan.eq) query = query.eq(column, value)
   if (plan.nameLike) query = query.ilike('candidate.full_name', likePattern(plan.nameLike))
   return orderNewestFirst(query).range(from, from + LIST_PAGE - 1)
@@ -242,7 +236,6 @@ watch(companyId, load)
             <option value="live">In progress</option>
             <option value="all">All stages</option>
             <option v-for="s in PIPELINE_STAGES" :key="s.key" :value="s.key">{{ s.label }}</option>
-            <option :value="NOT_RESPONDING_FILTER">Not responding</option>
           </select>
         </label>
         <label class="stage-filter">
@@ -303,7 +296,6 @@ watch(companyId, load)
               <span class="badge" :class="badgeClass(r.stage, r.inPlay)">{{ r.stageLabel }}</span>
               <small v-if="r.closure" class="sub" data-testid="closure-badge">{{ r.closure }}</small>
               <small v-else-if="r.subStatusKey && subStatusLabels[r.subStatusKey]" class="sub" data-testid="sub-badge">{{ subStatusLabels[r.subStatusKey] }}</small>
-              <span v-if="r.notResponding" class="sub-badge amber" data-testid="not-responding-badge">Not responding</span>
             </td>
             <td>{{ r.received }}</td>
             <td>{{ r.owner ?? 'Unassigned' }}<small v-if="r.nextAction" class="sub">{{ r.nextAction }}</small></td>
@@ -350,8 +342,6 @@ td b { font-weight: 600; }
 .sub { display: block; font-size: 11px; color: var(--muted); margin-top: 2px; }
 .li-link { color: var(--green-bright); text-decoration: none; font-weight: 550; }
 .li-link:hover { text-decoration: underline; }
-.sub-badge { display: inline-flex; align-items: center; margin-top: 4px; padding: 2px 8px; border-radius: 999px; font-size: 11px; font-weight: 550; white-space: nowrap; }
-.sub-badge.amber { background: #fbf1da; color: var(--amber); }
 .actions { text-align: right; white-space: nowrap; }
 .action-group { display: inline-flex; gap: 6px; }
 .small-btn { font-size: 11px; padding: 7px 11px; text-decoration: none; }

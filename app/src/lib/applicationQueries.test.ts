@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest'
 import { applicantsQueryPlan, orderNewestFirst } from './applicationQueries'
-import { NOT_RESPONDING_FILTER } from './stageStatuses'
 
 /** Records the order calls a query builder receives. */
 function recorder() {
@@ -29,7 +28,7 @@ describe('applicantsQueryPlan', () => {
   const base = { stage: 'live', status: '', companyId: '', search: '' }
 
   it('In progress: in play, any company', () => {
-    expect(applicantsQueryPlan(base)).toEqual({ notResponding: false, eq: [['in_play', true]], nameLike: null })
+    expect(applicantsQueryPlan(base)).toEqual({ eq: [['in_play', true]], nameLike: null })
   })
 
   it('runs the company filter in the query', () => {
@@ -39,9 +38,8 @@ describe('applicantsQueryPlan', () => {
     ])
   })
 
-  it('Not responding goes to the database rule, still with company, status and name', () => {
-    expect(applicantsQueryPlan({ stage: NOT_RESPONDING_FILTER, status: 'contacted', companyId: 'co-1', search: ' ana ' })).toEqual({
-      notResponding: true,
+  it('status, company and name all filter on top of the stage', () => {
+    expect(applicantsQueryPlan({ stage: 'all', status: 'contacted', companyId: 'co-1', search: ' ana ' })).toEqual({
       eq: [
         ['sub_status_key', 'contacted'],
         ['company_id', 'co-1'],

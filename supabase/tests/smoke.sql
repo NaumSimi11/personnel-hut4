@@ -340,8 +340,8 @@ begin
           where id = '90000000-0000-0000-0000-000000000002') = 'hired',
     'application moved to hired';
   assert (select count(*) from public.plan_tasks
-          where plan_id = (first->>'plan_id')::uuid) = 11,
-    'onboarding plan carries the 11 template tasks (0040 defaults)';
+          where plan_id = (first->>'plan_id')::uuid) = 12,
+    'onboarding plan carries the 12 template tasks (0040 defaults, buddy from 0124)';
   again := public.confirm_hire('90000000-0000-0000-0000-000000000002',
     'Hired Candidate', 'Coordinator', current_date);
   assert (again->>'already_hired')::boolean = true, 'second confirm is a no-op';
@@ -3414,7 +3414,7 @@ begin
       'notes', 'Vegetarian')));
   assert (r->>'person_id') is not null and (r->>'employment_period_id') is not null, 'person and period created: ' || r::text;
   assert (r->>'plan_id') is not null, 'the onboarding checklist started: ' || r::text;
-  assert (select count(*) from public.plan_tasks where plan_id = (r->>'plan_id')::uuid) = 11, 'the checklist carries the template tasks';
+  assert (select count(*) from public.plan_tasks where plan_id = (r->>'plan_id')::uuid) = 12, 'the checklist carries the template tasks';
   assert (select status from public.employment_periods where id = (r->>'employment_period_id')::uuid) = 'pre_start', 'a future start is pre_start';
   assert (select department_id from public.employment_periods where id = (r->>'employment_period_id')::uuid) = 'd0000000-0000-0000-0000-0000000000b1', 'department set';
   assert (select manager_id from public.employment_periods where id = (r->>'employment_period_id')::uuid) = '20000000-0000-0000-0000-000000000005', 'manager set';
@@ -3787,7 +3787,7 @@ delete from public.jobs where id = '70000000-0000-0000-0000-0000000000d1';
 do $$
 begin
   assert (select count(*) from public.template_tasks tt join public.task_templates t on t.id = tt.template_id
-          where t.company_id is null and t.kind = 'onboarding' and tt.archived_at is null) = 11, 'the richer onboarding default';
+          where t.company_id is null and t.kind = 'onboarding' and tt.archived_at is null) = 12, 'the richer onboarding default';
   assert (select count(*) from public.template_tasks tt join public.task_templates t on t.id = tt.template_id
           where t.company_id is null and t.kind = 'offboarding' and tt.archived_at is null) = 8, 'the richer offboarding default';
   assert exists (select 1 from public.template_tasks where key = 'private_details'), 'keyed lines';
@@ -3809,8 +3809,8 @@ begin
   r := public.company_template('10000000-0000-0000-0000-00000000000b', 'onboarding');
   assert (r->>'created')::boolean, 'the company copy is created on first ask: ' || r::text;
   v_company := (r->>'template_id')::uuid;
-  assert (select count(*) from public.template_tasks where template_id = v_company and archived_at is null) = 11, 'the copy carries every default line';
-  assert (select count(*) from public.template_tasks where template_id = v_default and archived_at is null) = 11, 'the default is untouched';
+  assert (select count(*) from public.template_tasks where template_id = v_company and archived_at is null) = 12, 'the copy carries every default line';
+  assert (select count(*) from public.template_tasks where template_id = v_default and archived_at is null) = 12, 'the default is untouched';
   r := public.company_template('10000000-0000-0000-0000-00000000000b', 'onboarding');
   assert not (r->>'created')::boolean and (r->>'template_id')::uuid = v_company, 'a second ask returns the same copy';
   -- A new line for B, a refused phase, a refused owner.
@@ -3856,7 +3856,7 @@ begin
   v_plan := (r->>'plan_id')::uuid;
   v_person := (r->>'person_id')::uuid;
   assert (select template_id from public.plans where id = v_plan) = v_company, 'the company template is used';
-  assert (select count(*) from public.plan_tasks where plan_id = v_plan) = 12, 'eleven default lines plus the parking badge';
+  assert (select count(*) from public.plan_tasks where plan_id = v_plan) = 13, 'twelve default lines plus the parking badge';
   assert exists (select 1 from public.plan_tasks where plan_id = v_plan and title = 'Parking badge and key issued' and critical), 'the edited line is on the checklist';
   assert (select task_key from public.plan_tasks where plan_id = v_plan and title = 'Personal, ID and bank details collected') = 'private_details', 'keys are copied';
   -- Retire the badge line: the running checklist keeps it, a new one does not.
@@ -3865,7 +3865,7 @@ begin
   assert exists (select 1 from public.plan_tasks where plan_id = v_plan and template_task_id = v_line), 'a running checklist keeps its copy';
   r := public.create_employee(jsonb_build_object('full_name', 'Later Starter', 'work_email', 'later@b.test',
     'company_id', '10000000-0000-0000-0000-00000000000b', 'job_title', 'Clerk', 'start_date', current_date + 5));
-  assert (select count(*) from public.plan_tasks where plan_id = (r->>'plan_id')::uuid) = 11, 'a retired line is gone from new checklists';
+  assert (select count(*) from public.plan_tasks where plan_id = (r->>'plan_id')::uuid) = 12, 'a retired line is gone from new checklists';
   -- A keyed line retired and added back under its title regains the key.
   select id into v_line from public.template_tasks where template_id = v_company and key = 'welcome_note' and archived_at is null;
   perform public.retire_template_task(v_line);
@@ -3876,7 +3876,7 @@ begin
   assert (r->>'phase_key') = 'day_one', 'a task due on the start date is day one: ' || r::text;
   r := public.add_plan_task(v_plan, 'Desk set up', 'it', current_date + 3, true);
   assert (r->>'phase_key') = 'before_start', 'a task due before the start is before start';
-  assert (select count(*) from public.plan_tasks where plan_id = v_plan) = 14, 'the one-off tasks are on this checklist only';
+  assert (select count(*) from public.plan_tasks where plan_id = v_plan) = 15, 'the one-off tasks are on this checklist only';
   begin
     perform public.add_plan_task(v_plan, 'x', 'hr');
     raise exception 'FAIL: a one-letter task accepted';
@@ -10536,5 +10536,13 @@ begin
 end $$;
 reset role;
 set app.test_uid = '';
+
+-- ------------------------------------------- a buddy on every onboarding checklist (0124, C3)
+do $$ begin
+  assert exists (select 1 from public.template_tasks tt join public.task_templates t on t.id = tt.template_id
+                  where t.company_id is null and t.kind = 'onboarding' and tt.key = 'buddy' and tt.archived_at is null
+                    and tt.title = 'Buddy assigned' and tt.default_owner_role = 'manager'),
+    '0124: the default onboarding checklist names a buddy, owned by the hiring manager';
+end $$;
 
 select 'SMOKE TESTS PASSED' as result;

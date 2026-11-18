@@ -10339,4 +10339,54 @@ do $$ begin
     '0115: the holding default tells the General Administrator of a confirmed hire';
 end $$;
 
+-- ------------------------------------------- Did not start, end to end (B4; built in 0108)
+-- The card: marking it cancels onboarding, tells IT and Payroll, and reopens
+-- the position — the filled job and, through 0101, its filled request.
+insert into public.hiring_requests (id, company_id, title, status, requested_by, headcount) values
+  ('60000000-0000-0000-0000-000000000b41', '10000000-0000-0000-0000-00000000000a', 'B4 Analyst', 'approved', '20000000-0000-0000-0000-000000000002', 1);
+insert into public.jobs (id, company_id, title, status, hiring_request_id) values
+  ('70000000-0000-0000-0000-000000000b41', '10000000-0000-0000-0000-00000000000a', 'B4 Analyst', 'open', '60000000-0000-0000-0000-000000000b41');
+insert into public.people (id, full_name, work_email) values ('20000000-0000-0000-0000-000000000b41', 'Bo Nostart', 'bo@a.test');
+insert into public.employment_periods (id, person_id, company_id, job_title, status, start_date) values
+  ('30000000-0000-0000-0000-000000000b41', '20000000-0000-0000-0000-000000000b41', '10000000-0000-0000-0000-00000000000a', 'B4 Analyst', 'pre_start', current_date + 7);
+insert into public.candidates (id, full_name) values ('80000000-0000-0000-0000-000000000b41', 'Bo Nostart');
+do $$
+declare v_plan uuid;
+begin
+  perform set_config('app.bulk_import', 'on', true);
+  insert into public.applications (id, job_id, company_id, candidate_id, stage_key, sub_status_key, employment_period_id) values
+    ('90000000-0000-0000-0000-000000000b41', '70000000-0000-0000-0000-000000000b41', '10000000-0000-0000-0000-00000000000a',
+     '80000000-0000-0000-0000-000000000b41', 'hired', 'hired', '30000000-0000-0000-0000-000000000b41');
+  perform set_config('app.bulk_import', 'off', true);
+  update public.jobs set status = 'filled' where id = '70000000-0000-0000-0000-000000000b41';
+  insert into public.plans (kind, person_id, company_id, employment_period_id, start_date)
+    values ('onboarding', '20000000-0000-0000-0000-000000000b41', '10000000-0000-0000-0000-00000000000a',
+            '30000000-0000-0000-0000-000000000b41', current_date + 7)
+    returning id into v_plan;
+  insert into public.plan_tasks (plan_id, task_key, title, owner_role, phase_key)
+    values (v_plan, 'laptop', 'Prepare a laptop', 'it', 'before_start');
+  assert (select status from public.hiring_requests where id = '60000000-0000-0000-0000-000000000b41') = 'filled',
+    'B4 setup: the filled job filled its request';
+end $$;
+set app.test_uid = '00000000-0000-0000-0000-000000000a02';  -- Rita: employment.edit
+set role authenticated;
+do $$ begin
+  perform public.mark_did_not_start('30000000-0000-0000-0000-000000000b41', 'Accepted a counter-offer');
+end $$;
+reset role;
+set app.test_uid = '';
+do $$ begin
+  assert (select status from public.plans where employment_period_id = '30000000-0000-0000-0000-000000000b41' and kind = 'onboarding') = 'cancelled',
+    'B4: the onboarding plan is cancelled';
+  assert not exists (select 1 from public.plan_tasks t join public.plans p on p.id = t.plan_id
+                      where p.employment_period_id = '30000000-0000-0000-0000-000000000b41' and t.status in ('open', 'blocked')),
+    'B4: no onboarding task is left open';
+  assert exists (select 1 from public.notifications where kind = 'hire.did_not_start' and entity_id = '30000000-0000-0000-0000-000000000b41'),
+    'B4: IT and Payroll are told';
+  assert (select status from public.jobs where id = '70000000-0000-0000-0000-000000000b41') = 'open',
+    'B4: the filled job reopens';
+  assert (select status from public.hiring_requests where id = '60000000-0000-0000-0000-000000000b41') = 'approved',
+    'B4: and so does its request';
+end $$;
+
 select 'SMOKE TESTS PASSED' as result;

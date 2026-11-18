@@ -24,7 +24,7 @@ import JobHiringManagerField from '@/components/JobHiringManagerField.vue'
 import JobPipelineBoard from '@/components/JobPipelineBoard.vue'
 import JobTeamCard from '@/components/JobTeamCard.vue'
 import AfterFillCard from '@/components/AfterFillCard.vue'
-import { NOT_RESPONDING_DAYS, notResponding, type SubStatusRow } from '@/lib/outreach'
+import type { SubStatusRow } from '@/lib/outreach'
 import {
   STAGES,
   STAGE_LABEL,
@@ -37,7 +37,6 @@ import {
   type StageKey,
 } from '@/lib/stageStatuses'
 import { setApplicationStatus } from '@/lib/applicationStatus'
-import { todayDb } from '@/lib/compensation'
 import { LIST_PAGE } from '@/lib/pageAll'
 import { createRequestGate } from '@/lib/requestGate'
 import { useHiringLookupsStore } from '@/stores/hiringLookups'
@@ -173,13 +172,7 @@ const activityPanel = ref<InstanceType<typeof JobActivityPanel> | null>(null)
 // a bulk set.
 const statusDialog = ref<InstanceType<typeof StatusDialog> | null>(null)
 const subStatusRows = computed<SubStatusRow[]>(() => lookups.statuses)
-const lastActivity = ref<Record<string, string>>({})
-// The activity query came back at its cap, so rows missing from it may simply
-// have been cut off — their activity is unknown (see loadLastActivity).
-const activityTruncated = ref(false)
-const ACTIVITY_CAP = 1000
 const subStatusFilter = ref('')
-const notRespondingOnly = ref(false)
 const selectedIds = ref<string[]>([])
 const outreachTarget = ref<ApplicationRow[]>([])
 
@@ -200,38 +193,17 @@ const canSource = computed(() => auth.isAdmin || auth.canAnywhere('candidates.so
 const canReview = computed(() => (job.value ? auth.can(job.value.company_id, 'candidates.review') : false))
 const subStatusLabels = computed<Record<string, string>>(() => statusLabels(subStatusRows.value))
 const subStatusGroups = computed(() => statusFilterGroups(subStatusRows.value))
-// The status filter runs in the query (loadApplications); "not responding"
-// is judged here over the rows loaded so far, from their last activity.
-const visibleApplications = computed(() =>
-  applications.value.filter((a) => !notRespondingOnly.value || isNotResponding(a)),
-)
+// Every filter runs in the query (loadApplications), so the rows shown are the rows loaded.
+const visibleApplications = computed(() => applications.value)
 const selectedApplications = computed(() => applications.value.filter((a) => selectedIds.value.includes(a.id)))
 const outreachApplications = computed<OutreachApplication[]>(() =>
   outreachTarget.value.map((a) => ({ id: a.id, full_name: a.candidate?.full_name ?? '—', stage_key: a.stage_key, sub_status_key: a.sub_status_key })),
 )
 
-/** D3 as the lib mirrors it: the newest event in the window, else received_at; the job must be live. */
-function isNotResponding(a: ApplicationRow): boolean {
-  const last = lastActivity.value[a.id] ?? null
-  // A truncated activity result cannot tell "no event in the window" from "cut
-  // off", so the received_at fallback would flag rows wrongly: unknown, not flagged.
-  if (!last && activityTruncated.value) return false
-  return notResponding(
-    { stage_key: a.stage_key, sub_status_key: a.sub_status_key, in_play: a.in_play, last_activity_at: last, received_at: a.received_at, job_status: job.value?.status ?? '' },
-    todayDb(),
-  )
-}
-
 function toggleSelected(id: string, checked: boolean): void {
   selectedIds.value = checked ? [...new Set([...selectedIds.value, id])] : selectedIds.value.filter((x) => x !== id)
 }
 
-// Change a filter and the rows it hides leave the selection with them, so the
-// dialog can never log an application the recruiter cannot see.
-watch(notRespondingOnly, () => {
-  const visible = new Set(visibleApplications.value.map((a) => a.id))
-  selectedIds.value = selectedIds.value.filter((id) => visible.has(id))
-})
 watch(subStatusFilter, () => void loadList())
 
 function openOutreach(rows: ApplicationRow[]): void {
@@ -389,9 +361,6 @@ async function loadList(): Promise<void> {
   matching.value = page.count ?? applications.value.length
   // A row that is no longer on this job leaves the selection with it.
   selectedIds.value = selectedIds.value.filter((id) => applications.value.some((a) => a.id === id))
-  lastActivity.value = {}
-  activityTruncated.value = false
-  await loadLastActivity(applications.value.map((a) => a.id), ticket)
 }
 
 async function loadMoreApplications(): Promise<void> {
@@ -410,7 +379,6 @@ async function loadMoreApplications(): Promise<void> {
   const rows = (page.data ?? []) as unknown as ApplicationRow[]
   applications.value = [...applications.value, ...rows]
   matching.value = page.count ?? matching.value
-  await loadLastActivity(rows.map((a) => a.id), ticket)
 }
 
 /** Overview's action queue and hired list: their own bounded queries, not the paged list. */
@@ -450,42 +418,6 @@ async function loadCounts(): Promise<void> {
   const row = ((summary.data ?? []) as { in_play: number; hired: number; total: number }[])[0]
   counts.value = { in_play: row?.in_play ?? 0, hired: row?.hired ?? 0, total: row?.total ?? 0 }
   stageInPlay.value = Object.fromEntries(openStages.map((s, i) => [s, perStage[i].count ?? 0]))
-}
-
-/**
- * The newest application_event per application, for the "not responding"
- * badge (D3): the second round trip the plan allows. Keyed by the job
- * through the embed (no id list in the URL) and bounded to the last 30
- * days, so the rows stay few: an application with no event in the window
- * falls back to received_at, which gives D3's answer — its older events, if
- * any, never postdate its receipt.
- *
- * Asked for the ids just loaded (a window of 50), newest first and capped at 1,000 rows: a full page means the
- * result may be a prefix, and the fallback above stops applying (isNotResponding).
- */
-async function loadLastActivity(ids: string[], ticket: number): Promise<void> {
-  if (!ids.length) return
-  const since = new Date(`${todayDb()}T00:00:00Z`)
-  since.setUTCDate(since.getUTCDate() - NOT_RESPONDING_DAYS)
-  const { data, error: err } = await supabase
-    .from('application_events')
-    .select('application_id, created_at')
-    .in('application_id', ids)
-    .gte('created_at', since.toISOString())
-    .order('created_at', { ascending: false })
-    .limit(ACTIVITY_CAP)
-  if (!listGate.isCurrent(ticket)) return
-  if (err) {
-    console.error('Application activity load failed:', err.message)
-    return
-  }
-  activityTruncated.value = activityTruncated.value || (data ?? []).length === ACTIVITY_CAP
-  const newest = new Map<string, string>(Object.entries(lastActivity.value))
-  for (const e of data ?? []) {
-    const prev = newest.get(e.application_id)
-    if (!prev || prev < e.created_at) newest.set(e.application_id, e.created_at)
-  }
-  lastActivity.value = Object.fromEntries(newest)
 }
 
 async function loadChannels(): Promise<void> {
@@ -1025,10 +957,6 @@ onMounted(async () => {
                 </optgroup>
               </select>
             </label>
-            <label class="filter check">
-              <input v-model="notRespondingOnly" type="checkbox" data-testid="filter-not-responding" />
-              <span>Not responding only (among loaded)</span>
-            </label>
             <span v-if="selectedIds.length" class="selection-note" data-testid="selection-count">{{ selectedIds.length }} selected</span>
           </div>
           <div v-if="!visibleApplications.length" class="empty">No applications match these filters.</div>
@@ -1062,7 +990,6 @@ onMounted(async () => {
             <!-- Not a .badge: the E2E rows locate the stage badge by that class alone. -->
             <span v-if="closureOf(a)" class="sub-badge" data-testid="closure-badge">{{ closureOf(a) }}</span>
             <span v-else-if="a.sub_status_key && subStatusLabels[a.sub_status_key]" class="sub-badge" data-testid="sub-badge">{{ subStatusLabels[a.sub_status_key] }}</span>
-            <span v-if="isNotResponding(a)" class="sub-badge amber" data-testid="not-responding-badge">Not responding</span>
             <div class="row-actions">
               <button
                 v-if="canReview"
@@ -1279,7 +1206,6 @@ textarea[readonly] { background: #fafbf9; }
 .filter-row { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; padding: 12px 24px; border-top: 1px solid #edf0eb; background: #fafbf9; }
 .filter { display: flex; align-items: center; gap: 8px; font-size: 11px; color: var(--muted); }
 .filter select { border: 1px solid var(--line); background: #fff; padding: 7px 10px; font-size: 12px; color: var(--ink); }
-.filter.check { cursor: pointer; }
 .selection-note { margin-left: auto; font-size: 11px; color: var(--muted); }
 .select-app { width: 15px; height: 15px; margin: 0; flex-shrink: 0; accent-color: var(--green); }
 .sub-badge { display: inline-flex; align-items: center; padding: 3px 9px; border-radius: 999px; font-size: 11px; font-weight: 550; background: #f0f1ef; color: var(--muted); white-space: nowrap; }

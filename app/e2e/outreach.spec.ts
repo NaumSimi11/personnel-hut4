@@ -150,7 +150,7 @@ async function readNotResponding(page: import('@playwright/test').Page): Promise
   return Number(text)
 }
 
-test('sub-status badges → bulk Set status → not-responding filter → the timeline → the report tile → a stage move takes the default', async ({
+test('sub-status badges → bulk Set status → the timeline → the report tile → a stage move takes the default', async ({
   page,
 }) => {
   const db = serviceClient()
@@ -177,7 +177,8 @@ test('sub-status badges → bulk Set status → not-responding filter → the ti
   const notRespondingBefore = await readNotResponding(page)
   expect(notRespondingBefore).toBeGreaterThanOrEqual(1)
 
-  // The Applications tab: three "Associated", the fourth "Contacted" + "Not responding".
+  // The Applications tab: three "Associated", the fourth "Contacted". "Not responding"
+  // is one of HR's own statuses, so the job's list never adds the automatic flag.
   await page.goto(`/hiring/jobs/${jobId}?tab=applications`)
   const rowOf = (name: (typeof NAMES)[number]) => page.locator('.application-row', { hasText: candidateName(name) })
   for (const name of ['Ana', 'Ben', 'Cal'] as const) {
@@ -187,7 +188,8 @@ test('sub-status badges → bulk Set status → not-responding filter → the ti
   }
   await expect(rowOf('Dee').locator('.badge')).toHaveText('Screening')
   await expect(rowOf('Dee').getByTestId('sub-badge')).toHaveText(LABEL.contacted)
-  await expect(rowOf('Dee').getByTestId('not-responding-badge')).toHaveText('Not responding')
+  await expect(rowOf('Dee').getByTestId('not-responding-badge')).toHaveCount(0)
+  await expect(page.getByTestId('filter-not-responding')).toHaveCount(0)
 
   // Tick two → Set status → "Contact attempted", a note → both badges change.
   const bulkButton = page.getByTestId('log-outreach')
@@ -236,11 +238,6 @@ test('sub-status badges → bulk Set status → not-responding filter → the ti
   expect(afterBulk?.find((a) => a.id === appIds.Cal)?.sub_status_key).toBe('sourced')
   expect((afterBulk ?? []).every((a) => a.stage_key === 'screening')).toBe(true)
 
-  // "Not responding only" leaves the fourth row alone.
-  await page.getByTestId('filter-not-responding').check()
-  await expect(page.locator('.application-row')).toHaveCount(1)
-  await expect(rowOf('Dee')).toBeVisible()
-  await page.getByTestId('filter-not-responding').uncheck()
   await expect(page.locator('.application-row')).toHaveCount(4)
 
   // Open the fourth: the page shows the same badges; log "Interested" from it.

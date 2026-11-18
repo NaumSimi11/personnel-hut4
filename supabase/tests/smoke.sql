@@ -10020,7 +10020,7 @@ insert into public.applications (id, job_id, company_id, candidate_id, source_ke
   ('90000000-0000-0000-0000-000000000f01', '70000000-0000-0000-0000-000000000d01', '10000000-0000-0000-0000-00000000000a',
    '80000000-0000-0000-0000-000000000f01', 'head_hunt');
 insert into public.job_team (job_id, person_id, role) values
-  ('70000000-0000-0000-0000-000000000d01', '20000000-0000-0000-0000-000000000003', 'assessor');
+  ('70000000-0000-0000-0000-000000000d01', '20000000-0000-0000-0000-000000000003', 'hiring_manager');
 set app.test_uid = '00000000-0000-0000-0000-000000000003';  -- Omar
 set role authenticated;
 do $$ begin
@@ -10309,5 +10309,24 @@ do $$ begin
 end $$;
 reset role;
 set app.test_uid = '';
+
+-- ------------------------------------------- three hiring roles (0114)
+-- B3 / D3: a hiring team names only Recruiter, Hiring manager or HR.
+do $$ begin
+  assert (select column_default from information_schema.columns where table_name = 'job_team' and column_name = 'role') = '''recruiter''::text',
+    '0114: a new member is a recruiter unless said otherwise';
+  begin
+    insert into public.job_team (job_id, person_id, role) values
+      ('70000000-0000-0000-0000-000000000d01', '20000000-0000-0000-0000-000000000004', 'panel');
+    assert false, '0114: panel is no longer a hiring role';
+  exception when check_violation then null;
+  end;
+  insert into public.job_team (job_id, person_id, role) values
+    ('70000000-0000-0000-0000-000000000d01', '20000000-0000-0000-0000-000000000004', 'hr');
+  assert exists (select 1 from public.notifications where kind = 'hiring.team'
+                   and person_id = '20000000-0000-0000-0000-000000000004' and body like 'Role: HR · %'),
+    '0114: the notice names the role in words';
+  delete from public.job_team where job_id = '70000000-0000-0000-0000-000000000d01' and person_id = '20000000-0000-0000-0000-000000000004';
+end $$;
 
 select 'SMOKE TESTS PASSED' as result;

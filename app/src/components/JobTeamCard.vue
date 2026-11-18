@@ -10,12 +10,11 @@ import { supabase } from '@/lib/supabase'
  */
 const props = defineProps<{ jobId: string; canEdit: boolean }>()
 
+// The three hiring roles (decision D3, migration 0114).
 const ROLES = [
   { value: 'recruiter', label: 'Recruiter' },
-  { value: 'interviewer', label: 'Interviewer' },
-  { value: 'assessor', label: 'Assessor' },
-  { value: 'panel', label: 'Panel' },
-  { value: 'director', label: 'Director / CEO' },
+  { value: 'hiring_manager', label: 'Hiring manager' },
+  { value: 'hr', label: 'HR' },
 ] as const
 type Role = (typeof ROLES)[number]['value']
 type Member = { person_id: string; role: Role; person: { full_name: string } | null }
@@ -24,7 +23,7 @@ const positions = ref<{ headcount: number; filled: number; open: number } | null
 const team = ref<Member[]>([])
 const people = ref<{ id: string; full_name: string }[]>([])
 const pickPerson = ref('')
-const pickRole = ref<Role>('interviewer')
+const pickRole = ref<Role>('hiring_manager')
 const busy = ref(false)
 const error = ref<string | null>(null)
 

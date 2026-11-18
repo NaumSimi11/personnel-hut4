@@ -43,3 +43,18 @@ describe('pipeline board', () => {
     expect(dropTarget(shortlisted, app('k', 'screening', 'unqualified', false))).toBeNull()
   })
 })
+
+describe('stage owners (B3, decision D3: three roles only)', () => {
+  const ownerOf = (key: string) => BOARD_COLUMNS.find((c) => c.key === key)?.owner
+
+  it('gives the technical test, Interview 2 and the final interview to the hiring manager', () => {
+    expect(ownerOf('test')).toBe('Hiring manager')
+    expect(ownerOf('interview2')).toBe('Hiring manager')
+    expect(ownerOf('final')).toBe('Hiring manager')
+  })
+
+  it('names only Recruiter, Hiring manager or HR as an owner', () => {
+    const owners = BOARD_COLUMNS.filter((c) => c.key !== 'applied').map((c) => c.owner)
+    expect(owners.every((o) => ['Recruiter', 'Hiring manager', 'HR'].includes(o))).toBe(true)
+  })
+})

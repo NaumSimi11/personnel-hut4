@@ -3,6 +3,9 @@
  * columns over the four stages and HR's statuses. Each column says which
  * applications it holds and which status a card dropped on it gets. Hired is
  * reached through the offer only, so nothing is dropped there.
+ *
+ * Owners are the three hiring roles only — Recruiter, Hiring manager, HR
+ * (decision D3, board card B3).
  */
 export type BoardApplication = {
   id: string
@@ -30,13 +33,13 @@ export const BOARD_COLUMNS: ReadonlyArray<BoardColumn> = [
     holds: (a) => a.in_play && a.stage_key === 'screening' && !SPECIAL_SCREENING.has(a.sub_status_key ?? '') },
   { key: 'shortlisted', label: 'Shortlisted', owner: 'Hiring manager', target: 'shortlisted', optional: null,
     holds: (a) => a.in_play && a.stage_key === 'screening' && (a.sub_status_key === 'shortlisted' || a.sub_status_key === 'contact') },
-  { key: 'test', label: 'Technical / Skills test', owner: 'Assessor', target: 'interview_task', optional: 'interview_task',
+  { key: 'test', label: 'Technical / Skills test', owner: 'Hiring manager', target: 'interview_task', optional: 'interview_task',
     holds: (a) => a.in_play && a.sub_status_key === 'interview_task' },
   { key: 'interview1', label: 'Interview 1 (HR)', owner: 'Recruiter', target: 'interview_hr', optional: 'interview_hr',
     holds: (a) => a.in_play && a.sub_status_key === 'interview_hr' },
-  { key: 'interview2', label: 'Interview 2 (Team)', owner: 'Panel', target: 'interview_to_schedule', optional: null,
+  { key: 'interview2', label: 'Interview 2 (Team)', owner: 'Hiring manager', target: 'interview_to_schedule', optional: null,
     holds: (a) => a.in_play && a.stage_key === 'interview' && !OPTIONAL_INTERVIEW.has(a.sub_status_key ?? '') },
-  { key: 'final', label: 'Final interview', owner: 'Director / CEO', target: 'interview_stakeholders', optional: 'interview_stakeholders',
+  { key: 'final', label: 'Final interview', owner: 'Hiring manager', target: 'interview_stakeholders', optional: 'interview_stakeholders',
     holds: (a) => a.in_play && a.sub_status_key === 'interview_stakeholders' },
   { key: 'offer', label: 'Offer', owner: 'HR', target: 'offer_made', optional: null,
     holds: (a) => a.in_play && a.stage_key === 'offer' },

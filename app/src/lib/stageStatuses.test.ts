@@ -5,6 +5,7 @@ import {
   closureLine,
   contactHint,
   decisionEmailOffered,
+  statusNeedsNote,
   firstOpenStatus,
   filterStagesFor,
   liveStatuses,
@@ -252,3 +253,15 @@ describe('decisionEmailOffered', () => {
 })
 
 type SubStatusRowLike = Parameters<typeof decisionEmailOffered>[1] & object
+
+describe('statusNeedsNote', () => {
+  it('asks why an offer was declined (B6), as the database does', () => {
+    expect(statusNeedsNote('offer_declined')).toBe(true)
+  })
+
+  it('leaves the note optional for everything else', () => {
+    expect(statusNeedsNote('withdrawn_offer')).toBe(false)
+    expect(statusNeedsNote('contacted')).toBe(false)
+    expect(statusNeedsNote('')).toBe(false)
+  })
+})

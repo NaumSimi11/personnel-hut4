@@ -2,7 +2,7 @@
 import { computed, ref } from 'vue'
 import type { SubStatusRow } from '@/lib/hiringLabels'
 import { setApplicationStatus } from '@/lib/applicationStatus'
-import { contactHint, pickableStatusGroups, statusEventTitle } from '@/lib/stageStatuses'
+import { contactHint, pickableStatusGroups, statusEventTitle, statusNeedsNote } from '@/lib/stageStatuses'
 
 /**
  * Set the status of one application or many (plan 068; plan 054 began it as
@@ -62,6 +62,10 @@ async function submit(): Promise<void> {
     error.value = 'Pick a status.'
     return
   }
+  if (statusNeedsNote(subStatusKey.value) && !note.value.trim()) {
+    error.value = 'Write why the candidate declined the offer.'
+    return
+  }
   busy.value = true
   const result = await setApplicationStatus(ids, subStatusKey.value, note.value)
   busy.value = false
@@ -97,7 +101,7 @@ async function submit(): Promise<void> {
         </fieldset>
         <p v-if="warning" class="hint warning" role="note" data-testid="outreach-contact-hint">{{ warning }}</p>
         <div class="field">
-          <label for="outreach-note">What happened? (optional)</label>
+          <label for="outreach-note">{{ statusNeedsNote(subStatusKey) ? 'Why did the candidate decline? (required)' : 'What happened? (optional)' }}</label>
           <textarea id="outreach-note" v-model="note" rows="3" :maxlength="NOTE_MAX" data-testid="outreach-note"></textarea>
         </div>
       </template>

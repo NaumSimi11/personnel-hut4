@@ -187,3 +187,11 @@ export function decisionEmailOffered(
   if (mode === 'withdraw') return false
   return !picked?.hm_only
 }
+
+/** Statuses whose note is required — set_application_status refuses them without one (0113). */
+const NOTE_REQUIRED = new Set(['offer_declined'])
+
+/** Whether picking this status needs a note: a declined offer says why (board card B6). */
+export function statusNeedsNote(statusKey: string): boolean {
+  return NOTE_REQUIRED.has(statusKey)
+}

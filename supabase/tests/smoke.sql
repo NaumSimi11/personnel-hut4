@@ -10283,4 +10283,31 @@ do $$ begin
     '0112: rejected at Offer stays at Offer and leaves play';
 end $$;
 
+-- ------------------------------------------- a declined offer needs a reason (0113)
+-- B6: offer_declined set by hand (Set status, Withdrawn) must say why, as the offer card already does.
+insert into public.candidates (id, full_name) values ('80000000-0000-0000-0000-000000000b61', 'B6 Declines');
+insert into public.applications (id, job_id, company_id, candidate_id, stage_key, sub_status_key) values
+  ('90000000-0000-0000-0000-000000000b61', '70000000-0000-0000-0000-000000000b11', '10000000-0000-0000-0000-00000000000b',
+   '80000000-0000-0000-0000-000000000b61', 'offer', 'offer_made');
+set app.test_uid = '00000000-0000-0000-0000-000000000005';  -- Bea, Company HR in B
+set role authenticated;
+do $$ begin
+  begin
+    perform public.set_application_status(array['90000000-0000-0000-0000-000000000b61']::uuid[], 'offer_declined', '   ');
+    assert false, '0113: offer_declined without a reason must be refused';
+  exception when invalid_parameter_value then
+    if sqlerrm <> 'Record why the candidate declined the offer.' then raise; end if;
+  end;
+  assert (select sub_status_key from public.applications where id = '90000000-0000-0000-0000-000000000b61') = 'offer_made',
+    '0113: the refused decline changed nothing';
+  perform public.set_application_status(array['90000000-0000-0000-0000-000000000b61']::uuid[], 'offer_declined', ' Took a counter-offer. ');
+  assert (select sub_status_key from public.applications where id = '90000000-0000-0000-0000-000000000b61') = 'offer_declined',
+    '0113: with a reason the decline is recorded';
+  assert exists (select 1 from public.application_events where application_id = '90000000-0000-0000-0000-000000000b61'
+                   and to_sub_status_key = 'offer_declined' and body = 'Took a counter-offer.'),
+    '0113: the reason is in the timeline';
+end $$;
+reset role;
+set app.test_uid = '';
+
 select 'SMOKE TESTS PASSED' as result;

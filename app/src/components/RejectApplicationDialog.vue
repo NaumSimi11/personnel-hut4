@@ -4,7 +4,7 @@ import { supabase } from '@/lib/supabase'
 import type { Outcome, SubStatusRow } from '@/lib/hiringLabels'
 import { setApplicationStatus } from '@/lib/applicationStatus'
 import { emailCandidates } from '@/lib/candidateEmails'
-import { contactHint, decisionEmailOffered, pickableStatusGroups } from '@/lib/stageStatuses'
+import { contactHint, decisionEmailOffered, pickableStatusGroups, statusNeedsNote } from '@/lib/stageStatuses'
 
 /**
  * Reject or withdraw an application (plan 018a). Since plan 075 the status
@@ -64,6 +64,10 @@ async function submit(): Promise<void> {
   error.value = null
   if (!statusKey.value) {
     error.value = mode.value === 'reject' ? 'Pick why the application is rejected.' : 'Pick why the candidate withdrew.'
+    return
+  }
+  if (statusNeedsNote(statusKey.value) && !note.value.trim()) {
+    error.value = 'Write why the candidate declined the offer.'
     return
   }
   if (mode.value === 'reject' && reasons.value.length && !reasonCode.value) {
@@ -131,7 +135,7 @@ async function submit(): Promise<void> {
           </select>
         </div>
         <div class="field">
-          <label for="reject-reason">Anything to add? (optional)</label>
+          <label for="reject-reason">{{ statusNeedsNote(statusKey) ? 'Why did the candidate decline? (required)' : 'Anything to add? (optional)' }}</label>
           <textarea id="reject-reason" v-model="note" rows="4" maxlength="2000" :disabled="busy"></textarea>
         </div>
         <label v-if="canEmail" class="option" data-testid="reject-email">

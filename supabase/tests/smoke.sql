@@ -10452,4 +10452,21 @@ do $$ begin
   delete from public.job_channels where job_id = '70000000-0000-0000-0000-000000000b41';
 end $$;
 
+-- ------------------------------------------- the access roles HR keeps (0120)
+-- Eight roles stay as HR listed them; General Administrator joins them with
+-- administration and onboarding; the rest are archived (kept for history).
+do $$ begin
+  assert (select string_agg(name, ',' order by name) from public.permission_presets where archived_at is null and company_id is null)
+       = 'Employee,Finance,General Administrator,Hiring Manager,IT,Marketing,No access,Recruiter',
+       '0120: only the roles HR keeps are offered';
+  assert (select count(*) from public.permission_presets
+           where name in ('Company Director', 'Company HR', 'Holding HR') and archived_at is not null) = 3,
+       '0120: the dropped roles are archived, not deleted';
+  assert (select string_agg(pc.capability_key, ',' order by pc.capability_key)
+            from public.preset_capabilities pc join public.permission_presets p on p.id = pc.preset_id
+           where p.name = 'General Administrator')
+       = 'access.manage,integration.manage,integration.view,people.view,tasks.assign,tasks.complete,tasks.view',
+       '0120: General Administrator has administration and onboarding';
+end $$;
+
 select 'SMOKE TESTS PASSED' as result;

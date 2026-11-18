@@ -8,6 +8,7 @@ import { registerHandoverRoutes } from './handoverRoutes.js'
 import { registerDocumentRoutes } from './documentRoutes.js'
 import { registerContractRoutes } from './contractRoutes.js'
 import { registerLeaveReportRoutes } from './leaveReportRoutes.js'
+import { registerHiringExportRoutes } from './hiringExportRoutes.js'
 import { registerOfferRoutes } from './offerRoutes.js'
 
 /**
@@ -26,6 +27,7 @@ export async function createApp(options: { serveAppDir?: string }): Promise<Fast
   registerDocumentRoutes(app)
   registerContractRoutes(app)
   registerLeaveReportRoutes(app)
+  registerHiringExportRoutes(app)
   registerOfferRoutes(app)
   await registerCareersRoutes(app)
   await registerAppServing(app, options.serveAppDir)

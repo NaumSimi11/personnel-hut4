@@ -16,6 +16,8 @@ import { LIST_PAGE } from '@/lib/pageAll'
 import { likePattern } from '@/lib/likePattern'
 import { createRequestGate } from '@/lib/requestGate'
 import { applicantsQueryPlan, orderNewestFirst } from '@/lib/applicationQueries'
+import { HIRING_EXPORT_ERROR, fetchHiringExport, saveExportFile } from '@/lib/hiringExport'
+import { todayDb } from '@/lib/compensation'
 
 /**
  * The prototype's "Applicants" tab (plan 044): every application across
@@ -45,6 +47,23 @@ const loading = ref(true)
 const auth = useAuthStore()
 const dialogs = useDialogStore()
 const error = ref<string | null>(null)
+
+// Every candidate, one row per job, as Excel; the server reads what the caller may see.
+const canExport = computed(() => auth.isAdmin || auth.canAnywhere('candidates.view'))
+const exporting = ref(false)
+async function exportExcel(): Promise<void> {
+  exporting.value = true
+  error.value = null
+  try {
+    const { data } = await supabase.auth.getSession()
+    saveExportFile(await fetchHiringExport(data.session?.access_token ?? '', todayDb()))
+  } catch (err) {
+    console.error('Hiring export failed:', err)
+    error.value = err instanceof Error && err.message ? err.message : HIRING_EXPORT_ERROR
+  } finally {
+    exporting.value = false
+  }
+}
 const busyId = ref<string | null>(null)
 const applications = ref<ApplicantLite[]>([])
 const lookups = useHiringLookupsStore()
@@ -234,6 +253,17 @@ watch(companyId, load)
             </optgroup>
           </select>
         </label>
+        <button
+          v-if="canExport"
+          class="button secondary"
+          type="button"
+          :disabled="exporting"
+          data-testid="applicants-export"
+          title="Every candidate, one row per job they are on"
+          @click="exportExcel"
+        >
+          {{ exporting ? 'Exporting…' : 'Export to Excel' }}
+        </button>
       </div>
     </div>
     <p v-if="error" class="error-note" role="alert" style="margin: 16px 24px">{{ error }}</p>

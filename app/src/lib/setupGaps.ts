@@ -11,7 +11,7 @@ export type SetupGaps = {
 }
 
 export type GapLine = {
-  key: 'it_owner' | 'hr_owner' | 'inboxes'
+  key: 'it_owner' | 'general_admin' | 'inboxes'
   /** True when work goes to nobody; false when it only goes to the wrong address. */
   strong: boolean
   title: string
@@ -20,8 +20,8 @@ export type GapLine = {
 }
 
 const ROLE_LINES = [
-  { key: 'it_owner', title: 'No IT owner', consequence: 'Onboarding IT lines and new IT requests reach nobody.' },
-  { key: 'hr_owner', title: 'No HR owner', consequence: 'Nobody is told when an IT request is blocked.' },
+  { key: 'it_owner', title: 'No IT person', consequence: 'Onboarding IT lines and new IT requests reach nobody.' },
+  { key: 'general_admin', title: 'No General Administrator', consequence: 'Nobody is told of new hires or blocked IT requests.' },
 ] as const
 
 function inboxWords(missing: string[]): string {

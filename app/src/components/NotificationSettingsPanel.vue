@@ -58,7 +58,7 @@ async function save(): Promise<void> {
   itEmail.value = it
   notice.value = [
     hr ? `HR notifications go to ${hr}.` : 'HR notifications go to each approver’s own work email.',
-    it ? `IT requests and handovers go to ${it}.` : 'IT mail goes to the IT owner’s own work email.',
+    it ? `IT requests and handovers go to ${it}.` : 'IT mail goes to the IT person’s own work email.',
   ].join(' ')
 }
 
@@ -81,7 +81,7 @@ onMounted(load)
       </div>
       <div class="field">
         <label for="it-notification-email">IT inbox for this company (optional)</label>
-        <input id="it-notification-email" v-model="itEmail" type="email" placeholder="it@company.com — empty: the IT owner’s own address" maxlength="320" />
+        <input id="it-notification-email" v-model="itEmail" type="email" placeholder="it@company.com — empty: the IT person’s own address" maxlength="320" />
       </div>
       <p v-if="error" class="error-note" role="alert">{{ error }}</p>
       <p v-if="notice" class="notice" role="status">{{ notice }}</p>

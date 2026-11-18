@@ -110,24 +110,24 @@ describe('nextActionSentence', () => {
 
   it('says who owes a line that is not yet due', () => {
     expect(nextActionSentence(of({ title: 'First 1:1', owner_role: 'manager' }, 2)))
-      .toBe('First 1:1 — Manager, due in 2 days')
+      .toBe('First 1:1 — Hiring Manager, due in 2 days')
   })
 
   it('says "due today" rather than "in 0 days"', () => {
     expect(nextActionSentence(of({ title: 'Team introduction', owner_role: 'manager' }, 0)))
-      .toBe('Team introduction — Manager, due today')
+      .toBe('Team introduction — Hiring Manager, due today')
   })
 
   it('counts the days a line is already late', () => {
     expect(nextActionSentence(of({ title: 'Agreement signed', owner_role: 'hr' }, -3)))
-      .toBe('Agreement signed — HR, 3 days overdue')
+      .toBe('Agreement signed — General Administrator, 3 days overdue')
   })
 
   it('reads naturally for a single day', () => {
     expect(nextActionSentence(of({ title: 'Agreement signed', owner_role: 'hr' }, -1)))
-      .toBe('Agreement signed — HR, 1 day overdue')
+      .toBe('Agreement signed — General Administrator, 1 day overdue')
     expect(nextActionSentence(of({ title: 'First 1:1', owner_role: 'hr' }, 1)))
-      .toBe('First 1:1 — HR, due tomorrow')
+      .toBe('First 1:1 — General Administrator, due tomorrow')
   })
 
   it('leads with the blockage when a line is stuck', () => {
@@ -140,6 +140,6 @@ describe('nextActionSentence', () => {
 
   it('says only what it knows when there is no due date', () => {
     expect(nextActionSentence(of({ title: 'Team introduction', owner_role: 'manager' }, null)))
-      .toBe('Team introduction — Manager')
+      .toBe('Team introduction — Hiring Manager')
   })
 })

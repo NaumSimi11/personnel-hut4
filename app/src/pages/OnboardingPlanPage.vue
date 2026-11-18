@@ -223,7 +223,7 @@ onMounted(async () => {
             <template v-if="isOffboarding && plan.employment_period?.end_date && plan.employment_period.end_date !== plan.start_date">
               · employment ends {{ plan.employment_period.end_date }}
             </template>
-            · HR owner {{ plan.hr_owner?.full_name ?? '—' }}
+            · General Administrator {{ plan.hr_owner?.full_name ?? '—' }}
           </p>
           <router-link v-if="plan.person" class="profile-link" :to="{ name: 'person', params: { personId: plan.person.id } }">
             Open employee profile

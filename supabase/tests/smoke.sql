@@ -83,7 +83,7 @@ insert into public.applications (id, job_id, company_id, candidate_id) values
 insert into public.employment_departure_details (employment_period_id, reason) values
   ('30000000-0000-0000-0000-000000000003','sample restricted departure detail');
 insert into public.workflow_owners (company_id, role_key, person_id) values
-  ('10000000-0000-0000-0000-00000000000a','hiring_approver','20000000-0000-0000-0000-000000000001');
+  ('10000000-0000-0000-0000-00000000000a','general_admin','20000000-0000-0000-0000-000000000001');
 
 -- Read-only project mirror: one Company A project, Omar is a member.
 insert into public.external_projects (id, provider_key, external_id, company_id, name, status) values
@@ -7132,8 +7132,8 @@ begin
              and owner_id = '20000000-0000-0000-0000-000000000002') > 0,
     'the IT lines go to the company''s configured IT owner';
   assert (select count(*) from public.plan_tasks
-           where plan_id = v_plan and owner_role = 'hr' and owner_id = v_hr) > 0,
-    'the HR lines go to whoever started the plan';
+           where plan_id = v_plan and owner_role = 'hr' and owner_id = '20000000-0000-0000-0000-000000000001') > 0,
+    'the HR lines go to the company''s General Administrator (0121), not whoever started the plan';
   assert not exists (select 1 from public.plan_tasks
                       where plan_id = v_plan and owner_role = 'finance' and owner_id is not null),
     'a role with nobody behind it stays unassigned rather than guessing';
@@ -8578,14 +8578,14 @@ create temp table setup_0093_inboxes as
   select id, it_notification_email, hr_notification_email from public.companies
    where id in ('10000000-0000-0000-0000-00000000000a', '10000000-0000-0000-0000-00000000000b');
 delete from public.workflow_owners where company_id in ('10000000-0000-0000-0000-00000000000a', '10000000-0000-0000-0000-00000000000b')
-   and role_key in ('it_owner', 'hr_owner');
+   and role_key in ('it_owner', 'general_admin');
 update public.companies set it_notification_email = null, hr_notification_email = null
  where id in ('10000000-0000-0000-0000-00000000000a', '10000000-0000-0000-0000-00000000000b');
 insert into public.people (id, full_name, work_email, archived_at) values
   ('20000000-0000-0000-0000-000000000931', 'Owner Long Gone', 'gone@a.test', now());
 insert into public.workflow_owners (company_id, role_key, person_id) values
   ('10000000-0000-0000-0000-00000000000a', 'it_owner', '20000000-0000-0000-0000-000000000001'),
-  ('10000000-0000-0000-0000-00000000000a', 'hr_owner', '20000000-0000-0000-0000-000000000931')
+  ('10000000-0000-0000-0000-00000000000a', 'general_admin', '20000000-0000-0000-0000-000000000931')
 on conflict (company_id, role_key) do update set person_id = excluded.person_id;
 update public.companies set it_notification_email = 'it@a.test' where id = '10000000-0000-0000-0000-00000000000a';
 
@@ -8598,9 +8598,9 @@ begin
   assert (r->>'can_fix')::boolean, 'an admin may fix them';
   select g into a from jsonb_array_elements(r->'companies') g where g->>'company_id' = '10000000-0000-0000-0000-00000000000a';
   select g into b from jsonb_array_elements(r->'companies') g where g->>'company_id' = '10000000-0000-0000-0000-00000000000b';
-  assert a->'missing_roles' = '["hr_owner"]'::jsonb, 'A has its IT owner; its HR owner is archived, so missing: ' || coalesce(a::text, 'none');
+  assert a->'missing_roles' = '["general_admin"]'::jsonb, 'A has its IT owner; its General Administrator is archived, so missing: ' || coalesce(a::text, 'none');
   assert a->'missing_inboxes' = '["hr"]'::jsonb, 'A has an IT inbox, not an HR one';
-  assert b->'missing_roles' = '["it_owner", "hr_owner"]'::jsonb and b->'missing_inboxes' = '["it", "hr"]'::jsonb,
+  assert b->'missing_roles' = '["it_owner", "general_admin"]'::jsonb and b->'missing_inboxes' = '["it", "hr"]'::jsonb,
     'B lacks everything: ' || coalesce(b::text, 'none');
 end $$;
 reset role;
@@ -8646,8 +8646,8 @@ begin
 end $$;
 
 delete from public.workflow_owners where company_id in ('10000000-0000-0000-0000-00000000000a', '10000000-0000-0000-0000-00000000000b')
-   and role_key in ('it_owner', 'hr_owner');
-insert into public.workflow_owners select * from setup_0093_owners where role_key in ('it_owner', 'hr_owner')
+   and role_key in ('it_owner', 'general_admin');
+insert into public.workflow_owners select * from setup_0093_owners where role_key in ('it_owner', 'general_admin')
 on conflict (company_id, role_key) do nothing;
 update public.companies c set it_notification_email = i.it_notification_email, hr_notification_email = i.hr_notification_email
   from setup_0093_inboxes i where i.id = c.id;
@@ -10328,9 +10328,9 @@ do $$ begin
   exception when check_violation then null;
   end;
   insert into public.job_team (job_id, person_id, role) values
-    ('70000000-0000-0000-0000-000000000d01', '20000000-0000-0000-0000-000000000004', 'hr');
+    ('70000000-0000-0000-0000-000000000d01', '20000000-0000-0000-0000-000000000004', 'general_admin');
   assert exists (select 1 from public.notifications where kind = 'hiring.team'
-                   and person_id = '20000000-0000-0000-0000-000000000004' and body like 'Role: HR · %'),
+                   and person_id = '20000000-0000-0000-0000-000000000004' and body like 'Role: General Administrator · %'),
     '0114: the notice names the role in words';
   delete from public.job_team where job_id = '70000000-0000-0000-0000-000000000d01' and person_id = '20000000-0000-0000-0000-000000000004';
 end $$;
@@ -10467,6 +10467,47 @@ do $$ begin
            where p.name = 'General Administrator')
        = 'access.manage,integration.manage,integration.view,people.view,tasks.assign,tasks.complete,tasks.view',
        '0120: General Administrator has administration and onboarding';
+end $$;
+
+-- ------------------------------------------- every other role is cleaned out (0121)
+-- HR's 8 roles are the only ones; HR's own work goes to the General Administrator.
+do $$ begin
+  assert (select string_agg(key || '=' || label, ',' order by key) from public.workflow_roles)
+       = 'general_admin=General Administrator,it_owner=IT,marketing_reviewer=Marketing',
+       '0121: workflow owners are General Administrator, IT and Marketing only';
+  assert not exists (select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+                      where n.nspname in ('public', 'app') and p.prokind = 'f'
+                        and pg_get_functiondef(p.oid) ~ '''(hr_owner|hiring_approver|offer_approver)'''),
+       '0121: no function still reads a removed workflow role';
+  begin
+    insert into public.job_team (job_id, person_id, role) values
+      ('70000000-0000-0000-0000-000000000d01', '20000000-0000-0000-0000-000000000004', 'hr');
+    assert false, '0121: HR is no longer a hiring-team role';
+  exception when check_violation then null;
+  end;
+end $$;
+
+-- An "hr" checklist line goes to the company's General Administrator when one is named.
+do $$
+declare v_plan uuid;
+begin
+  select id into v_plan from public.plans where company_id = '10000000-0000-0000-0000-00000000000a' limit 1;
+  assert v_plan is not null, '0121: a Company A plan to test with';
+  assert app.owner_for_role(v_plan, 'hr') = '20000000-0000-0000-0000-000000000001', '0121: the hr line goes to the General Administrator';
+end $$;
+
+-- An IT request that gets blocked tells the General Administrator.
+do $$
+declare v_req uuid;
+begin
+  insert into public.it_requests (company_id, person_id, title, kind)
+    values ('10000000-0000-0000-0000-00000000000a', '20000000-0000-0000-0000-000000000003', 'Laptop for 0121', 'manual')
+    returning id into v_req;
+  update public.it_requests set status = 'blocked', blocked_reason = 'no stock' where id = v_req;
+  assert exists (select 1 from public.notifications where kind = 'it.blocked' and entity_id = v_req
+                   and person_id = '20000000-0000-0000-0000-000000000001'),
+       '0121: the General Administrator hears of a blocked IT request';
+  delete from public.it_requests where id = v_req;
 end $$;
 
 select 'SMOKE TESTS PASSED' as result;

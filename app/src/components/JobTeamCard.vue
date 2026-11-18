@@ -13,8 +13,8 @@ const props = defineProps<{ jobId: string; canEdit: boolean }>()
 // The three hiring roles (decision D3, migration 0114).
 const ROLES = [
   { value: 'recruiter', label: 'Recruiter' },
-  { value: 'hiring_manager', label: 'Hiring manager' },
-  { value: 'hr', label: 'HR' },
+  { value: 'hiring_manager', label: 'Hiring Manager' },
+  { value: 'general_admin', label: 'General Administrator' },
 ] as const
 type Role = (typeof ROLES)[number]['value']
 type Member = { person_id: string; role: Role; person: { full_name: string } | null }

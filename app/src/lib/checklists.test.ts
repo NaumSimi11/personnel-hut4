@@ -42,7 +42,7 @@ describe('grouping', () => {
 describe('labels', () => {
   it('names the owner and says when a line is due relative to the anchor', () => {
     expect(ownerLabel('it')).toBe('IT')
-    expect(ownerLabel('employee')).toBe('The person')
+    expect(ownerLabel('employee')).toBe('Employee')
     expect(whenLabel('before_start', -3, 'onboarding')).toBe('3 days before the start')
     expect(whenLabel('day_one', 0, 'onboarding')).toBe('On the first day')
     expect(whenLabel('week_one', 2, 'onboarding')).toBe('2 days after the start')
@@ -54,6 +54,9 @@ describe('labels', () => {
     expect(PHASES_FOR.onboarding).toEqual(['before_start', 'day_one', 'week_one', 'month_one'])
     expect(PHASES_FOR.offboarding).toEqual(['before_last_day', 'last_day', 'after_departure'])
     expect(OWNER_ROLES.map((o) => o.key)).toContain('manager')
+  })
+  it('names the line owners only by the roles HR keeps (18 Nov)', () => {
+    expect(OWNER_ROLES.map((o) => o.label)).toEqual(['General Administrator', 'IT', 'Hiring Manager', 'Employee', 'Finance'])
   })
 })
 
@@ -166,8 +169,8 @@ describe('clearing a closed checklist', () => {
 
 describe('unownedNote', () => {
   it('says why an open IT line has nobody', () => {
-    expect(unownedNote({ owner_role: 'it', status: 'open', owner: null })).toBe('nobody — no IT owner is set for this company')
-    expect(unownedNote({ owner_role: 'it', status: 'blocked', owner: null })).toBe('nobody — no IT owner is set for this company')
+    expect(unownedNote({ owner_role: 'it', status: 'open', owner: null })).toBe('nobody — no IT person is set for this company')
+    expect(unownedNote({ owner_role: 'it', status: 'blocked', owner: null })).toBe('nobody — no IT person is set for this company')
   })
 
   it('says nothing when somebody has it, when it is finished, or for other roles', () => {

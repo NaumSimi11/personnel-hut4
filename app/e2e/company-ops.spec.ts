@@ -29,7 +29,7 @@ async function cleanup(): Promise<void> {
   await db.from('notifications').delete().like('title', '%E2E%')
   const { data: company } = await db.from('companies').select('id').eq('short_code', 'PRAE').single()
   if (company) {
-    await db.from('workflow_owners').delete().eq('company_id', company.id).eq('role_key', 'hiring_approver')
+    await db.from('workflow_owners').delete().eq('company_id', company.id).eq('role_key', 'general_admin')
     await db.from('hiring_requests').delete().eq('company_id', company.id).eq('title', REQUEST_TITLE)
   }
   const { data: people } = await db.from('people').select('id').in('full_name', [STARTER, LEAVER])
@@ -99,10 +99,10 @@ test('upcoming → workflow owner saved → request shows approver → invite fr
   const request = page.locator('.request-row', { hasText: REQUEST_TITLE })
   await expect(request).toContainText('no approver configured')
 
-  // Settings: assign the hiring approver.
+  // Settings: name the General Administrator, who now approves requests.
   await page.goto(`/companies/${companyId}?tab=settings`)
   await page.getByRole('tab', { name: 'Settings' }).click()
-  const ownerRow = page.locator('.owner-row', { hasText: 'Approves hiring requests' })
+  const ownerRow = page.locator('.owner-row', { hasText: 'General Administrator' })
   await ownerRow.locator('select').selectOption({ label: `${LEAVER} · Praedium` })
   await ownerRow.getByRole('button', { name: 'Save' }).click()
   await expect(ownerRow).toContainText('Saved')
@@ -110,7 +110,7 @@ test('upcoming → workflow owner saved → request shows approver → invite fr
     .from('workflow_owners')
     .select('person_id')
     .eq('company_id', companyId)
-    .eq('role_key', 'hiring_approver')
+    .eq('role_key', 'general_admin')
     .single()
   expect(owner?.person_id).toBe(leaverId)
 

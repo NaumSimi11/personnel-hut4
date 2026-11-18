@@ -26,10 +26,11 @@ export type ChecklistTask = {
 export type Phase = { key: string; label: string; sort_order: number }
 
 export const OWNER_ROLES = [
-  { key: 'hr', label: 'HR' },
+  // The key stays 'hr' in the data; since 0121 its lines go to the General Administrator.
+  { key: 'hr', label: 'General Administrator' },
   { key: 'it', label: 'IT' },
-  { key: 'manager', label: 'Manager' },
-  { key: 'employee', label: 'The person' },
+  { key: 'manager', label: 'Hiring Manager' },
+  { key: 'employee', label: 'Employee' },
   { key: 'finance', label: 'Finance' },
 ] as const
 
@@ -45,7 +46,7 @@ export const PHASES_FOR: Record<ChecklistKind, string[]> = {
  */
 export function unownedNote(task: { owner_role: string; status: string; owner: { full_name: string } | null }): string | null {
   if (task.owner_role !== 'it' || task.owner || task.status === 'done' || task.status === 'skipped') return null
-  return 'nobody — no IT owner is set for this company'
+  return 'nobody — no IT person is set for this company'
 }
 
 export function ownerLabel(role: string): string {

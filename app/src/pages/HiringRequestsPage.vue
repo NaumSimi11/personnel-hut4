@@ -179,7 +179,7 @@ async function load(): Promise<void> {
   const ownersRes = await supabase
     .from('workflow_owners')
     .select('company_id, person:people!workflow_owners_person_id_fkey(full_name)')
-    .eq('role_key', 'hiring_approver')
+    .eq('role_key', 'general_admin')
   if (ownersRes.error) console.error('Workflow owners load failed:', ownersRes.error.message)
   approvers.value = Object.fromEntries(
     (ownersRes.data ?? []).map((o) => [o.company_id, { person: o.person as unknown as { full_name: string } | null }]),

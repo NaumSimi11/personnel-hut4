@@ -15,11 +15,11 @@ describe('gapLines', () => {
   })
 
   it('puts the IT owner first, naming every company without one and what breaks', () => {
-    const [it] = gapLines(gaps([co('Snowball', ['it_owner', 'hr_owner'], []), co('Synami', ['it_owner'], [])]))
+    const [it] = gapLines(gaps([co('Snowball', ['it_owner', 'general_admin'], []), co('Synami', ['it_owner'], [])]))
     expect(it).toEqual({
       key: 'it_owner',
       strong: true,
-      title: 'No IT owner',
+      title: 'No IT person',
       consequence: 'Onboarding IT lines and new IT requests reach nobody.',
       companies: [
         { id: 'snowball', name: 'Snowball', detail: null },
@@ -28,10 +28,10 @@ describe('gapLines', () => {
     })
   })
 
-  it('follows with the HR owner, then the softer inbox line', () => {
-    const lines = gapLines(gaps([co('Snowball', ['hr_owner'], ['it', 'hr']), co('Hut4', [], ['hr'])]))
-    expect(lines.map((l) => l.key)).toEqual(['hr_owner', 'inboxes'])
-    expect(lines[0].consequence).toBe('Nobody is told when an IT request is blocked.')
+  it('follows with the General Administrator, then the softer inbox line', () => {
+    const lines = gapLines(gaps([co('Snowball', ['general_admin'], ['it', 'hr']), co('Hut4', [], ['hr'])]))
+    expect(lines.map((l) => l.key)).toEqual(['general_admin', 'inboxes'])
+    expect(lines[0].consequence).toBe('Nobody is told of new hires or blocked IT requests.')
     expect(lines[1].strong).toBe(false)
     expect(lines[1].companies).toEqual([
       { id: 'snowball', name: 'Snowball', detail: 'IT and HR' },

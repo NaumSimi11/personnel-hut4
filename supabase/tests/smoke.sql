@@ -5656,10 +5656,10 @@ update public.applications set stage_key = 'interview' where id = '90000000-0000
 -- their keys until HR names them, and the defaults the trigger and the stage give.
 do $$
 begin
-  assert (select count(*) from public.application_sub_statuses) = 24, 'HR''s eighteen statuses, the HM''s contact (0100), applied and shortlisted (0105), withdrawn and rejected at more stages (0112)';
+  assert (select count(*) from public.application_sub_statuses) = 23, 'HR''s eighteen statuses, the HM''s contact (0100), applied (0105), withdrawn and rejected at more stages (0112); shortlisted gone (0122)';
   assert (select string_agg(key, ',' order by sort_order) from public.application_sub_statuses
           where stage_key = 'screening')
-    = 'applied,sourced,shortlisted,contact,contacted,interested,no_response,not_interested,unqualified,contact_in_future,do_not_contact,withdrawn_screening',
+    = 'applied,sourced,contact,contacted,interested,no_response,not_interested,unqualified,contact_in_future,do_not_contact,withdrawn_screening',
     'Screening, in order';
   assert (select string_agg(key, ',' order by sort_order) from public.application_sub_statuses
           where stage_key = 'interview')
@@ -7907,7 +7907,7 @@ insert into public.applications (id, job_id, company_id, candidate_id, stage_key
 -- 1. The vocabulary: every stage has one, in order, one outcome each.
 do $$
 begin
-  assert (select count(*) from public.application_sub_statuses) = 24, 'the 18 statuses of 0098, 0100''s contact, 0105''s two, 0112''s three';
+  assert (select count(*) from public.application_sub_statuses) = 23, 'the 18 statuses of 0098, 0100''s contact, 0105''s applied, 0112''s three';
   assert (select string_agg(key, ',' order by sort_order) from public.application_sub_statuses where stage_key = 'offer')
     = 'offer_made,offer_declined,rejected_at_offer,withdrawn_offer', 'Offered: made, declined, rejected, withdrawn (0112)';
   assert (select string_agg(key, ',' order by sort_order) from public.application_sub_statuses where stage_key = 'hired')
@@ -7915,7 +7915,7 @@ begin
   assert (select count(*) from public.application_sub_statuses where stage_key = 'interview') = 7, 'seven at Interview';
   assert (select string_agg(outcome || '=' || n, ',' order by outcome)
             from (select outcome, count(*) n from public.application_sub_statuses group by outcome) o)
-    = 'hired=1,open=11,rejected=4,withdrew=8', 'the outcomes: 11 open, 4 rejected, 8 withdrew, 1 hired (0112 adds 1 and 2)';
+    = 'hired=1,open=10,rejected=4,withdrew=8', 'the outcomes: 10 open, 4 rejected, 8 withdrew, 1 hired (0112 adds 1 and 2; 0122 drops shortlisted)';
   assert app.default_sub_status('interview', null) = 'interview_to_schedule'
      and app.default_sub_status('offer', null) = 'offer_made'
      and app.default_sub_status('hired', null) = 'hired',
@@ -8747,7 +8747,7 @@ declare v_a uuid; v_b uuid; v_c uuid;
   c constant uuid := '80000000-0000-0000-0000-000000000951';
   co constant uuid := '10000000-0000-0000-0000-00000000000a';
 begin
-  assert (select count(*) from public.application_sub_statuses) = 24, 'HR''s 18 statuses (0098), contact (0100), applied and shortlisted (0105), three more (0112)';
+  assert (select count(*) from public.application_sub_statuses) = 23, 'HR''s 18 statuses (0098), contact (0100), applied (0105), three more (0112)';
   assert (select string_agg(key, ',' order by sort_order) from public.application_stages) = 'screening,interview,offer,hired',
     'four stages';
 
@@ -10508,6 +10508,15 @@ begin
                    and person_id = '20000000-0000-0000-0000-000000000001'),
        '0121: the General Administrator hears of a blocked IT request';
   delete from public.it_requests where id = v_req;
+end $$;
+
+-- ------------------------------------------- Shortlisted is gone everywhere (0122, B2)
+do $$ begin
+  assert not exists (select 1 from public.application_sub_statuses where key = 'shortlisted' or label ilike '%shortlist%'),
+    '0122: no Shortlisted status';
+  assert not exists (select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+                      where n.nspname in ('public', 'app') and p.prokind = 'f' and pg_get_functiondef(p.oid) ilike '%shortlist%'),
+    '0122: no function mentions Shortlisted';
 end $$;
 
 select 'SMOKE TESTS PASSED' as result;

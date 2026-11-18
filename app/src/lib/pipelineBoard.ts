@@ -4,8 +4,8 @@
  * applications it holds and which status a card dropped on it gets. Hired is
  * reached through the offer only, so nothing is dropped there.
  *
- * Owners are the three hiring roles only — Recruiter, Hiring manager, HR
- * (decision D3, board card B3).
+ * Owners are Recruiter, Hiring Manager and General Administrator (B3; HR's
+ * work went to the General Administrator on 18 Nov).
  */
 export type BoardApplication = {
   id: string
@@ -23,7 +23,8 @@ export type BoardColumn = {
   holds: (a: BoardApplication) => boolean
 }
 
-const SPECIAL_SCREENING = new Set(['applied', 'shortlisted', 'contact'])
+// No Shortlisted column (B2): the hiring manager's review is a decision inside Screening.
+const SPECIAL_SCREENING = new Set(['applied'])
 const OPTIONAL_INTERVIEW = new Set<string>(['interview_task', 'interview_hr', 'interview_stakeholders'])
 
 export const BOARD_COLUMNS: ReadonlyArray<BoardColumn> = [
@@ -31,8 +32,6 @@ export const BOARD_COLUMNS: ReadonlyArray<BoardColumn> = [
     holds: (a) => a.in_play && a.stage_key === 'screening' && a.sub_status_key === 'applied' },
   { key: 'screening', label: 'Screening', owner: 'Recruiter', target: 'sourced', optional: null,
     holds: (a) => a.in_play && a.stage_key === 'screening' && !SPECIAL_SCREENING.has(a.sub_status_key ?? '') },
-  { key: 'shortlisted', label: 'Shortlisted', owner: 'Hiring Manager', target: 'shortlisted', optional: null,
-    holds: (a) => a.in_play && a.stage_key === 'screening' && (a.sub_status_key === 'shortlisted' || a.sub_status_key === 'contact') },
   { key: 'test', label: 'Technical / Skills test', owner: 'Hiring Manager', target: 'interview_task', optional: 'interview_task',
     holds: (a) => a.in_play && a.sub_status_key === 'interview_task' },
   { key: 'interview1', label: 'Interview 1 (HR)', owner: 'Recruiter', target: 'interview_hr', optional: 'interview_hr',

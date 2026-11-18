@@ -9,7 +9,6 @@ describe('pipeline board', () => {
       [
         app('a', 'screening', 'applied'),
         app('b', 'screening', 'contacted'),
-        app('c', 'screening', 'shortlisted'),
         app('d', 'screening', 'contact'),
         app('e', 'interview', 'interview_task'),
         app('f', 'interview', 'interview_hr'),
@@ -22,25 +21,30 @@ describe('pipeline board', () => {
       [],
     )
     expect(Object.fromEntries(Object.entries(columns).map(([k, v]) => [k, v.map((x) => x.id).join('')]))).toEqual({
-      applied: 'a', screening: 'b', shortlisted: 'cd', test: 'e', interview1: 'f', interview2: 'g', final: 'h', offer: 'i', hired: 'j',
+      applied: 'a', screening: 'bd', test: 'e', interview1: 'f', interview2: 'g', final: 'h', offer: 'i', hired: 'j',
     })
     expect(closed).toBe(1)
   })
 
   it('leaves out the optional stages a job skips', () => {
     expect(columnsFor(['interview_task', 'interview_stakeholders']).map((c) => c.key)).toEqual([
-      'applied', 'screening', 'shortlisted', 'interview1', 'interview2', 'offer', 'hired',
+      'applied', 'screening', 'interview1', 'interview2', 'offer', 'hired',
     ])
-    expect(BOARD_COLUMNS).toHaveLength(9)
+    expect(BOARD_COLUMNS).toHaveLength(8)
   })
 
   it('a drop sets the column status; nothing lands on Hired, its own column or from a closed card', () => {
-    const shortlisted = BOARD_COLUMNS.find((c) => c.key === 'shortlisted')!
+    const screening = BOARD_COLUMNS.find((c) => c.key === 'screening')!
     const hired = BOARD_COLUMNS.find((c) => c.key === 'hired')!
-    expect(dropTarget(shortlisted, app('a', 'screening', 'applied'))).toBe('shortlisted')
-    expect(dropTarget(shortlisted, app('c', 'screening', 'shortlisted'))).toBeNull()
+    expect(dropTarget(screening, app('a', 'screening', 'applied'))).toBe('sourced')
+    expect(dropTarget(screening, app('b', 'screening', 'contacted'))).toBeNull()
     expect(dropTarget(hired, app('i', 'offer', 'offer_made'))).toBeNull()
-    expect(dropTarget(shortlisted, app('k', 'screening', 'unqualified', false))).toBeNull()
+    expect(dropTarget(screening, app('k', 'screening', 'unqualified', false))).toBeNull()
+  })
+
+  it('has no Shortlisted column anywhere (B2): the hiring manager reviews inside Screening', () => {
+    expect(BOARD_COLUMNS.map((c) => c.key)).not.toContain('shortlisted')
+    expect(BOARD_COLUMNS.map((c) => c.target)).not.toContain('shortlisted')
   })
 })
 

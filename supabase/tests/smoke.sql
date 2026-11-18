@@ -9502,7 +9502,12 @@ begin
      where id = '90000000-0000-0000-0000-000000000975';
     update public.applications set stage_key = 'hired', sub_status_key = 'hired'
      where id = '90000000-0000-0000-0000-000000000975';
-    assert (select count(*) from public.notifications) = v_notes + 1, '0097-b: bulk off, the owner is notified';
+    assert exists (select 1 from public.notifications where kind = 'candidate.assigned'
+                    and person_id = '20000000-0000-0000-0000-000000000005' and entity_id = '90000000-0000-0000-0000-000000000975'),
+      '0097-b: bulk off, the owner is notified';
+    assert exists (select 1 from public.notifications where kind = 'application.stage'
+                    and person_id = '20000000-0000-0000-0000-000000000005' and entity_id = '90000000-0000-0000-0000-000000000975'),
+      '0126: bulk off, the owner hears the move to Hired too';
     assert (select count(*) from public.activity_log) > v_audit, '0097-b: bulk off, the rows are audited';
     assert (select status from public.jobs where id = '70000000-0000-0000-0000-000000000976') = 'filled',
       '0097-b: bulk off, the hire fills the job';
@@ -9936,6 +9941,11 @@ do $$ begin
 end $$;
 reset role;
 set app.test_uid = '';
+do $$ begin
+  assert exists (select 1 from public.notifications where kind = 'offer.approved'
+                   and person_id = '20000000-0000-0000-0000-000000000a02' and entity_id = 'd0000000-0000-0000-0000-000000000c01'),
+    '0126 (T14): the offer''s author hears it was approved';
+end $$;
 delete from public.approval_tasks where subject_id in ('d0000000-0000-0000-0000-000000000c01', '60000000-0000-0000-0000-000000000c01');
 delete from public.offers where id = 'd0000000-0000-0000-0000-000000000c01';
 delete from public.applications where id = '90000000-0000-0000-0000-000000000c01';
@@ -10573,5 +10583,30 @@ begin
 end $$;
 reset role;
 set app.test_uid = '';
+
+-- ------------------------------------------- a stage change tells the owner and the hiring manager (0126, T14)
+insert into public.jobs (id, company_id, title, status, hiring_manager_id) values
+  ('70000000-0000-0000-0000-000000000e26', '10000000-0000-0000-0000-00000000000a', 'Stage notice job', 'open', '20000000-0000-0000-0000-000000000003');
+insert into public.candidates (id, full_name, email) values ('80000000-0000-0000-0000-000000000e26', 'Stella Stage', 'stella@cand.test');
+insert into public.applications (id, job_id, company_id, candidate_id, stage_key, sub_status_key, owner_id) values
+  ('90000000-0000-0000-0000-000000000e26', '70000000-0000-0000-0000-000000000e26', '10000000-0000-0000-0000-00000000000a',
+   '80000000-0000-0000-0000-000000000e26', 'screening', 'sourced', '20000000-0000-0000-0000-000000000a02');
+set app.test_uid = '00000000-0000-0000-0000-000000000004';  -- Ada moves it
+set role authenticated;
+do $$ begin
+  perform public.set_application_status(array['90000000-0000-0000-0000-000000000e26']::uuid[], 'contacted', '');
+  perform public.set_application_status(array['90000000-0000-0000-0000-000000000e26']::uuid[], 'interview_to_schedule', '');
+end $$;
+reset role;
+set app.test_uid = '';
+do $$ begin
+  assert (select count(*) from public.notifications where kind = 'application.stage'
+           and entity_id = '90000000-0000-0000-0000-000000000e26'
+           and person_id in ('20000000-0000-0000-0000-000000000a02', '20000000-0000-0000-0000-000000000003')) = 2,
+    '0126: the owner and the hiring manager each hear the move to Interview';
+  assert (select count(*) from public.notifications where kind = 'application.stage'
+           and entity_id = '90000000-0000-0000-0000-000000000e26') = 2,
+    '0126: a status inside the same stage tells nobody, and the mover is not told';
+end $$;
 
 select 'SMOKE TESTS PASSED' as result;

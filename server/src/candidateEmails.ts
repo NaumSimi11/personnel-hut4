@@ -125,6 +125,28 @@ export function renderFromTemplate(kind: CandidateEmailKind, tpl: EmailTemplate,
   }
 }
 
+/**
+ * The privacy notice (board card C4): HR's wording, kept beside the email
+ * templates as kind "privacy_notice", goes under the "Application received"
+ * email — the moment the candidate's data is collected. The careers form
+ * shows the same text (careers.ts publicPrivacyNotice).
+ */
+export function withPrivacyNotice(
+  kind: CandidateEmailKind,
+  mail: { subject: string; html: string },
+  notice: EmailTemplate | undefined,
+  data: CandidateEmailData,
+): { subject: string; html: string } {
+  if (kind !== 'received' || !notice) return mail
+  const paragraphs = fillPlaceholders(notice.body, data)
+    .split(/\n{2,}/)
+    .map((p) => p.trim())
+    .filter(Boolean)
+    .map((p) => `<p>${escapeHtml(p).replace(/\n/g, '<br>')}</p>`)
+  const title = fillPlaceholders(notice.subject, data).trim()
+  return { ...mail, html: [mail.html, '<hr>', `<p><strong>${escapeHtml(title)}</strong></p>`, ...paragraphs].join('\n') }
+}
+
 type Row = {
   id: string
   company_id: string
@@ -162,7 +184,13 @@ export async function deliverCandidateEmails(): Promise<{ sent: number; failed: 
       continue
     }
     const tpl = templates.get(`${row.company_id}:${row.kind}`) ?? templates.get(`*:${row.kind}`)
-    const mail = tpl ? renderFromTemplate(row.kind, tpl, row.data ?? {}, base) : renderCandidateEmail(row.kind, row.data ?? {}, base)
+    const notice = templates.get(`${row.company_id}:privacy_notice`) ?? templates.get('*:privacy_notice')
+    const mail = withPrivacyNotice(
+      row.kind,
+      tpl ? renderFromTemplate(row.kind, tpl, row.data ?? {}, base) : renderCandidateEmail(row.kind, row.data ?? {}, base),
+      notice,
+      row.data ?? {},
+    )
     try {
       const response = await fetch('https://api.resend.com/emails', {
         method: 'POST',

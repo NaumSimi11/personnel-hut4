@@ -3,7 +3,7 @@ import { computed, onMounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import { z } from 'zod'
 import CareersFrame, { type PublicCompany } from '@/components/CareersFrame.vue'
-import { fetchCareersJob, submitApplication, type PublicBrief } from '@/lib/careersApi'
+import { fetchCareersJob, submitApplication, type PrivacyNotice, type PublicBrief } from '@/lib/careersApi'
 
 /**
  * One role's public brief and its application form (plan 019). The form
@@ -17,6 +17,7 @@ const jobId = route.params.jobId as string
 
 const company = ref<PublicCompany | null>(null)
 const job = ref<PublicBrief | null>(null)
+const privacy = ref<PrivacyNotice | null>(null)
 const loading = ref(true)
 const error = ref<string | null>(null)
 
@@ -107,6 +108,7 @@ onMounted(async () => {
     const data = await fetchCareersJob(code, jobId)
     company.value = data.company
     job.value = data.job
+    privacy.value = data.privacy ?? null
     document.title = `${data.job.title} · ${data.company.name} careers`
   } catch (e) {
     error.value = e instanceof Error ? e.message : 'Could not load this role.'
@@ -212,6 +214,11 @@ onMounted(async () => {
             <input id="apply-ref-x7" name="ref_x7" type="text" tabindex="-1" autocomplete="off" />
           </div>
 
+          <section v-if="privacy" class="privacy" data-testid="privacy-notice" aria-labelledby="privacy-title">
+            <h3 id="privacy-title">{{ privacy.title }}</h3>
+            <p v-for="(p, i) in privacy.paragraphs" :key="i">{{ p }}</p>
+          </section>
+
           <label class="consent">
             <input id="apply-consent" v-model="form.consent" type="checkbox" />
             <span>
@@ -257,6 +264,9 @@ onMounted(async () => {
 .required { font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); margin-left: 8px; }
 .hint { display: block; font-size: 11px; color: var(--muted); margin-top: -8px; margin-bottom: 14px; }
 .trap { position: absolute; left: -10000px; top: auto; width: 1px; height: 1px; overflow: hidden; }
+.privacy { font-size: 12px; line-height: 1.6; margin: 6px 0 10px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 6px; max-height: 220px; overflow-y: auto; }
+.privacy h3 { font-size: 12px; margin: 0 0 6px; }
+.privacy p { margin: 0 0 6px; white-space: pre-line; }
 .consent { display: flex; gap: 10px; align-items: flex-start; font-size: 12px; line-height: 1.6; margin: 6px 0 14px; }
 .consent input { margin-top: 3px; }
 .actions { display: flex; justify-content: flex-end; }

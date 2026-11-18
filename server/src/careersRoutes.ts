@@ -2,6 +2,8 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
 import multipart from '@fastify/multipart'
 import { randomUUID } from 'node:crypto'
 import {
+  publicPrivacyNotice,
+  type PrivacyNoticeRow,
   CV_MAX_BYTES,
   RateLimiter,
   applicationInput,
@@ -52,6 +54,20 @@ async function findCompany(code: string): Promise<CompanyRow | null> {
     .is('archived_at', null)
     .maybeSingle()
   return (data as CompanyRow | null) ?? null
+}
+
+/** The company's privacy notice, else the holding one (C4). A failed read shows no notice rather than no page. */
+async function privacyNotice(companyId: string) {
+  const { data, error } = await serviceDb()
+    .from('email_templates')
+    .select('company_id, subject, body')
+    .eq('kind', 'privacy_notice')
+    .or(`company_id.is.null,company_id.eq.${companyId}`)
+  if (error) {
+    console.warn('[careers] privacy notice not loaded:', error.message)
+    return null
+  }
+  return publicPrivacyNotice((data ?? []) as PrivacyNoticeRow[], companyId)
 }
 
 type JobRow = { id: string; title: string; description: string | null; screening_questions: unknown }
@@ -130,7 +146,7 @@ export async function registerCareersRoutes(app: FastifyInstance): Promise<void>
     if (!company) return fail(reply, 404, 'No careers page for that company.')
     const job = (await listedJobs(company.id)).find((j) => j.id === req.params.jobId)
     if (!job) return fail(reply, 404, 'This role is not open for applications.')
-    return { company: publicCompany(company, supabaseUrl), job: publicBrief(job) }
+    return { company: publicCompany(company, supabaseUrl), job: publicBrief(job), privacy: await privacyNotice(company.id) }
   })
 
   app.post<{ Params: { code: string; jobId: string } }>(

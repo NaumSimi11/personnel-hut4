@@ -9,6 +9,7 @@ import {
   isShortCode,
   isHoneypotTripped,
   publicBrief,
+  publicPrivacyNotice,
   publicCompany,
   referenceFor,
   validateCv,
@@ -262,5 +263,20 @@ describe('multipartLimitMessage', () => {
     expect(multipartLimitMessage({ code: 'FST_REQ_FILE_TOO_LARGE' })).toMatch(/10 MB/)
     expect(multipartLimitMessage({ code: 'FST_FILES_LIMIT' })).toMatch(/one CV/)
     expect(multipartLimitMessage(new Error('boom'))).toBeNull()
+  })
+})
+
+describe('publicPrivacyNotice (board card C4)', () => {
+  it('prefers the company notice, then the holding one, as plain paragraphs', () => {
+    const rows = [
+      { company_id: null, subject: 'Privacy', body: 'Holding wording.' },
+      { company_id: 'c1', subject: 'Your data at Hut4', body: 'First.\n\n Second. \n\n' },
+    ]
+    expect(publicPrivacyNotice(rows, 'c1')).toEqual({ title: 'Your data at Hut4', paragraphs: ['First.', 'Second.'] })
+    expect(publicPrivacyNotice(rows, 'c2')).toEqual({ title: 'Privacy', paragraphs: ['Holding wording.'] })
+  })
+
+  it('is null when nobody has written one', () => {
+    expect(publicPrivacyNotice([], 'c1')).toBeNull()
   })
 })

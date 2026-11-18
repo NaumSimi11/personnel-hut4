@@ -275,3 +275,19 @@ export async function serialised<T>(key: string, fn: () => Promise<T>): Promise<
     if (inFlight.get(key) === tracked) inFlight.delete(key)
   }
 }
+
+/**
+ * The privacy notice the careers form shows above its consent box (board
+ * card C4): the company's own, else the holding one, from email_templates
+ * kind "privacy_notice" — the same text the "Application received" email
+ * carries. Null when nobody has written one.
+ */
+export type PrivacyNoticeRow = { company_id: string | null; subject: string; body: string }
+export type PublicPrivacyNotice = { title: string; paragraphs: string[] }
+
+export function publicPrivacyNotice(rows: ReadonlyArray<PrivacyNoticeRow>, companyId: string): PublicPrivacyNotice | null {
+  const row = rows.find((r) => r.company_id === companyId) ?? rows.find((r) => r.company_id === null)
+  if (!row) return null
+  const paragraphs = row.body.split(/\n{2,}/).map((p) => p.trim()).filter(Boolean)
+  return { title: row.subject.trim(), paragraphs }
+}

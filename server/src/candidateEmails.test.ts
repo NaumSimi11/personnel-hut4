@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { fillPlaceholders, renderCandidateEmail, renderFromTemplate } from './candidateEmails.js'
+import { fillPlaceholders, renderCandidateEmail, renderFromTemplate, withPrivacyNotice } from './candidateEmails.js'
 
 const data = { candidate: 'Ana <Kova>', job: 'Designer & Illustrator', company: 'Hut4' }
 
@@ -64,5 +64,25 @@ describe('HR templates', () => {
   })
   it('leaves unknown braces alone', () => {
     expect(fillPlaceholders('{nope} {job}', data)).toBe('{nope} Designer & Illustrator')
+  })
+})
+
+describe('withPrivacyNotice (board card C4)', () => {
+  const notice = { subject: 'How we use your data', body: 'We keep your application for 12 months.\n\nWrite to privacy@{company}.test to ask for it to be deleted.' }
+
+  it('adds the notice under the "Application received" email, placeholders filled and escaped', () => {
+    const mail = withPrivacyNotice('received', renderCandidateEmail('received', data), notice, data)
+    expect(mail.subject).toBe('We received your application: Designer & Illustrator')
+    expect(mail.html).toContain('<strong>How we use your data</strong>')
+    expect(mail.html).toContain('<p>We keep your application for 12 months.</p>')
+    expect(mail.html).toContain('privacy@Hut4.test')
+    expect(mail.html.indexOf('The Hut4 team')).toBeLessThan(mail.html.indexOf('How we use your data'))
+  })
+
+  it('leaves every other email alone, and the received one when there is no notice', () => {
+    const rejected = renderCandidateEmail('rejected', data)
+    expect(withPrivacyNotice('rejected', rejected, notice, data)).toEqual(rejected)
+    const received = renderCandidateEmail('received', data)
+    expect(withPrivacyNotice('received', received, undefined, data)).toEqual(received)
   })
 })

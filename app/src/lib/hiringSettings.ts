@@ -25,13 +25,15 @@ export function settingProblem(raw: string): string | null {
   return null
 }
 
-export type EmailKind = 'received' | 'rejected' | 'withdrawn' | 'offer' | 'offer_reminder'
+export type EmailKind = 'received' | 'rejected' | 'withdrawn' | 'offer' | 'offer_reminder' | 'privacy_notice'
 export const EMAIL_KINDS: ReadonlyArray<{ kind: EmailKind; label: string }> = [
   { kind: 'received', label: 'Application received' },
   { kind: 'rejected', label: 'Rejection' },
   { kind: 'withdrawn', label: 'Withdrawal confirmed' },
   { kind: 'offer', label: 'The offer (the link is added at the end)' },
   { kind: 'offer_reminder', label: 'Offer reminder (the link is added at the end)' },
+  // 0118 (C4): the lawyer's wording, shown on the careers form and under the received email.
+  { kind: 'privacy_notice', label: 'Privacy notice (careers form and "Application received" email)' },
 ]
 export const PLACEHOLDERS = ['{candidate}', '{job}', '{company}', '{salary}', '{start_date}', '{expires_on}'] as const
 

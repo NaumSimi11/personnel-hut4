@@ -28,7 +28,13 @@ export async function fetchCareersCompany(code: string): Promise<{ company: Publ
   return readJson(await fetch(`/api/careers/${encodeURIComponent(code)}`))
 }
 
-export async function fetchCareersJob(code: string, jobId: string): Promise<{ company: PublicCompany; job: PublicBrief }> {
+/** HR's privacy notice for the form (board card C4, 0118); null when none is written. */
+export type PrivacyNotice = { title: string; paragraphs: string[] }
+
+export async function fetchCareersJob(
+  code: string,
+  jobId: string,
+): Promise<{ company: PublicCompany; job: PublicBrief; privacy?: PrivacyNotice | null }> {
   return readJson(await fetch(`/api/careers/${encodeURIComponent(code)}/jobs/${encodeURIComponent(jobId)}`))
 }
 

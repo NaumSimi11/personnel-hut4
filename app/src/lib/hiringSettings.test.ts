@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { previewTemplate, reasonKey, settingProblem, templateProblem } from './hiringSettings'
+import { EMAIL_KINDS, previewTemplate, reasonKey, settingProblem, templateProblem } from './hiringSettings'
 
 describe('hiring settings', () => {
   it('takes whole numbers in range, blank meaning the default', () => {
@@ -19,5 +19,11 @@ describe('hiring settings', () => {
   it('makes a reason key from its label', () => {
     expect(reasonKey('Failed the test!')).toBe('failed_the_test')
     expect(reasonKey('2nd choice')).toBe('r_2nd_choice')
+  })
+})
+
+describe('the privacy notice (board card C4)', () => {
+  it('is edited beside the email templates, after the emails', () => {
+    expect(EMAIL_KINDS.at(-1)).toEqual({ kind: 'privacy_notice', label: 'Privacy notice (careers form and "Application received" email)' })
   })
 })

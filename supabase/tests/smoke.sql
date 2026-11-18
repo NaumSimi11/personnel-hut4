@@ -10425,4 +10425,13 @@ do $$ begin
        = 'f0000000-0000-0000-0000-0000000d150a|full_time', '0117: location and employment type are kept';
 end $$;
 
+-- ------------------------------------------- privacy notice beside the email templates (0118)
+-- C4: HR keeps one privacy notice, holding-wide or per company, for the careers form and the received email.
+insert into public.email_templates (company_id, kind, subject, body)
+  values (null, 'privacy_notice', 'How we use your data', 'We keep your application for 12 months.');
+do $$ begin
+  assert (select count(*) from public.email_templates where kind = 'privacy_notice') = 1, '0118: a privacy notice is a template kind';
+end $$;
+delete from public.email_templates where kind = 'privacy_notice';
+
 select 'SMOKE TESTS PASSED' as result;

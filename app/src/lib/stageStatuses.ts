@@ -173,3 +173,17 @@ export function statusEventTitle(stageKey: string): 'Outreach' | 'Status' {
 export function noStatusesHint(stage: string): string {
   return `No statuses at ${stage} yet. An admin adds them under Hiring → Labels.`
 }
+
+/**
+ * Whether the Reject / Withdrawn dialog offers to email the candidate. A
+ * rejection may send the polite decline (an optional tick box). A withdrawal
+ * never emails: the candidate withdrew themselves (board card B1). Neither
+ * does a hiring manager's own call, such as "contact in future".
+ */
+export function decisionEmailOffered(
+  mode: 'reject' | 'withdraw',
+  picked: Pick<SubStatusRow, 'key' | 'hm_only'> | undefined,
+): boolean {
+  if (mode === 'withdraw') return false
+  return !picked?.hm_only
+}

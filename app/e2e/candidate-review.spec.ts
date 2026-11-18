@@ -227,6 +227,8 @@ test('candidate page: files behind signed links, screening answers, decision, no
   // Only statuses whose outcome is Rejected are offered; nothing picked is refused.
   await expect(dialog.getByTestId('reject-status-rejected_by_hr')).toBeVisible()
   await expect(dialog.getByTestId('reject-status-withdrawn')).toHaveCount(0)
+  // 0112 (B1): Offer has its own rejection, so rejecting at Offer no longer moves back to Interview.
+  await expect(dialog.getByTestId('reject-status-rejected_at_offer')).toBeVisible()
   await dialog.getByRole('button', { name: 'Reject application' }).click()
   await expect(dialog.getByText('Pick why the application is rejected.')).toBeVisible()
   await dialog.getByTestId('reject-status-rejected_by_hr').check()

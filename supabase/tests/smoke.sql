@@ -5651,10 +5651,10 @@ update public.applications set stage_key = 'interview' where id = '90000000-0000
 -- their keys until HR names them, and the defaults the trigger and the stage give.
 do $$
 begin
-  assert (select count(*) from public.application_sub_statuses) = 21, 'HR''s eighteen statuses, the HM''s contact (0100), applied and shortlisted (0105)';
+  assert (select count(*) from public.application_sub_statuses) = 24, 'HR''s eighteen statuses, the HM''s contact (0100), applied and shortlisted (0105), withdrawn and rejected at more stages (0112)';
   assert (select string_agg(key, ',' order by sort_order) from public.application_sub_statuses
           where stage_key = 'screening')
-    = 'applied,sourced,shortlisted,contact,contacted,interested,no_response,not_interested,unqualified,contact_in_future,do_not_contact',
+    = 'applied,sourced,shortlisted,contact,contacted,interested,no_response,not_interested,unqualified,contact_in_future,do_not_contact,withdrawn_screening',
     'Screening, in order';
   assert (select string_agg(key, ',' order by sort_order) from public.application_sub_statuses
           where stage_key = 'interview')
@@ -7902,15 +7902,15 @@ insert into public.applications (id, job_id, company_id, candidate_id, stage_key
 -- 1. The vocabulary: every stage has one, in order, one outcome each.
 do $$
 begin
-  assert (select count(*) from public.application_sub_statuses) = 21, 'the 18 statuses of 0098, 0100''s contact, 0105''s two';
+  assert (select count(*) from public.application_sub_statuses) = 24, 'the 18 statuses of 0098, 0100''s contact, 0105''s two, 0112''s three';
   assert (select string_agg(key, ',' order by sort_order) from public.application_sub_statuses where stage_key = 'offer')
-    = 'offer_made,offer_declined', 'Offered: made, then declined';
+    = 'offer_made,offer_declined,rejected_at_offer,withdrawn_offer', 'Offered: made, declined, rejected, withdrawn (0112)';
   assert (select string_agg(key, ',' order by sort_order) from public.application_sub_statuses where stage_key = 'hired')
     = 'hired', 'Hired has the one status';
   assert (select count(*) from public.application_sub_statuses where stage_key = 'interview') = 7, 'seven at Interview';
   assert (select string_agg(outcome || '=' || n, ',' order by outcome)
             from (select outcome, count(*) n from public.application_sub_statuses group by outcome) o)
-    = 'hired=1,open=11,rejected=3,withdrew=6', 'the outcomes: 11 open, 3 rejected, 6 withdrew, 1 hired';
+    = 'hired=1,open=11,rejected=4,withdrew=8', 'the outcomes: 11 open, 4 rejected, 8 withdrew, 1 hired (0112 adds 1 and 2)';
   assert app.default_sub_status('interview', null) = 'interview_to_schedule'
      and app.default_sub_status('offer', null) = 'offer_made'
      and app.default_sub_status('hired', null) = 'hired',
@@ -8742,7 +8742,7 @@ declare v_a uuid; v_b uuid; v_c uuid;
   c constant uuid := '80000000-0000-0000-0000-000000000951';
   co constant uuid := '10000000-0000-0000-0000-00000000000a';
 begin
-  assert (select count(*) from public.application_sub_statuses) = 21, 'HR''s 18 statuses (0098), contact (0100), applied and shortlisted (0105)';
+  assert (select count(*) from public.application_sub_statuses) = 24, 'HR''s 18 statuses (0098), contact (0100), applied and shortlisted (0105), three more (0112)';
   assert (select string_agg(key, ',' order by sort_order) from public.application_stages) = 'screening,interview,offer,hired',
     'four stages';
 
@@ -10238,5 +10238,49 @@ do $$ begin
 end $$;
 reset role;
 set app.test_uid = '';
+
+-- ------------------------------------------- withdrawn and rejected at every stage (0112)
+-- B1: a candidate can withdraw at Screening and at Offer, and be rejected at
+-- Offer, without the status moving the application to another stage.
+do $$ begin
+  assert (select stage_key || '/' || outcome || '/' || label from public.application_sub_statuses where key = 'withdrawn_screening') = 'screening/withdrew/withdrawn_screening',
+    '0112: Screening has a "withdrawn" status';
+  assert (select stage_key || '/' || outcome || '/' || label from public.application_sub_statuses where key = 'withdrawn_offer') = 'offer/withdrew/withdrawn_offer',
+    '0112: Offer has a "withdrawn" status';
+  assert (select stage_key || '/' || outcome || '/' || label from public.application_sub_statuses where key = 'rejected_at_offer') = 'offer/rejected/rejected_at_offer',
+    '0112: Offer has a rejection status';
+  assert (select stage_key from public.application_sub_statuses where key = 'withdrawn') = 'interview',
+    '0112: the Interview "withdrawn" stays where it was';
+end $$;
+insert into public.jobs (id, company_id, title, status) values
+  ('70000000-0000-0000-0000-000000000b11', '10000000-0000-0000-0000-00000000000b', 'B1 Role', 'open');
+insert into public.candidates (id, full_name) values
+  ('80000000-0000-0000-0000-000000000b11', 'B1 Screening'),
+  ('80000000-0000-0000-0000-000000000b12', 'B1 Offer Withdraws'),
+  ('80000000-0000-0000-0000-000000000b13', 'B1 Offer Rejected');
+insert into public.applications (id, job_id, company_id, candidate_id, stage_key, sub_status_key) values
+  ('90000000-0000-0000-0000-000000000b11', '70000000-0000-0000-0000-000000000b11', '10000000-0000-0000-0000-00000000000b',
+   '80000000-0000-0000-0000-000000000b11', 'screening', 'contacted'),
+  ('90000000-0000-0000-0000-000000000b12', '70000000-0000-0000-0000-000000000b11', '10000000-0000-0000-0000-00000000000b',
+   '80000000-0000-0000-0000-000000000b12', 'offer', 'offer_made'),
+  ('90000000-0000-0000-0000-000000000b13', '70000000-0000-0000-0000-000000000b11', '10000000-0000-0000-0000-00000000000b',
+   '80000000-0000-0000-0000-000000000b13', 'offer', 'offer_made');
+set app.test_uid = '00000000-0000-0000-0000-000000000005';  -- Bea, Company HR in B
+set role authenticated;
+do $$ begin
+  perform public.set_application_status(array['90000000-0000-0000-0000-000000000b11']::uuid[], 'withdrawn_screening', '');
+  perform public.set_application_status(array['90000000-0000-0000-0000-000000000b12']::uuid[], 'withdrawn_offer', '');
+  perform public.set_application_status(array['90000000-0000-0000-0000-000000000b13']::uuid[], 'rejected_at_offer', '');
+end $$;
+reset role;
+set app.test_uid = '';
+do $$ begin
+  assert (select stage_key || '/' || in_play::text from public.applications where id = '90000000-0000-0000-0000-000000000b11') = 'screening/false',
+    '0112: withdrawn at Screening stays in Screening and leaves play';
+  assert (select stage_key || '/' || in_play::text from public.applications where id = '90000000-0000-0000-0000-000000000b12') = 'offer/false',
+    '0112: withdrawn at Offer stays at Offer and leaves play';
+  assert (select stage_key || '/' || in_play::text from public.applications where id = '90000000-0000-0000-0000-000000000b13') = 'offer/false',
+    '0112: rejected at Offer stays at Offer and leaves play';
+end $$;
 
 select 'SMOKE TESTS PASSED' as result;

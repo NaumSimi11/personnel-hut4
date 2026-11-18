@@ -4,7 +4,7 @@ import { supabase } from '@/lib/supabase'
 import type { Outcome, SubStatusRow } from '@/lib/hiringLabels'
 import { setApplicationStatus } from '@/lib/applicationStatus'
 import { emailCandidates } from '@/lib/candidateEmails'
-import { contactHint, pickableStatusGroups } from '@/lib/stageStatuses'
+import { contactHint, decisionEmailOffered, pickableStatusGroups } from '@/lib/stageStatuses'
 
 /**
  * Reject or withdraw an application (plan 018a). Since plan 075 the status
@@ -43,10 +43,7 @@ onMounted(async () => {
   if (err) console.error('Rejection reasons load failed:', err.message)
   reasons.value = data ?? []
 })
-const canEmail = computed(() => {
-  const picked = props.rows.find((r) => r.key === statusKey.value)
-  return !picked?.hm_only
-})
+const canEmail = computed(() => decisionEmailOffered(mode.value, props.rows.find((r) => r.key === statusKey.value)))
 
 /** `stageKey`: the application's current stage, whose statuses are listed first. */
 function open(next: Mode, name: string, ids: string[], stageKey?: string): void {
@@ -85,7 +82,7 @@ async function submit(): Promise<void> {
     if (codeErr) console.error('set_reason_code failed:', codeErr.message)
   }
   if (emailCandidate.value && canEmail.value) {
-    const sent = await emailCandidates(applicationIds.value, mode.value === 'reject' ? 'rejected' : 'withdrawn')
+    const sent = await emailCandidates(applicationIds.value, 'rejected')
     if (sent.error) {
       busy.value = false
       error.value = `The status is saved, but the email was not: ${sent.error}`
@@ -139,7 +136,7 @@ async function submit(): Promise<void> {
         </div>
         <label v-if="canEmail" class="option" data-testid="reject-email">
           <input id="reject-email" v-model="emailCandidate" type="checkbox" :disabled="busy" />
-          <span>{{ mode === 'reject' ? 'Email the candidate a polite decline (no reason is given)' : 'Email the candidate a confirmation of the withdrawal' }}</span>
+          <span>Email the candidate a polite decline (no reason is given)</span>
         </label>
       </template>
       <p v-if="error" class="error-note" role="alert">{{ error }}</p>

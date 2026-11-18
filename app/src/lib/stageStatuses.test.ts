@@ -4,6 +4,7 @@ import {
   STAGE_LABEL,
   closureLine,
   contactHint,
+  decisionEmailOffered,
   firstOpenStatus,
   filterStagesFor,
   liveStatuses,
@@ -231,3 +232,23 @@ describe('closureLine', () => {
     expect(closureLine(null, 'Position filled.')).toBeNull()
   })
 })
+
+describe('decisionEmailOffered', () => {
+  const row = (key: string, hm_only: boolean) => ({ key, hm_only }) as SubStatusRowLike
+
+  it('offers the polite decline on a reject', () => {
+    expect(decisionEmailOffered('reject', row('rejected_by_hr', false))).toBe(true)
+    expect(decisionEmailOffered('reject', undefined)).toBe(true)
+  })
+
+  it('never emails a withdrawal: the candidate withdrew themselves (B1)', () => {
+    expect(decisionEmailOffered('withdraw', row('withdrawn_screening', false))).toBe(false)
+    expect(decisionEmailOffered('withdraw', undefined)).toBe(false)
+  })
+
+  it('never emails on a hiring manager\'s own call', () => {
+    expect(decisionEmailOffered('reject', row('contact_in_future', true))).toBe(false)
+  })
+})
+
+type SubStatusRowLike = Parameters<typeof decisionEmailOffered>[1] & object

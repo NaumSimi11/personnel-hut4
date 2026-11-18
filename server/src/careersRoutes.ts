@@ -10,6 +10,7 @@ import {
   checkAnswers,
   cvExtension,
   isDuplicateApplication,
+  phoneKey,
   isHoneypotTripped,
   isShortCode,
   publicBrief,
@@ -212,14 +213,27 @@ export async function registerCareersRoutes(app: FastifyInstance): Promise<void>
           return fail(reply, 409, 'You have already applied for this role — we have your application.')
         }
 
-        // Identity: reuse the oldest exact email match; applications stay separate.
-        const { data: existingCandidate } = await db
+        // Identity (T6): the oldest exact email match, else the oldest with the
+        // same phone; applications stay separate.
+        const { data: byEmail } = await db
           .from('candidates')
           .select('id')
           .eq('email', input.email)
           .order('created_at')
           .limit(1)
           .maybeSingle()
+        const key = byEmail ? null : phoneKey(input.phone)
+        const { data: byPhone } = key
+          ? await db.from('candidates').select('id').eq('phone_key', key).order('created_at').limit(1).maybeSingle()
+          : { data: null }
+        const existingCandidate = byEmail ?? byPhone
+        if (byPhone) {
+          // The same person through another email: still one open application per role.
+          const { data: phoneApps } = await db.from('applications').select('in_play').eq('job_id', job.id).eq('candidate_id', byPhone.id)
+          if (isDuplicateApplication(phoneApps ?? [])) {
+            return fail(reply, 409, 'You have already applied for this role — we have your application.')
+          }
+        }
 
         let candidateId = existingCandidate?.id ?? null
         // Everything written for this submission, undone together if the CV

@@ -7,6 +7,7 @@ import {
   checkAnswers,
   isDuplicateApplication,
   isShortCode,
+  phoneKey,
   isHoneypotTripped,
   publicBrief,
   publicPrivacyNotice,
@@ -278,5 +279,17 @@ describe('publicPrivacyNotice (board card C4)', () => {
 
   it('is null when nobody has written one', () => {
     expect(publicPrivacyNotice([], 'c1')).toBeNull()
+  })
+})
+
+describe('phoneKey (T6: the same phone is the same person)', () => {
+  it('keeps the last eight digits, as app.phone_key does', () => {
+    expect(phoneKey('+389 70 123 456')).toBe('70123456')
+    expect(phoneKey('070/123-456')).toBe('70123456')
+  })
+  it('is null for a short or missing number', () => {
+    expect(phoneKey('12345')).toBeNull()
+    expect(phoneKey('')).toBeNull()
+    expect(phoneKey(undefined)).toBeNull()
   })
 })

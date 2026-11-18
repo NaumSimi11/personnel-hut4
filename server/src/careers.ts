@@ -207,6 +207,16 @@ export function summaryOf(description: string | null, max = 200): string {
 
 // ----------------------------------------------------------------- duplicates
 
+/**
+ * The phone as the database keys it (app.phone_key, 0067): the last eight
+ * digits once there are at least eight. Two applications with the same key
+ * are the same person (T6).
+ */
+export function phoneKey(phone: string | null | undefined): string | null {
+  const digits = (phone ?? '').replace(/[^0-9]/g, '')
+  return digits.length >= 8 ? digits.slice(-8) : null
+}
+
 /** The same person applying again for a role they are still in the running for. */
 export function isDuplicateApplication(existing: { in_play: boolean }[]): boolean {
   return existing.some((a) => a.in_play)

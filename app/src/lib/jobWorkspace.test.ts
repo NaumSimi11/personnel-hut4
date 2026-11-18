@@ -65,6 +65,15 @@ describe('jobStatusOptions', () => {
     expect(jobStatusOptions({ status: 'closed', hasDescription: true }).find((o) => o.to === 'on_hold')?.label).toBe('On hold')
   })
 
+  it('keeps Filled out of reach while positions are still open (B7)', () => {
+    const one = jobStatusOptions({ status: 'open', hasDescription: true, hired: 1, headcount: 2 }).find((o) => o.to === 'filled')
+    expect(one?.disabled).toBe(true)
+    expect(one?.label).toBe('Filled (1 of 2 positions still open)')
+    const none = jobStatusOptions({ status: 'open', hasDescription: true, hired: 0, headcount: 2 }).find((o) => o.to === 'filled')
+    expect(none?.label).toBe('Filled (2 of 2 positions still open)')
+    expect(jobStatusOptions({ status: 'open', hasDescription: true, hired: 2, headcount: 2 }).find((o) => o.to === 'filled')?.disabled).toBe(false)
+  })
+
   it('keeps Ready out of reach until there is a description', () => {
     const ready = jobStatusOptions({ status: 'draft', hasDescription: false }).find((o) => o.to === 'ready')
     expect(ready?.disabled).toBe(true)

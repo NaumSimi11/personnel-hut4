@@ -61,11 +61,19 @@ export type JobStatusOption = { to: string; label: string; disabled: boolean }
  * Ready alone waits for a description, as it always has. The database's
  * stamps (opened_at, closed_at/by) follow whatever is picked.
  */
-export function jobStatusOptions(input: { status: string; hasDescription: boolean }): JobStatusOption[] {
+/**
+ * Where a job can move by hand. Ready waits for a description; Filled waits
+ * until every position is hired (B7) — the last hire fills the job itself (0090).
+ */
+export function jobStatusOptions(input: { status: string; hasDescription: boolean; hired?: number; headcount?: number }): JobStatusOption[] {
+  const stillOpen = Math.max(0, (input.headcount ?? 0) - (input.hired ?? 0))
   return JOB_STATUS_ORDER.filter((s) => s !== input.status).map((s) => {
-    const waits = s === 'ready' && !input.hasDescription
     const label = JOB_STATUS_LABEL[s] ?? s
-    return { to: s, label: waits ? `${label} (write the description first)` : label, disabled: waits }
+    if (s === 'ready' && !input.hasDescription) return { to: s, label: `${label} (write the description first)`, disabled: true }
+    if (s === 'filled' && stillOpen > 0) {
+      return { to: s, label: `${label} (${stillOpen} of ${input.headcount} positions still open)`, disabled: true }
+    }
+    return { to: s, label, disabled: false }
   })
 }
 

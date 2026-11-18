@@ -242,7 +242,7 @@ const step = computed(() =>
 // still has in play (plan 070: the job fills itself; the rest wait for HR).
 const statusOptions = computed(() =>
   job.value
-    ? jobStatusOptions({ status: job.value.status, hasDescription: (job.value.description ?? '').trim().length > 0 })
+    ? jobStatusOptions({ status: job.value.status, hasDescription: (job.value.description ?? '').trim().length > 0, hired: hiredCount.value, headcount: headcount.value })
     : [],
 )
 const statusChoice = ref('')

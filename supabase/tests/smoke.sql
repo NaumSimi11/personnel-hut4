@@ -10519,4 +10519,22 @@ do $$ begin
     '0122: no function mentions Shortlisted';
 end $$;
 
+-- ------------------------------------------- Filled only when every position is hired (0123, B7)
+set app.test_uid = '00000000-0000-0000-0000-000000000004';  -- Ada, admin
+set role authenticated;
+do $$
+declare v_status text;
+begin
+  select status into v_status from public.jobs where id = '70000000-0000-0000-0000-000000000001';
+  begin
+    update public.jobs set status = 'filled' where id = '70000000-0000-0000-0000-000000000001';
+    assert false, '0123: Filled by hand must be refused while a position is open';
+  exception when check_violation then
+    if sqlerrm not like 'This job still has % open position%' then raise; end if;
+  end;
+  assert (select status from public.jobs where id = '70000000-0000-0000-0000-000000000001') = v_status, '0123: the job keeps its status';
+end $$;
+reset role;
+set app.test_uid = '';
+
 select 'SMOKE TESTS PASSED' as result;

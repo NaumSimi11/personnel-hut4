@@ -10042,6 +10042,8 @@ insert into public.people (id, user_id, full_name, work_email) values
 insert into public.employment_periods (id, person_id, company_id, job_title, status, start_date, manager_id) values
   ('30000000-0000-0000-0000-000000000f02', '20000000-0000-0000-0000-000000000f02', '10000000-0000-0000-0000-00000000000a',
    'Coordinator', 'active', '2025-01-01', '20000000-0000-0000-0000-000000000a02');
+-- The internal board is switched off in Phase 1 (0119); switched back on here to keep proving it for Phase 2.
+update public.channels set archived_at = null where key = 'internal';
 insert into public.job_channels (job_id, channel_key, status, posting_title, publish_until) values
   ('70000000-0000-0000-0000-000000000d01', 'internal', 'live', 'Board job (internal)', current_date + 10);
 set app.test_uid = '00000000-0000-0000-0000-000000000f02';  -- Ivy
@@ -10070,6 +10072,8 @@ do $$ begin
 end $$;
 reset role;
 set app.test_uid = '';
+update public.job_channels set status = 'closed' where channel_key = 'internal';
+update public.channels set archived_at = now() where key = 'internal';
 
 -- 0108: source credit and the candidate's flags.
 insert into public.applications (id, job_id, company_id, candidate_id, source_key) values
@@ -10433,5 +10437,19 @@ do $$ begin
   assert (select count(*) from public.email_templates where kind = 'privacy_notice') = 1, '0118: a privacy notice is a template kind';
 end $$;
 delete from public.email_templates where kind = 'privacy_notice';
+
+-- ------------------------------------------- the internal board stays off (0119)
+-- C5 / D8: nothing can be published to the internal board in Phase 1, by the panel or around it.
+do $$ begin
+  assert (select archived_at is not null from public.channels where key = 'internal'), '0119: the internal channel is switched off';
+  begin
+    insert into public.job_channels (job_id, channel_key, status) values ('70000000-0000-0000-0000-000000000b41', 'internal', 'live');
+    assert false, '0119: publishing to a switched-off channel must be refused';
+  exception when check_violation then
+    if sqlerrm <> 'Internal job board is switched off.' then raise; end if;
+  end;
+  insert into public.job_channels (job_id, channel_key, status) values ('70000000-0000-0000-0000-000000000b41', 'careers', 'live');
+  delete from public.job_channels where job_id = '70000000-0000-0000-0000-000000000b41';
+end $$;
 
 select 'SMOKE TESTS PASSED' as result;

@@ -167,11 +167,9 @@ export const router = createRouter({
           name: 'my-workspace',
           component: () => import('@/pages/MyWorkspacePage.vue'),
         },
-        {
-          path: 'internal-jobs',
-          name: 'internal-jobs',
-          component: () => import('@/pages/InternalJobsPage.vue'),
-        },
+        // The internal job board is switched off in Phase 1 (decision D8,
+        // migration 0119); InternalJobsPage stays for Phase 2 (card P7).
+        { path: 'internal-jobs', redirect: '/' },
       ],
     },
     { path: '/:pathMatch(.*)*', redirect: '/' },

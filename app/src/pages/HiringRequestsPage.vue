@@ -38,6 +38,8 @@ type HiringRequestRow = {
   change_reason: string | null
   budget: unknown
   department_id: string | null
+  location_id: string | null
+  employment_type_key: string | null
   hold_reason: string | null
   hold_review_on: string | null
   cancel_reason: string | null
@@ -185,7 +187,7 @@ async function load(): Promise<void> {
   const { data, error: err } = await supabase
     .from('hiring_requests')
     .select(
-      `id, title, reason, headcount, target_start_date, status, change_reason, budget, department_id, hold_reason, hold_review_on, cancel_reason,
+      `id, title, reason, headcount, target_start_date, status, change_reason, budget, department_id, location_id, employment_type_key, hold_reason, hold_review_on, cancel_reason,
        requested_by, hiring_manager_id, decided_at, company_id,
        company:companies(name),
        requester:people!hiring_requests_requested_by_fkey(full_name),

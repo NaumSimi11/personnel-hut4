@@ -59,9 +59,14 @@ insert into public.compensation_records
   (employment_period_id, amount, currency, pay_basis_key, effective_date, status) values
   ('30000000-0000-0000-0000-000000000003', 50000, 'EUR', 'annual', '2024-01-01', 'approved');
 
-insert into public.hiring_requests (id, company_id, title, status) values
-  ('60000000-0000-0000-0000-00000000000a','10000000-0000-0000-0000-00000000000a','Operations Coordinator','submitted'),
-  ('60000000-0000-0000-0000-00000000000b','10000000-0000-0000-0000-00000000000b','Account Manager','submitted');
+-- 0117: a request a signed-in user submits names its department; one for the early fixtures.
+insert into public.departments (id, company_id, name) values
+  ('e0000000-0000-0000-0000-0000000000a1', '10000000-0000-0000-0000-00000000000a', 'Fixture Department A'),
+  ('e0000000-0000-0000-0000-0000000000b1', '10000000-0000-0000-0000-00000000000b', 'Fixture Department B');
+
+insert into public.hiring_requests (id, company_id, title, status, department_id, hiring_manager_id) values
+  ('60000000-0000-0000-0000-00000000000a','10000000-0000-0000-0000-00000000000a','Operations Coordinator','submitted', 'e0000000-0000-0000-0000-0000000000a1', '20000000-0000-0000-0000-000000000001'),
+  ('60000000-0000-0000-0000-00000000000b','10000000-0000-0000-0000-00000000000b','Account Manager','submitted', 'e0000000-0000-0000-0000-0000000000b1', '20000000-0000-0000-0000-000000000005');
 
 -- A Company A job with one candidate/application, a restricted departure
 -- reason for Omar, and a configured workflow owner (audit coverage). It wants
@@ -120,9 +125,10 @@ begin
 end $$;
 
 -- Negative path: requesters never decide their own request.
-insert into public.hiring_requests (id, company_id, title, status, requested_by) values
+insert into public.hiring_requests (id, company_id, title, status, requested_by, department_id, hiring_manager_id) values
   ('60000000-0000-0000-0000-00000000000c','10000000-0000-0000-0000-00000000000a',
-   'Office Manager','submitted','20000000-0000-0000-0000-000000000001');
+   'Office Manager','submitted','20000000-0000-0000-0000-000000000001',
+   'e0000000-0000-0000-0000-0000000000a1','20000000-0000-0000-0000-000000000001');
 do $$
 begin
   begin
@@ -135,9 +141,9 @@ end $$;
 
 -- ...unless they are a platform admin (0030): Ada raises and decides her own.
 set app.test_uid = '00000000-0000-0000-0000-000000000004';
-insert into public.hiring_requests (id, company_id, title, status, requested_by) values
+insert into public.hiring_requests (id, company_id, title, status, requested_by, department_id, hiring_manager_id) values
   ('60000000-0000-0000-0000-00000000000d','10000000-0000-0000-0000-00000000000a',
-   'Group Accountant','submitted','20000000-0000-0000-0000-000000000004');
+   'Group Accountant','submitted','20000000-0000-0000-0000-000000000004', 'e0000000-0000-0000-0000-0000000000a1', '20000000-0000-0000-0000-000000000001');
 update public.hiring_requests set status = 'approved' where id = '60000000-0000-0000-0000-00000000000d';
 do $$
 begin
@@ -191,8 +197,7 @@ begin
   assert (select count(*) from public.external_projects) = 1,
     'Project member sees their own project without projects.view';
   begin
-    insert into public.hiring_requests (company_id, title)
-    values ('10000000-0000-0000-0000-00000000000a','Rogue request');
+    insert into public.hiring_requests (company_id, title, department_id, hiring_manager_id) values ('10000000-0000-0000-0000-00000000000a','Rogue request', 'e0000000-0000-0000-0000-0000000000a1', '20000000-0000-0000-0000-000000000001');
     raise exception 'FAIL: ungranted employee created a hiring request';
   exception when insufficient_privilege then null;
   end;
@@ -2818,8 +2823,8 @@ set app.test_uid = '';
 -- revises and resubmits (decision cleared); history records each step.
 set app.test_uid = '';
 insert into public.grant_capabilities (grant_id, capability_key) values ('40000000-0000-0000-0000-000000000002', 'jobs.request') on conflict do nothing;  -- Fiona may request hires
-insert into public.hiring_requests (id, company_id, title, status, requested_by, headcount) values
-  ('60000000-0000-0000-0000-000000000033', '10000000-0000-0000-0000-00000000000a', 'Dispatcher', 'submitted', '20000000-0000-0000-0000-000000000002', 1);  -- Fiona's request
+insert into public.hiring_requests (id, company_id, title, status, requested_by, headcount, department_id, hiring_manager_id) values
+  ('60000000-0000-0000-0000-000000000033', '10000000-0000-0000-0000-00000000000a', 'Dispatcher', 'submitted', '20000000-0000-0000-0000-000000000002', 1, 'e0000000-0000-0000-0000-0000000000a1', '20000000-0000-0000-0000-000000000001');  -- Fiona's request
 -- Omar (no jobs.approve) cannot send it back; Fiona cannot send back her own; Alex can, with a reason.
 set app.test_uid = '00000000-0000-0000-0000-000000000003';
 set role authenticated;
@@ -2972,8 +2977,8 @@ end $$;
 -- Hiring: Fiona submits with Alex as hiring manager → Alex is assigned (awaiting approval) and, being the approver, also gets the request.
 set app.test_uid = '00000000-0000-0000-0000-000000000002';
 set role authenticated;
-insert into public.hiring_requests (id, company_id, title, status, requested_by, hiring_manager_id, target_start_date) values
-  ('60000000-0000-0000-0000-000000000034', '10000000-0000-0000-0000-00000000000a', 'Fleet Lead', 'submitted', '20000000-0000-0000-0000-000000000002', '20000000-0000-0000-0000-000000000001', '2027-03-01');
+insert into public.hiring_requests (id, company_id, title, status, requested_by, hiring_manager_id, target_start_date, department_id) values
+  ('60000000-0000-0000-0000-000000000034', '10000000-0000-0000-0000-00000000000a', 'Fleet Lead', 'submitted', '20000000-0000-0000-0000-000000000002', '20000000-0000-0000-0000-000000000001', '2027-03-01', 'e0000000-0000-0000-0000-0000000000a1');
 reset role;
 set app.test_uid = '';
 do $$
@@ -7689,8 +7694,8 @@ delete from public.people where id = '20000000-0000-0000-0000-000000000861';
 -- ================================================================ 0086
 -- Recruitment insights (plan 067): the day a job opened, and the time
 -- figures built on it. Company B, where Bea holds Company HR.
-insert into public.hiring_requests (id, company_id, title, headcount, target_start_date, status) values
-  ('60000000-0000-0000-0000-000000000861', '10000000-0000-0000-0000-00000000000b', 'Late Role', 1, current_date - 5, 'approved');
+insert into public.hiring_requests (id, company_id, title, headcount, target_start_date, status, department_id, hiring_manager_id) values
+  ('60000000-0000-0000-0000-000000000861', '10000000-0000-0000-0000-00000000000b', 'Late Role', 1, current_date - 5, 'approved', 'e0000000-0000-0000-0000-0000000000b1', '20000000-0000-0000-0000-000000000005');
 insert into public.jobs (id, company_id, title, status) values
   ('70000000-0000-0000-0000-000000000861', '10000000-0000-0000-0000-00000000000b', 'Draft Then Open', 'draft');
 insert into public.jobs (id, company_id, hiring_request_id, title, status, created_at) values
@@ -8294,8 +8299,8 @@ update public.application_sub_statuses set archived_at = null where key in ('unq
 -- else one; the hire that meets it fills a ready/open/on-hold job and the
 -- one before it does not; an imported hire fills nothing; a closed job stays
 -- closed; withdraw_in_play clears the rest and leaves the job filled.
-insert into public.hiring_requests (id, company_id, title, status, headcount) values
-  ('60000000-0000-0000-0000-0000000008c1', '10000000-0000-0000-0000-00000000000b', 'Fill Request B', 'approved', 3);
+insert into public.hiring_requests (id, company_id, title, status, headcount, department_id, hiring_manager_id) values
+  ('60000000-0000-0000-0000-0000000008c1', '10000000-0000-0000-0000-00000000000b', 'Fill Request B', 'approved', 3, 'e0000000-0000-0000-0000-0000000000b1', '20000000-0000-0000-0000-000000000005');
 insert into public.jobs (id, company_id, title, status, custom, hiring_request_id) values
   ('70000000-0000-0000-0000-0000000008c1', '10000000-0000-0000-0000-00000000000b', 'Fill Two B', 'open', '{"zoho": {"headcount": "2"}}', null),
   ('70000000-0000-0000-0000-0000000008c2', '10000000-0000-0000-0000-00000000000b', 'Fill One B', 'open', '{}', null),
@@ -9540,8 +9545,8 @@ insert into public.grant_capabilities (grant_id, capability_key)
 select '40000000-0000-0000-0000-000000000a02', capability_key from public.preset_capabilities
  where preset_id = (select id from public.permission_presets where name = 'Company HR');
 
-insert into public.hiring_requests (id, company_id, title, hiring_manager_id, status) values
-  ('60000000-0000-0000-0000-000000000a01', '10000000-0000-0000-0000-00000000000a', 'HM role', '20000000-0000-0000-0000-000000000a01', 'approved');
+insert into public.hiring_requests (id, company_id, title, hiring_manager_id, status, department_id) values
+  ('60000000-0000-0000-0000-000000000a01', '10000000-0000-0000-0000-00000000000a', 'HM role', '20000000-0000-0000-0000-000000000a01', 'approved', 'e0000000-0000-0000-0000-0000000000a1');
 insert into public.jobs (id, company_id, hiring_request_id, title, status) values
   ('70000000-0000-0000-0000-000000000a01', '10000000-0000-0000-0000-00000000000a', '60000000-0000-0000-0000-000000000a01', 'HM job', 'open'),
   ('70000000-0000-0000-0000-000000000a02', '10000000-0000-0000-0000-00000000000a', null, 'No-HM job', 'open');
@@ -9667,8 +9672,8 @@ delete from public.jobs where id in ('70000000-0000-0000-0000-000000000a01', '70
 
 -- ------------------------------- request lifecycle, candidate emails, clocks (0101–0103)
 -- Rita (Company HR in A, from the 0100 block) steers a request Hana raised.
-insert into public.hiring_requests (id, company_id, title, requested_by, status) values
-  ('60000000-0000-0000-0000-000000000b01', '10000000-0000-0000-0000-00000000000a', 'Lifecycle role', '20000000-0000-0000-0000-000000000a01', 'approved');
+insert into public.hiring_requests (id, company_id, title, requested_by, status, department_id, hiring_manager_id) values
+  ('60000000-0000-0000-0000-000000000b01', '10000000-0000-0000-0000-00000000000a', 'Lifecycle role', '20000000-0000-0000-0000-000000000a01', 'approved', 'e0000000-0000-0000-0000-0000000000a1', '20000000-0000-0000-0000-000000000001');
 insert into public.jobs (id, company_id, hiring_request_id, title, status) values
   ('70000000-0000-0000-0000-000000000b01', '10000000-0000-0000-0000-00000000000a', '60000000-0000-0000-0000-000000000b01', 'Lifecycle job 1', 'open'),
   ('70000000-0000-0000-0000-000000000b02', '10000000-0000-0000-0000-00000000000a', '60000000-0000-0000-0000-000000000b01', 'Lifecycle job 2', 'draft');
@@ -9820,9 +9825,9 @@ insert into public.approval_routes (company_id, kind, position, label, approver_
   ('10000000-0000-0000-0000-00000000000a', 'request', 2, 'Director', '20000000-0000-0000-0000-000000000001');
 insert into public.approval_delegates (person_id, delegate_id) values
   ('20000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000002');
-insert into public.hiring_requests (id, company_id, title, requested_by, status, budget) values
+insert into public.hiring_requests (id, company_id, title, requested_by, status, budget, department_id, hiring_manager_id) values
   ('60000000-0000-0000-0000-000000000c01', '10000000-0000-0000-0000-00000000000a', 'Routed role',
-   '20000000-0000-0000-0000-000000000a01', 'submitted', '{"min": 30000, "max": 40000, "currency": "EUR"}');
+   '20000000-0000-0000-0000-000000000a01', 'submitted', '{"min": 30000, "max": 40000, "currency": "EUR"}', 'e0000000-0000-0000-0000-0000000000a1', '20000000-0000-0000-0000-000000000001');
 
 do $$ begin
   assert (select string_agg(label || ':' || status, ',' order by position) from public.approval_tasks
@@ -10189,8 +10194,8 @@ do $$ begin
 end $$;
 
 -- 10.4: an approved request — a new start date is fine, a bigger headcount goes back for approval.
-insert into public.hiring_requests (id, company_id, title, requested_by, status, headcount) values
-  ('60000000-0000-0000-0000-000000000f41', '10000000-0000-0000-0000-00000000000a', 'Amend role', '20000000-0000-0000-0000-000000000a01', 'approved', 1);
+insert into public.hiring_requests (id, company_id, title, requested_by, status, headcount, department_id, hiring_manager_id) values
+  ('60000000-0000-0000-0000-000000000f41', '10000000-0000-0000-0000-00000000000a', 'Amend role', '20000000-0000-0000-0000-000000000a01', 'approved', 1, 'e0000000-0000-0000-0000-0000000000a1', '20000000-0000-0000-0000-000000000001');
 set app.test_uid = '00000000-0000-0000-0000-000000000a02';
 set role authenticated;
 do $$
@@ -10339,8 +10344,8 @@ end $$;
 -- ------------------------------------------- Did not start, end to end (B4; built in 0108)
 -- The card: marking it cancels onboarding, tells IT and Payroll, and reopens
 -- the position — the filled job and, through 0101, its filled request.
-insert into public.hiring_requests (id, company_id, title, status, requested_by, headcount) values
-  ('60000000-0000-0000-0000-000000000b41', '10000000-0000-0000-0000-00000000000a', 'B4 Analyst', 'approved', '20000000-0000-0000-0000-000000000002', 1);
+insert into public.hiring_requests (id, company_id, title, status, requested_by, headcount, department_id, hiring_manager_id) values
+  ('60000000-0000-0000-0000-000000000b41', '10000000-0000-0000-0000-00000000000a', 'B4 Analyst', 'approved', '20000000-0000-0000-0000-000000000002', 1, 'e0000000-0000-0000-0000-0000000000a1', '20000000-0000-0000-0000-000000000001');
 insert into public.jobs (id, company_id, title, status, hiring_request_id) values
   ('70000000-0000-0000-0000-000000000b41', '10000000-0000-0000-0000-00000000000a', 'B4 Analyst', 'open', '60000000-0000-0000-0000-000000000b41');
 insert into public.people (id, full_name, work_email) values ('20000000-0000-0000-0000-000000000b41', 'Bo Nostart', 'bo@a.test');
@@ -10384,6 +10389,40 @@ do $$ begin
     'B4: the filled job reopens';
   assert (select status from public.hiring_requests where id = '60000000-0000-0000-0000-000000000b41') = 'approved',
     'B4: and so does its request';
+end $$;
+
+-- ------------------------------------------- request form: required and new fields (0117)
+-- D15: a request is submitted with a department and a hiring manager; location and employment type are recorded.
+insert into public.locations (id, company_id, name) values ('f0000000-0000-0000-0000-0000000d150a', '10000000-0000-0000-0000-00000000000a', 'A Office');
+set app.test_uid = '00000000-0000-0000-0000-000000000002';  -- Fiona, who requests hires in A
+set role authenticated;
+do $$ begin
+  begin
+    insert into public.hiring_requests (company_id, title, requested_by, status, hiring_manager_id)
+      values ('10000000-0000-0000-0000-00000000000a', 'D15 No department', '20000000-0000-0000-0000-000000000002', 'submitted',
+              '20000000-0000-0000-0000-000000000001');
+    assert false, '0117: a request without a department must be refused';
+  exception when not_null_violation then
+    if sqlerrm <> 'Choose the department this hire is for.' then raise; end if;
+  end;
+  begin
+    insert into public.hiring_requests (company_id, title, requested_by, status, department_id)
+      values ('10000000-0000-0000-0000-00000000000a', 'D15 No manager', '20000000-0000-0000-0000-000000000002', 'submitted',
+              'e0000000-0000-0000-0000-00000000000a');
+    assert false, '0117: a request without a hiring manager must be refused';
+  exception when not_null_violation then
+    if sqlerrm <> 'Choose the hiring manager for this hire.' then raise; end if;
+  end;
+  insert into public.hiring_requests (id, company_id, title, requested_by, status, department_id, hiring_manager_id, location_id, employment_type_key)
+    values ('60000000-0000-0000-0000-00000000d150', '10000000-0000-0000-0000-00000000000a', 'D15 Complete', '20000000-0000-0000-0000-000000000002',
+            'submitted', 'e0000000-0000-0000-0000-00000000000a', '20000000-0000-0000-0000-000000000001',
+            'f0000000-0000-0000-0000-0000000d150a', 'full_time');
+end $$;
+reset role;
+set app.test_uid = '';
+do $$ begin
+  assert (select location_id::text || '|' || employment_type_key from public.hiring_requests where id = '60000000-0000-0000-0000-00000000d150')
+       = 'f0000000-0000-0000-0000-0000000d150a|full_time', '0117: location and employment type are kept';
 end $$;
 
 select 'SMOKE TESTS PASSED' as result;

@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { onMounted, ref, watch } from 'vue'
-import { z } from 'zod'
-import { cleanJobTitle, jobTitleProblem } from '@/lib/jobTitle'
+import { requestFormInput } from '@/lib/hiringRequestForm'
 import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/stores/auth'
 import { deliverNotifications, deliverySentence } from '@/lib/notificationsApi'
@@ -26,6 +25,8 @@ export type RevisionTarget = {
   change_reason: string | null
   budget?: unknown
   department_id?: string | null
+  location_id?: string | null
+  employment_type_key?: string | null
 }
 
 const emit = defineEmits<{ created: [notice: string | null]; revised: [notice: string | null] }>()
@@ -45,44 +46,35 @@ const form = ref({
   bandMax: '',
   bandCurrency: 'EUR',
   departmentId: '',
+  locationId: '',
+  employmentTypeKey: '',
 })
 // 0111: the department a request hires for, for the dashboard.
+// 0117 (D15): and its location, from the same company structure.
 const departments = ref<{ id: string; name: string }[]>([])
+const locations = ref<{ id: string; name: string }[]>([])
+const employmentTypes = ref<{ key: string; label: string }[]>([])
 watch(
   () => form.value.companyId,
   async (id) => {
     departments.value = []
+    locations.value = []
     if (!id) return
     try {
-      departments.value = (await loadCompanyStructure(id)).departments
+      const structure = await loadCompanyStructure(id)
+      departments.value = structure.departments
+      locations.value = structure.locations
     } catch (e) {
       console.error('Departments load failed:', e instanceof Error ? e.message : e)
     }
-    if (!departments.value.some((d) => d.id === form.value.departmentId)) form.value = { ...form.value, departmentId: '' }
+    const keepDept = departments.value.some((d) => d.id === form.value.departmentId)
+    const keepLoc = locations.value.some((l) => l.id === form.value.locationId)
+    form.value = { ...form.value, departmentId: keepDept ? form.value.departmentId : '', locationId: keepLoc ? form.value.locationId : '' }
   },
 )
 const error = ref<string | null>(null)
 const busy = ref(false)
 const revising = ref<RevisionTarget | null>(null)
-
-const input = z.object({
-  companyId: z.string().uuid('Choose a company.'),
-  title: z
-    .string()
-    .max(120)
-    .transform(cleanJobTitle)
-    .superRefine((value, ctx) => {
-      const problem = jobTitleProblem(value)
-      if (problem) ctx.addIssue({ code: z.ZodIssueCode.custom, message: problem })
-    }),
-  reason: z.string().trim().max(2000, 'Keep the reason under 2000 characters.'),
-  headcount: z.coerce.number().int().min(1, 'Headcount must be at least 1.'),
-  targetStartDate: z.union([
-    z.literal(''),
-    z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Choose a valid start date.'),
-  ]),
-  hiringManagerId: z.union([z.literal(''), z.string().uuid()]),
-})
 
 function open(): void {
   error.value = null
@@ -95,6 +87,8 @@ function open(): void {
     targetStartDate: '',
     hiringManagerId: '',
     departmentId: '',
+    locationId: '',
+    employmentTypeKey: '',
     ...bandFields(null),
   }
   dialog.value?.showModal()
@@ -122,6 +116,8 @@ function openRevision(target: RevisionTarget): void {
     targetStartDate: target.target_start_date ?? '',
     hiringManagerId: target.hiring_manager_id ?? '',
     departmentId: target.department_id ?? '',
+    locationId: target.location_id ?? '',
+    employmentTypeKey: target.employment_type_key ?? '',
     ...bandFields(target.budget),
   }
   dialog.value?.showModal()
@@ -130,7 +126,7 @@ defineExpose({ open, openRevision, openAmend })
 
 async function submit(): Promise<void> {
   error.value = null
-  const parsed = input.safeParse(form.value)
+  const parsed = requestFormInput.safeParse(form.value)
   if (!parsed.success) {
     error.value = parsed.error.issues[0]?.message ?? 'Check the form.'
     return
@@ -152,7 +148,9 @@ async function submit(): Promise<void> {
           target_start_date: parsed.data.targetStartDate || null,
           hiring_manager_id: parsed.data.hiringManagerId || null,
           budget: band.band,
-          department_id: form.value.departmentId || null,
+          department_id: parsed.data.departmentId,
+          location_id: parsed.data.locationId || null,
+          employment_type_key: parsed.data.employmentTypeKey || null,
         },
       })
       if (rpcErr) throw new Error(friendly(rpcErr.message))
@@ -171,7 +169,9 @@ async function submit(): Promise<void> {
           target_start_date: parsed.data.targetStartDate || null,
           hiring_manager_id: parsed.data.hiringManagerId || null,
           budget: band.band,
-          department_id: form.value.departmentId || null,
+          department_id: parsed.data.departmentId,
+          location_id: parsed.data.locationId || null,
+          employment_type_key: parsed.data.employmentTypeKey || null,
           status: 'submitted',
         })
         .eq('id', revising.value.id)
@@ -190,7 +190,9 @@ async function submit(): Promise<void> {
       target_start_date: parsed.data.targetStartDate || null,
       hiring_manager_id: parsed.data.hiringManagerId || null,
       budget: band.band,
-      department_id: form.value.departmentId || null,
+      department_id: parsed.data.departmentId,
+      location_id: parsed.data.locationId || null,
+      employment_type_key: parsed.data.employmentTypeKey || null,
       requested_by: auth.personId,
       status: 'submitted',
     }).select('id').maybeSingle()
@@ -233,6 +235,9 @@ watch(() => form.value.companyId, loadManagers)
 onMounted(async () => {
   const companiesRes = await supabase.from('companies').select('id, name').is('archived_at', null).order('name')
   companies.value = companiesRes.data ?? []
+  const typesRes = await supabase.from('employment_types').select('key, label').is('archived_at', null).order('sort_order')
+  if (typesRes.error) console.error('Employment types load failed:', typesRes.error.message)
+  employmentTypes.value = typesRes.data ?? []
   if (!form.value.companyId && companies.value[0]) form.value.companyId = companies.value[0].id
   await loadManagers(form.value.companyId)
 })
@@ -269,14 +274,14 @@ onMounted(async () => {
           <input id="rh-headcount" v-model="form.headcount" type="number" min="1" required />
         </div>
         <div class="field">
-          <label for="rh-department">Department (optional)</label>
-          <select id="rh-department" v-model="form.departmentId">
-            <option value="">No department</option>
+          <label for="rh-department">Department</label>
+          <select id="rh-department" v-model="form.departmentId" required>
+            <option value="" disabled>Choose a department</option>
             <option v-for="d in departments" :key="d.id" :value="d.id">{{ d.name }}</option>
           </select>
         </div>
         <fieldset class="field band">
-          <legend>Salary band (optional) — offers outside it also go to Finance and the Director</legend>
+          <legend>Salary band (optional)</legend>
           <div class="band-row">
             <input id="rh-band-min" v-model="form.bandMin" inputmode="decimal" placeholder="From" aria-label="Band from" />
             <input id="rh-band-max" v-model="form.bandMax" inputmode="decimal" placeholder="To" aria-label="Band to" />
@@ -288,11 +293,25 @@ onMounted(async () => {
           <input id="rh-start" v-model="form.targetStartDate" type="date" />
         </div>
         <div class="field">
-          <label for="rh-manager">Hiring manager (optional)</label>
-          <select id="rh-manager" v-model="form.hiringManagerId">
-            <option value="">No hiring manager yet</option>
+          <label for="rh-manager">Hiring manager</label>
+          <select id="rh-manager" v-model="form.hiringManagerId" required>
+            <option value="" disabled>Choose the hiring manager</option>
             <option v-if="!people.length" disabled>Nobody here holds HR or recruitment access</option>
             <option v-for="p in people" :key="p.id" :value="p.id">{{ p.full_name }}</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="rh-location">Location (optional)</label>
+          <select id="rh-location" v-model="form.locationId">
+            <option value="">Not set</option>
+            <option v-for="l in locations" :key="l.id" :value="l.id">{{ l.name }}</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="rh-type">Employment type (optional)</label>
+          <select id="rh-type" v-model="form.employmentTypeKey">
+            <option value="">Not set</option>
+            <option v-for="t in employmentTypes" :key="t.key" :value="t.key">{{ t.label }}</option>
           </select>
         </div>
       </div>

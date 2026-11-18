@@ -53,6 +53,8 @@ test('request a hire → changes requested (dialog) → edit and resubmit → hi
   await page.locator('#rh-company').selectOption({ label: 'Snowball' })
   await page.locator('#rh-title').fill(TITLE_ALPHA)
   await page.locator('#rh-headcount').fill('1')
+  // 0117 (D15): a department is required; any of the shared ones will do.
+  await page.locator('#rh-department').selectOption({ index: 1 })
   // The signed-in admin is the hiring manager too, so the notifications land on their own Home page.
   await page.locator('#rh-manager').selectOption({ label: 'Naum Simidjioski' })
   await page.locator('#rh-start').fill('2030-03-02')

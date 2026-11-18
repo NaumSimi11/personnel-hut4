@@ -2648,6 +2648,8 @@ export type Database = {
           custom: Json
           decided_at: string | null
           department_id: string | null
+          location_id: string | null
+          employment_type_key: string | null
           decided_by: string | null
           headcount: number
           hiring_manager_id: string | null
@@ -2671,6 +2673,8 @@ export type Database = {
           custom?: Json
           decided_at?: string | null
           department_id?: string | null
+          location_id?: string | null
+          employment_type_key?: string | null
           decided_by?: string | null
           headcount?: number
           hiring_manager_id?: string | null
@@ -2694,6 +2698,8 @@ export type Database = {
           custom?: Json
           decided_at?: string | null
           department_id?: string | null
+          location_id?: string | null
+          employment_type_key?: string | null
           decided_by?: string | null
           headcount?: number
           hiring_manager_id?: string | null

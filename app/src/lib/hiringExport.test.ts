@@ -14,7 +14,15 @@ describe('fetchHiringExport', () => {
     const [url, init] = (fetcher as unknown as ReturnType<typeof vi.fn>).mock.calls[0]
     expect(url).toBe('/api/reports/hiring-export')
     expect(init.headers.authorization).toBe('Bearer tok')
-    expect(JSON.parse(init.body)).toEqual({ today: '2026-11-17' })
+    expect(JSON.parse(init.body)).toEqual({ today: '2026-11-17', scope: 'everyone' })
+  })
+
+  it('sends the list filters as they are, so the file holds what the list shows', async () => {
+    const fetcher = answer(200, { filename: 'peopleos-candidates-filtered-2026-11-20.xlsx', base64: btoa('PK') })
+    const filter = { stage: 'interview', status: 'interview_hr', companyId: 'co-1', search: ' ana ' }
+    await fetchHiringExport('tok', '2026-11-20', fetcher, filter)
+    const [, init] = (fetcher as unknown as ReturnType<typeof vi.fn>).mock.calls[0]
+    expect(JSON.parse(init.body)).toEqual({ today: '2026-11-20', scope: 'filtered', filter })
   })
 
   it('throws the server message when it refuses', async () => {

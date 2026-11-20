@@ -140,6 +140,6 @@ export function buildHiringExport(input: ExportInput): Buffer {
   return buildWorkbook(hiringExportSheets(input))
 }
 
-export function hiringExportFilename(today: string): string {
-  return `peopleos-candidates-${today}.xlsx`
+export function hiringExportFilename(today: string, filtered = false): string {
+  return `peopleos-candidates-${filtered ? 'filtered-' : ''}${today}.xlsx`
 }

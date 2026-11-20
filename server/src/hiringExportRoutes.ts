@@ -9,10 +9,13 @@ import {
   type ExportCandidate,
   type ExportJob,
 } from './hiringExport.js'
+import { exportRequest, readFilteredExport } from './hiringExportFilter.js'
 
 /**
- * POST /api/reports/hiring-export — every candidate, one row per job they
- * are on, as an .xlsx (see hiringExport.ts for the shape).
+ * POST /api/reports/hiring-export — the Applicants list as an .xlsx, one row
+ * per application (see hiringExport.ts for the shape). With `filter` it holds
+ * what the list's filters show (hiringExportFilter.ts); with
+ * `scope: 'everyone'` every candidate, those on no job included.
  *
  * Read AS THE CALLER, so the file holds exactly the candidates and
  * applications row-level security already lets them see; no gate of its own.
@@ -99,11 +102,8 @@ export function registerHiringExportRoutes(app: FastifyInstance): void {
     const who = await identityFromToken(token)
     if (!who) return reply.code(401).send({ error: 'Sign in to continue.' })
 
-    const body = (req.body ?? {}) as { today?: unknown }
-    const today =
-      typeof body.today === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(body.today)
-        ? body.today
-        : new Date().toISOString().slice(0, 10)
+    const request = exportRequest(req.body)
+    if (!request.ok) return reply.code(400).send({ error: request.error })
 
     const url = env('SUPABASE_URL') ?? ''
     const anon = env('SUPABASE_PUBLISHABLE_KEY') ?? env('VITE_SUPABASE_PUBLISHABLE_KEY') ?? ''
@@ -113,14 +113,19 @@ export function registerHiringExportRoutes(app: FastifyInstance): void {
     })
 
     try {
-      const [candidates, jobs, applications, statusLabels] = await Promise.all([
-        readCandidates(asCaller),
+      const [rows, jobs, statusLabels] = await Promise.all([
+        request.scope === 'filtered'
+          ? readFilteredExport(asCaller, request.filter)
+          : Promise.all([readCandidates(asCaller), readApplications(asCaller)]).then(([candidates, applications]) => ({ candidates, applications })),
         readJobs(asCaller),
-        readApplications(asCaller),
         readStatusLabels(asCaller),
       ])
-      const workbook = buildHiringExport({ candidates, jobs, applications, statusLabels })
-      return reply.send({ filename: hiringExportFilename(today), base64: workbook.toString('base64') })
+      const workbook = buildHiringExport({ ...rows, jobs, statusLabels })
+      return reply.send({
+        filename: hiringExportFilename(request.today, request.scope === 'filtered'),
+        base64: workbook.toString('base64'),
+        rows: rows.applications.length,
+      })
     } catch (err) {
       req.log.error({ err }, 'hiring export failed')
       return reply.code(500).send({ error: 'The export could not be built.' })

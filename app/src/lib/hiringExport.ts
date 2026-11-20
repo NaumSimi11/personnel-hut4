@@ -11,11 +11,15 @@ const XLSX_TYPE = 'application/vnd.openxmlformats-officedocument.spreadsheetml.s
 export type ExportFile = { filename: string; bytes: Uint8Array }
 
 /** Ask the server for the workbook; throws an Error whose message is fit to show. */
-export async function fetchHiringExport(accessToken: string, today: string, fetcher: typeof fetch = fetch): Promise<ExportFile> {
+/** The Applicants list's filters, as the list holds them. */
+export type ExportFilter = { stage: string; status: string; companyId: string; search: string }
+
+/** With a filter, the file holds what the list shows; without one, everyone (candidates on no job included). */
+export async function fetchHiringExport(accessToken: string, today: string, fetcher: typeof fetch = fetch, filter?: ExportFilter): Promise<ExportFile> {
   const res = await fetcher('/api/reports/hiring-export', {
     method: 'POST',
     headers: { 'content-type': 'application/json', authorization: `Bearer ${accessToken}` },
-    body: JSON.stringify({ today }),
+    body: JSON.stringify(filter ? { today, scope: 'filtered', filter } : { today, scope: 'everyone' }),
   })
   const body = (await res.json().catch(() => ({}))) as { error?: string; filename?: string; base64?: string }
   if (!res.ok) throw new Error(body.error ?? HIRING_EXPORT_ERROR)

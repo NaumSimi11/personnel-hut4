@@ -51,12 +51,14 @@ const error = ref<string | null>(null)
 // Every candidate, one row per job, as Excel; the server reads what the caller may see.
 const canExport = computed(() => auth.isAdmin || auth.canAnywhere('candidates.view'))
 const exporting = ref(false)
-async function exportExcel(): Promise<void> {
+/** "Export to Excel" exports what the filters show; "Export everyone" the whole list, for the Zoho comparison. */
+async function exportExcel(scope: 'filtered' | 'everyone'): Promise<void> {
   exporting.value = true
   error.value = null
   try {
     const { data } = await supabase.auth.getSession()
-    saveExportFile(await fetchHiringExport(data.session?.access_token ?? '', todayDb()))
+    const filter = scope === 'filtered' ? { stage: stage.value, status: status.value, companyId: companyId.value, search: search.value } : undefined
+    saveExportFile(await fetchHiringExport(data.session?.access_token ?? '', todayDb(), fetch, filter))
   } catch (err) {
     console.error('Hiring export failed:', err)
     error.value = err instanceof Error && err.message ? err.message : HIRING_EXPORT_ERROR
@@ -252,10 +254,21 @@ watch(companyId, load)
           type="button"
           :disabled="exporting"
           data-testid="applicants-export"
-          title="Every candidate, one row per job they are on"
-          @click="exportExcel"
+          title="What the filters show, one row per application"
+          @click="exportExcel('filtered')"
         >
           {{ exporting ? 'Exporting…' : 'Export to Excel' }}
+        </button>
+        <button
+          v-if="canExport"
+          class="button secondary"
+          type="button"
+          :disabled="exporting"
+          data-testid="applicants-export-everyone"
+          title="Every candidate, filters ignored, those on no job included — to line up with Zoho's file"
+          @click="exportExcel('everyone')"
+        >
+          Export everyone
         </button>
       </div>
     </div>

@@ -83,7 +83,8 @@ type PeriodLite = { status: string; start_date: string; end_date: string | null 
  * latest former one. A future transfer never hides the current job.
  */
 export function currentPeriod<T extends PeriodLite>(periods: T[], today = todayDb()): T | null {
-  const live = periods.filter((p) => p.status !== 'former')
+  // A hire who did not start (B4) never held the job: like a former period, never "current" over a live one.
+  const live = periods.filter((p) => p.status !== 'former' && p.status !== 'did_not_start')
   const started = live.filter((p) => p.start_date <= today).sort((a, b) => b.start_date.localeCompare(a.start_date))
   if (started[0]) return started[0]
   const upcoming = live.filter((p) => p.start_date > today).sort((a, b) => a.start_date.localeCompare(b.start_date))
@@ -99,6 +100,7 @@ export const DIRECTORY_FILTERS = [
   { key: 'departing', label: 'Departing' },
   { key: 'former', label: 'Former' },
   { key: 'none', label: 'No employment' },
+  { key: 'did_not_start', label: 'Did not start' },
 ] as const
 
 export type DirectoryFilter = (typeof DIRECTORY_FILTERS)[number]['key']
@@ -106,6 +108,7 @@ export type DirectoryFilter = (typeof DIRECTORY_FILTERS)[number]['key']
 export function matchesFilter(filter: DirectoryFilter, period: PeriodLite | null): boolean {
   if (filter === 'all') return true
   if (!period) return filter === 'none'
+  if (period.status === 'did_not_start') return filter === 'did_not_start'
   const state = departureState(period)
   switch (filter) {
     case 'active':

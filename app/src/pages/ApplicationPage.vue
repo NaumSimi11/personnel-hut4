@@ -19,7 +19,7 @@ import { contactBadge, type ContactRule } from '@/lib/candidatePool'
 import { todayDb } from '@/lib/compensation'
 import { answersFromRows, mergeAnswers, type AnswerRow } from '@/lib/screeningAnswers'
 import CandidateHandoffDialog, { type HandoffPayload } from '@/components/CandidateHandoffDialog.vue'
-import { setApplicationStatus } from '@/lib/applicationStatus'
+import { HIRE_NEEDS_OFFER, setApplicationStatus } from '@/lib/applicationStatus'
 import { stageLabel } from '@/lib/dashboard'
 import { deliverNotifications, deliverySentence } from '@/lib/notificationsApi'
 import { candidateNextStep } from '@/lib/hiringJourney'
@@ -511,6 +511,11 @@ function openConfirmHire(): void {
   if (!application.value) return
   // An accepted offer carries the agreed start date into the hire.
   const accepted: OfferTerms | null = offerCard.value?.liveStatus() === 'accepted' ? offerCard.value.liveTerms() : null
+  // 0128: no hire without an accepted offer; say so before the form, not after it.
+  if (!accepted) {
+    stageError.value = HIRE_NEEDS_OFFER
+    return
+  }
   void confirmHireDialog.value?.open({
     applicationId: application.value.id,
     candidateName: application.value.candidate?.full_name ?? '',

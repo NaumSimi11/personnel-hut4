@@ -10,6 +10,7 @@ import {
   shouldStartOnboarding,
   successLine,
   toPayload,
+  withRequestDefaults,
 } from './employeeForm'
 
 const TODAY = '2026-09-16'
@@ -108,5 +109,23 @@ describe('employee form', () => {
     expect(successLine({ plan_id: 'p', compensation_record_id: null, already_hired: false })).toMatch(/checklist/)
     expect(successLine({ plan_id: null, compensation_record_id: 'c', already_hired: false })).toMatch(/pay proposal/)
     expect(successLine({ plan_id: null, compensation_record_id: null, already_hired: true })).toMatch(/already/)
+  })
+})
+
+describe('withRequestDefaults (24 Nov: the hire carries its request)', () => {
+  const form = prefillFromApplication(
+    { candidateName: 'Ana', candidateEmail: null, candidatePhone: null, jobTitle: 'Dev', companyId: 'c1' },
+    TODAY,
+  )
+
+  it('fills department, location, employment type and manager from the hiring request', () => {
+    const out = withRequestDefaults(form, { departmentId: 'd1', locationId: 'l1', employmentTypeKey: 'part_time', managerId: 'm1' })
+    expect(out).toMatchObject({ departmentId: 'd1', locationId: 'l1', employmentTypeKey: 'part_time', managerId: 'm1', fullName: 'Ana' })
+    expect(form.departmentId).toBe('')
+  })
+
+  it('leaves a field as it was when the request has none', () => {
+    const out = withRequestDefaults(form, { departmentId: null, locationId: null, employmentTypeKey: null, managerId: null })
+    expect(out).toEqual(form)
   })
 })

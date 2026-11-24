@@ -24,6 +24,19 @@ do $$ begin
 end $$;
 
 set app.test_uid = '00000000-0000-0000-0000-000000000005';
+-- 0128: a hired application stays (the employee it made would be left behind).
+do $$ begin
+  begin
+    perform public.delete_job_application('90000000-0000-0000-0000-000000000811');
+    raise exception 'FAIL: a hired application was deleted';
+  exception when invalid_parameter_value then
+    if sqlerrm not like 'A hired application cannot be deleted.%' then raise; end if;
+  end;
+end $$;
+reset role;
+update public.applications set stage_key = 'screening', employment_period_id = null
+ where id = '90000000-0000-0000-0000-000000000811';
+set role authenticated;
 select public.delete_job_application('90000000-0000-0000-0000-000000000811');
 reset role;
 do $$ begin

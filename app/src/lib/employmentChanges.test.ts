@@ -121,3 +121,22 @@ describe('DIRECTORY_FILTERS order', () => {
     expect(DIRECTORY_FILTERS.map((f) => f.key)).toContain('all')
   })
 })
+
+describe('Did not start (24 Nov, audit B4)', () => {
+  const dns = { status: 'did_not_start', start_date: '2026-11-20', end_date: '2026-11-20' }
+
+  it('has its own filter, and the hire shows nowhere else', () => {
+    expect(DIRECTORY_FILTERS.map((f) => f.key)).toContain('did_not_start')
+    expect(matchesFilter('did_not_start', dns)).toBe(true)
+    for (const other of ['active', 'starting', 'departing', 'former', 'none'] as const) {
+      expect(matchesFilter(other, dns)).toBe(false)
+    }
+    expect(matchesFilter('did_not_start', { status: 'active', start_date: '2024-01-01', end_date: null })).toBe(false)
+  })
+
+  it('is not the current job when the person has another period', () => {
+    const active = { status: 'active', start_date: '2024-01-01', end_date: null }
+    expect(currentPeriod([dns, active], '2026-11-24')).toBe(active)
+    expect(currentPeriod([dns], '2026-11-24')).toBe(dns)
+  })
+})

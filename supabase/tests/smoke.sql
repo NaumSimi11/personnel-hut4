@@ -315,6 +315,13 @@ insert into public.applications (id, job_id, company_id, candidate_id, stage_key
 
 -- Alex (Director, NO employment.edit) is refused.
 set app.test_uid = '00000000-0000-0000-0000-000000000001';
+-- 0128: a hire follows an accepted offer (signed out for the insert, which pins a signed-in user's offer to draft).
+do $$ begin
+  perform set_config('app.test_uid', '', true);
+  insert into public.offers (application_id, company_id, status)
+  select a.id, a.company_id, 'accepted' from public.applications a where a.id = '90000000-0000-0000-0000-000000000002'
+    and not exists (select 1 from public.offers o where o.application_id = a.id and o.status = 'accepted');
+end $$;
 set role authenticated;
 do $$
 begin
@@ -3749,6 +3756,13 @@ insert into public.applications (id, job_id, company_id, candidate_id, stage_key
   ('90000000-0000-0000-0000-0000000000d1', '70000000-0000-0000-0000-0000000000d1',
    '10000000-0000-0000-0000-00000000000b', '80000000-0000-0000-0000-0000000000d1', 'offer');
 set app.test_uid = '00000000-0000-0000-0000-000000000005';
+-- 0128: a hire follows an accepted offer (signed out for the insert, which pins a signed-in user's offer to draft).
+do $$ begin
+  perform set_config('app.test_uid', '', true);
+  insert into public.offers (application_id, company_id, status)
+  select a.id, a.company_id, 'accepted' from public.applications a where a.id = '90000000-0000-0000-0000-0000000000d1'
+    and not exists (select 1 from public.offers o where o.application_id = a.id and o.status = 'accepted');
+end $$;
 set role authenticated;
 do $$
 declare r jsonb;
@@ -3775,6 +3789,7 @@ end $$;
 reset role;
 set app.test_uid = '';
 delete from public.application_events where application_id = '90000000-0000-0000-0000-0000000000d1';
+delete from public.offers where application_id = '90000000-0000-0000-0000-0000000000d1';  -- 0128's accepted offer
 delete from public.applications where id = '90000000-0000-0000-0000-0000000000d1';
 delete from public.candidates where id = '80000000-0000-0000-0000-0000000000d1';
 delete from public.jobs where id = '70000000-0000-0000-0000-0000000000d1';
@@ -4031,8 +4046,9 @@ begin
 end $$;
 reset role;
 
--- A hire in B with no bank account: one send per recipient; the accountant is missing the bank account,
--- IT is pending with only its fields, the manager (none set) is missing the address.
+-- A hire in B with no bank account: one send per recipient; the accountant's send still goes and lists
+-- the bank account as not filled in (0128), IT is pending with only its fields, the manager (none set)
+-- is held for want of an address.
 set app.test_uid = '00000000-0000-0000-0000-000000000005';
 set role authenticated;
 do $$
@@ -4044,7 +4060,7 @@ begin
   v_person := (r->>'person_id')::uuid; v_plan := (r->>'plan_id')::uuid; v_period := (r->>'employment_period_id')::uuid;
   assert (select count(*) from public.handover_sends where plan_id = v_plan and event = 'hire_confirmed') = 3, 'one send per recipient';
   select * into s from public.handover_sends where plan_id = v_plan and recipient_label = 'Accountant B';
-  assert s.status = 'missing' and s.missing = array['Bank account'], 'the accountant is missing the bank account: ' || s.missing::text;
+  assert s.status = 'pending' and s.missing = array['Bank account'], '0128: the accountant''s notice goes, listing the bank account: ' || s.status || ' ' || s.missing::text;
   assert s.to_email = 'books@b.test', 'the address is resolved';
   assert s.fields ? 'national_id' and s.fields ? 'name' and not (s.fields ? 'salary') and not (s.fields ? 'work_email'),
     'exactly the accountant''s fields: ' || s.fields::text;
@@ -8991,6 +9007,13 @@ reset role;
 -- 0096-i: the report's funnel keys: the four stages plus closed, rejected and
 -- withdrew by outcome; every application lands in exactly one bucket.
 set app.test_uid = '00000000-0000-0000-0000-000000000004';  -- Ada
+-- 0128: a hire follows an accepted offer (signed out for the insert, which pins a signed-in user's offer to draft).
+do $$ begin
+  perform set_config('app.test_uid', '', true);
+  insert into public.offers (application_id, company_id, status)
+  select a.id, a.company_id, 'accepted' from public.applications a where a.id = '90000000-0000-0000-0000-000000000961'
+    and not exists (select 1 from public.offers o where o.application_id = a.id and o.status = 'accepted');
+end $$;
 set role authenticated;
 do $$
 declare r jsonb; f jsonb;
@@ -9101,6 +9124,7 @@ begin
 end $$;
 
 delete from public.application_events where application_id::text like '90000000-0000-0000-0000-00000000096_';
+delete from public.offers where application_id::text like '90000000-0000-0000-0000-00000000096_';  -- 0128's accepted offer
 delete from public.applications where id::text like '90000000-0000-0000-0000-00000000096_';
 delete from public.candidates where id::text like '80000000-0000-0000-0000-00000000096_';
 delete from public.jobs where id::text like '70000000-0000-0000-0000-00000000096_';
@@ -10607,6 +10631,75 @@ do $$ begin
   assert (select count(*) from public.notifications where kind = 'application.stage'
            and entity_id = '90000000-0000-0000-0000-000000000e26') = 2,
     '0126: a status inside the same stage tells nobody, and the mover is not told';
+end $$;
+
+-- ------------------------------------------- HR's audit results of 24 Nov (0128)
+insert into public.jobs (id, company_id, title, status) values
+  ('70000000-0000-0000-0000-000000000128', '10000000-0000-0000-0000-00000000000a', 'Audit 0128 job', 'open');
+insert into public.candidates (id, full_name, email) values
+  ('80000000-0000-0000-0000-000000000128', 'Nina Nooffer', 'nina@cand.test'),
+  ('80000000-0000-0000-0000-000000000129', 'Olga Offer', 'olga@cand.test');
+insert into public.applications (id, job_id, company_id, candidate_id, stage_key, sub_status_key) values
+  ('90000000-0000-0000-0000-000000000128', '70000000-0000-0000-0000-000000000128', '10000000-0000-0000-0000-00000000000a', '80000000-0000-0000-0000-000000000128', 'offer', 'offer_made'),
+  ('90000000-0000-0000-0000-000000000129', '70000000-0000-0000-0000-000000000128', '10000000-0000-0000-0000-00000000000a', '80000000-0000-0000-0000-000000000129', 'offer', 'offer_made');
+insert into public.offers (application_id, company_id, status) values
+  ('90000000-0000-0000-0000-000000000129', '10000000-0000-0000-0000-00000000000a', 'accepted');
+insert into public.people (id, full_name) values
+  ('20000000-0000-0000-0000-000000000128', 'Hana Hire'), ('20000000-0000-0000-0000-000000000129', 'Bojan Buddy');
+insert into public.employment_periods (id, person_id, company_id, job_title, start_date, status) values
+  ('30000000-0000-0000-0000-000000000128', '20000000-0000-0000-0000-000000000128', '10000000-0000-0000-0000-00000000000a', 'New hire', current_date, 'active'),
+  ('30000000-0000-0000-0000-000000000129', '20000000-0000-0000-0000-000000000129', '10000000-0000-0000-0000-00000000000a', 'Old hand', current_date - 400, 'active');
+insert into public.plans (id, kind, person_id, company_id, employment_period_id, start_date, status) values
+  ('40000000-0000-0000-0000-000000000128', 'onboarding', '20000000-0000-0000-0000-000000000128', '10000000-0000-0000-0000-00000000000a', '30000000-0000-0000-0000-000000000128', current_date, 'in_progress');
+insert into public.plan_tasks (plan_id, title, task_key, status, sort_order, phase_key) values
+  ('40000000-0000-0000-0000-000000000128', 'Buddy assigned', 'buddy', 'open', 85, 'before_start');
+
+set app.test_uid = '00000000-0000-0000-0000-000000000004';  -- Ada, admin
+set role authenticated;
+do $$ begin
+  begin
+    update public.applications set stage_key = 'hired', sub_status_key = 'hired' where id = '90000000-0000-0000-0000-000000000128';
+    assert false, '0128: Hired without an accepted offer must be refused';
+  exception when invalid_parameter_value then
+    if sqlerrm not like 'Hired needs an accepted offer.%' then raise; end if;
+  end;
+  update public.applications set stage_key = 'hired', sub_status_key = 'hired' where id = '90000000-0000-0000-0000-000000000129';
+  assert (select stage_key from public.applications where id = '90000000-0000-0000-0000-000000000129') = 'hired', '0128: Hired with an accepted offer goes through';
+  begin
+    delete from public.applications where id = '90000000-0000-0000-0000-000000000129';
+    assert false, '0128: a Hired application must not be deletable';
+  exception when invalid_parameter_value then
+    if sqlerrm not like 'A hired application cannot be deleted.%' then raise; end if;
+  end;
+
+  assert exists (select 1 from public.buddy_options('40000000-0000-0000-0000-000000000128') where id = '20000000-0000-0000-0000-000000000129'), '0128: a colleague is offered as buddy';
+  assert not exists (select 1 from public.buddy_options('40000000-0000-0000-0000-000000000128') where id = '20000000-0000-0000-0000-000000000128'), '0128: the new hire is not their own buddy';
+  perform public.set_onboarding_buddy('40000000-0000-0000-0000-000000000128', '20000000-0000-0000-0000-000000000129');
+  begin
+    perform public.set_onboarding_buddy('40000000-0000-0000-0000-000000000128', '20000000-0000-0000-0000-000000000128');
+    assert false, '0128: only a current colleague can be the buddy';
+  exception when invalid_parameter_value then null;
+  end;
+
+  perform public.mark_did_not_start('30000000-0000-0000-0000-000000000128', 'did not show up');
+  begin
+    perform public.mark_did_not_start('30000000-0000-0000-0000-000000000129', 'too late');
+    assert false, '0128: Did not start is not offered after the first week';
+  exception when invalid_parameter_value then null;
+  end;
+end $$;
+reset role;
+set app.test_uid = '';
+do $$ begin
+  assert (select buddy_id from public.plans where id = '40000000-0000-0000-0000-000000000128') = '20000000-0000-0000-0000-000000000129', '0128: the buddy is kept on the plan';
+  assert (select status from public.plan_tasks where plan_id = '40000000-0000-0000-0000-000000000128' and task_key = 'buddy') = 'done', '0128: picking the buddy ticks the line';
+  assert exists (select 1 from public.notifications where person_id = '20000000-0000-0000-0000-000000000129' and kind = 'onboarding.buddy'), '0128: the buddy is told';
+  assert (select status from public.employment_periods where id = '30000000-0000-0000-0000-000000000128') = 'did_not_start', '0128: Did not start on the first day';
+  assert (select archived_at is not null from public.channels where key = 'indeed'), '0128: Indeed is archived';
+  perform app.raise_handover('hire_confirmed', '20000000-0000-0000-0000-000000000129', '10000000-0000-0000-0000-00000000000a', '30000000-0000-0000-0000-000000000129', null, 'smoke-0128');
+  assert not exists (select 1 from public.handover_sends where dedupe_key like '%:smoke-0128'
+                      and (status = 'pending') is distinct from (to_email is not null)),
+    '0128: a notice is held only when there is nobody to send it to';
 end $$;
 
 select 'SMOKE TESTS PASSED' as result;

@@ -36,7 +36,7 @@ import {
   statusLabels,
   type StageKey,
 } from '@/lib/stageStatuses'
-import { setApplicationStatus } from '@/lib/applicationStatus'
+import { HIRE_NEEDS_OFFER, hasAcceptedOffer, setApplicationStatus } from '@/lib/applicationStatus'
 import { LIST_PAGE } from '@/lib/pageAll'
 import { createRequestGate } from '@/lib/requestGate'
 import { useHiringLookupsStore } from '@/stores/hiringLookups'
@@ -585,8 +585,14 @@ function reject(app: ApplicationRow): void {
   rejectDialog.value?.open('reject', app.candidate?.full_name ?? '', [app.id], app.stage_key)
 }
 
-function openConfirmHire(app: ApplicationRow): void {
+async function openConfirmHire(app: ApplicationRow): Promise<void> {
   if (!job.value) return
+  actionError.value = null
+  // 0128: no hire without an accepted offer; say so before the form, not after it.
+  if (!(await hasAcceptedOffer(app.id))) {
+    actionError.value = HIRE_NEEDS_OFFER
+    return
+  }
   void confirmHireDialog.value?.open({
     applicationId: app.id,
     candidateName: app.candidate?.full_name ?? '',

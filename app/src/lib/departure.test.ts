@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { departureInput, departureState, friendlyDepartureError } from './departure'
+import { canMarkDidNotStart, departureInput, departureState, friendlyDepartureError } from './departure'
 
 describe('departureState', () => {
   it('is "former" once the period status says so', () => {
@@ -90,5 +90,21 @@ describe('friendlyDepartureError', () => {
 
   it('passes the readable RPC messages through', () => {
     expect(friendlyDepartureError('Choose an employment end date.')).toBe('Choose an employment end date.')
+  })
+})
+
+describe('canMarkDidNotStart (24 Nov, audit B4)', () => {
+  const today = '2026-11-24'
+  it('is offered before the first day', () => {
+    expect(canMarkDidNotStart({ status: 'pre_start', start_date: '2026-12-01' }, today)).toBe(true)
+  })
+  it('is offered on the first day and the week after it', () => {
+    expect(canMarkDidNotStart({ status: 'active', start_date: today }, today)).toBe(true)
+    expect(canMarkDidNotStart({ status: 'active', start_date: '2026-11-17' }, today)).toBe(true)
+  })
+  it('is not offered once the hire has been working more than a week, or is already out', () => {
+    expect(canMarkDidNotStart({ status: 'active', start_date: '2026-11-16' }, today)).toBe(false)
+    expect(canMarkDidNotStart({ status: 'former', start_date: today }, today)).toBe(false)
+    expect(canMarkDidNotStart({ status: 'did_not_start', start_date: today }, today)).toBe(false)
   })
 })

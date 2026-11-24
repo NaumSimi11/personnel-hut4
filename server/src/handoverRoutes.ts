@@ -22,6 +22,7 @@ type Row = {
   to_email: string | null
   fields: Record<string, HandoverField>
   stripped: string[]
+  missing: string[] | null
   attempts: number
 }
 
@@ -31,7 +32,7 @@ export async function deliverPendingHandover(): Promise<{ sent: number; failed: 
   const from = env('EMAIL_FROM')
   const { data: rows, error } = await db
     .from('handover_sends')
-    .select('id, event, recipient_label, to_email, fields, stripped, attempts')
+    .select('id, event, recipient_label, to_email, fields, stripped, missing, attempts')
     .eq('status', 'pending')
     .order('created_at', { ascending: true })
     .limit(BATCH)
@@ -48,7 +49,7 @@ export async function deliverPendingHandover(): Promise<{ sent: number; failed: 
       result.pending += 1
       continue
     }
-    const message = renderHandoverEmail(s)
+    const message = renderHandoverEmail({ ...s, missing: s.missing ?? [] })
     try {
       const response = await fetch('https://api.resend.com/emails', {
         method: 'POST',

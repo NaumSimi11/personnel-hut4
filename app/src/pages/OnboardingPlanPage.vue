@@ -16,6 +16,7 @@ import HandoverCard from '@/components/handover/HandoverCard.vue'
 import StarterKitCard from '@/components/equipment/StarterKitCard.vue'
 import AccessCard from '@/components/access/AccessCard.vue'
 import WelcomeNoteCard from '@/components/welcome/WelcomeNoteCard.vue'
+import BuddyCard from '@/components/onboarding/BuddyCard.vue'
 import { deliverNotifications } from '@/lib/notificationsApi'
 
 /**
@@ -269,6 +270,15 @@ onMounted(async () => {
           @changed="loadTasks"
         />
       </div>
+
+      <BuddyCard
+        :id="`plan-buddy`"
+        v-if="plan.kind === 'onboarding'"
+        class="handover"
+        :plan-id="plan.id"
+        :active="plan.status === 'in_progress'"
+        @changed="loadTasks"
+      />
 
       <WelcomeNoteCard
         :id="`plan-welcome`"

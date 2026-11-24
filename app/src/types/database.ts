@@ -4595,6 +4595,7 @@ export type Database = {
           completed_at: string | null
           created_at: string
           employment_period_id: string | null
+          buddy_id: string | null
           hr_owner_id: string | null
           id: string
           kind: string
@@ -4612,6 +4613,7 @@ export type Database = {
           completed_at?: string | null
           created_at?: string
           employment_period_id?: string | null
+          buddy_id?: string | null
           hr_owner_id?: string | null
           id?: string
           kind: string
@@ -4629,6 +4631,7 @@ export type Database = {
           completed_at?: string | null
           created_at?: string
           employment_period_id?: string | null
+          buddy_id?: string | null
           hr_owner_id?: string | null
           id?: string
           kind?: string
@@ -4658,6 +4661,13 @@ export type Database = {
           {
             foreignKeyName: "plans_hr_owner_id_fkey"
             columns: ["hr_owner_id"]
+            isOneToOne: false
+            referencedRelation: "people"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "plans_buddy_id_fkey"
+            columns: ["buddy_id"]
             isOneToOne: false
             referencedRelation: "people"
             referencedColumns: ["id"]
@@ -5684,6 +5694,14 @@ export type Database = {
       }
       mark_did_not_start: {
         Args: { p_period_id: string; p_reason: string }
+        Returns: Json
+      }
+      buddy_options: {
+        Args: { p_plan_id: string }
+        Returns: { id: string; full_name: string; job_title: string | null }[]
+      }
+      set_onboarding_buddy: {
+        Args: { p_plan_id: string; p_buddy_id: string }
         Returns: Json
       }
       cancel_hiring_request: {

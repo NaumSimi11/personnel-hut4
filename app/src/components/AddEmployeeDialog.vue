@@ -25,6 +25,8 @@ import {
   type ApplicationTarget,
   type CreateResult,
   type EmployeeForm,
+  type RequestDefaults,
+  withRequestDefaults,
 } from '@/lib/employeeForm'
 import PrivateDetailsFields, { type PrivateDetailsForm } from '@/components/PrivateDetailsFields.vue'
 
@@ -84,6 +86,10 @@ async function open(t?: ApplicationTarget): Promise<void> {
   const today = todayDb()
   target.value = t ?? null
   form.value = t ? prefillFromApplication(t, today) : emptyForm(today)
+  if (t?.applicationId) {
+    const defaults = await loadRequestDefaults(t.applicationId)
+    if (defaults) form.value = withRequestDefaults(form.value, defaults)
+  }
   onboardingTouched.value = false
   error.value = null
   result.value = null
@@ -99,6 +105,31 @@ async function open(t?: ApplicationTarget): Promise<void> {
   }
 }
 defineExpose({ open })
+
+/**
+ * The hire's hiring request, through its job: department, location,
+ * employment type, and the hiring manager as manager (24 Nov). A failure
+ * only means HR fills them by hand, so it is logged, not shown.
+ */
+async function loadRequestDefaults(applicationId: string): Promise<RequestDefaults | null> {
+  const { data, error: err } = await supabase
+    .from('applications')
+    .select('job:jobs(hiring_manager_id, request:hiring_requests(department_id, location_id, employment_type_key, hiring_manager_id))')
+    .eq('id', applicationId)
+    .maybeSingle()
+  if (err) {
+    console.error('Hire request defaults failed:', err.message)
+    return null
+  }
+  const job = (data as { job: { hiring_manager_id: string | null; request: { department_id: string | null; location_id: string | null; employment_type_key: string | null; hiring_manager_id: string | null } | null } | null } | null)?.job
+  if (!job) return null
+  return {
+    departmentId: job.request?.department_id ?? null,
+    locationId: job.request?.location_id ?? null,
+    employmentTypeKey: job.request?.employment_type_key ?? null,
+    managerId: job.hiring_manager_id ?? job.request?.hiring_manager_id ?? null,
+  }
+}
 
 async function loadReference(): Promise<void> {
   const [companiesRes, typesRes, basesRes, peopleRes] = await Promise.all([

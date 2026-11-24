@@ -26,3 +26,28 @@ describe('renderHandoverEmail', () => {
     expect(renderHandoverEmail({ event: 'onboarding_finished', recipient_label: 'IT', fields: { name: { label: 'Full name', value: 'Bo' } }, stripped: [] }).subject).toBe('Onboarding finished: Bo')
   })
 })
+
+describe('a notice with gaps still goes out (24 Nov, audit T14)', () => {
+  it('lists what is not filled in yet', () => {
+    const { html } = renderHandoverEmail({
+      event: 'hire_confirmed',
+      recipient_label: 'IT',
+      fields: { name: { label: 'Name', value: 'Ana' } },
+      stripped: [],
+      missing: ['Location', 'Work email'],
+    })
+    expect(html).toContain('Not filled in yet')
+    expect(html).toContain('Location')
+    expect(html).toContain('Work email')
+  })
+
+  it('says nothing about gaps when there are none', () => {
+    const { html } = renderHandoverEmail({ event: 'hire_confirmed', recipient_label: 'IT', fields: {}, stripped: [], missing: [] })
+    expect(html).not.toContain('Not filled in yet')
+  })
+
+  it('escapes a field label in the gap list', () => {
+    const { html } = renderHandoverEmail({ event: 'hire_confirmed', recipient_label: 'IT', fields: {}, stripped: [], missing: ['<b>x</b>'] })
+    expect(html).not.toContain('<b>x</b>')
+  })
+})

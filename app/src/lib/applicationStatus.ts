@@ -25,3 +25,17 @@ export async function setApplicationStatus(applicationIds: ReadonlyArray<string>
   }
   return { set: (data as { set?: number } | null)?.set ?? ids.length, error: null }
 }
+
+/** The same sentence the database raises (0128): a hire follows an accepted offer. */
+export const HIRE_NEEDS_OFFER =
+  'Hired needs an accepted offer. Record the offer and the candidate\u2019s answer on the Offer tab first.'
+
+/** Whether the application has an accepted offer, so Confirm hire can go ahead. */
+export async function hasAcceptedOffer(applicationId: string): Promise<boolean> {
+  const { data, error } = await supabase.from('offers').select('id').eq('application_id', applicationId).eq('status', 'accepted').limit(1)
+  if (error) {
+    console.error('Accepted offer check failed:', error.message)
+    return false
+  }
+  return (data ?? []).length > 0
+}

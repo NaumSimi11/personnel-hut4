@@ -126,6 +126,29 @@ export function prefillFromApplication(target: ApplicationTarget, today: string)
   }
 }
 
+/** What a hire's hiring request already says about the job (0117, D15). */
+export type RequestDefaults = {
+  departmentId: string | null
+  locationId: string | null
+  employmentTypeKey: string | null
+  managerId: string | null
+}
+
+/**
+ * The hire form starts from the request: department, location, employment
+ * type and the hiring manager as manager. Without them the new-hire notices
+ * went out with Department missing (audit T14). A blank stays as it was.
+ */
+export function withRequestDefaults(form: EmployeeForm, d: RequestDefaults): EmployeeForm {
+  return {
+    ...form,
+    departmentId: d.departmentId ?? form.departmentId,
+    locationId: d.locationId ?? form.locationId,
+    employmentTypeKey: d.employmentTypeKey ?? form.employmentTypeKey,
+    managerId: d.managerId ?? form.managerId,
+  }
+}
+
 export type Sections = { personal: boolean; pay: boolean }
 
 /** Which sections this viewer may fill for the chosen company. */

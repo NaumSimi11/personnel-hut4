@@ -18,7 +18,7 @@ import IssueContractCard from '@/components/IssueContractCard.vue'
 import DocumentRequestsCard from '@/components/DocumentRequestsCard.vue'
 import PersonEquipmentCard from '@/components/PersonEquipmentCard.vue'
 import { describeChanges, type Lookups } from '@/lib/employmentChanges'
-import { departureState, friendlyDepartureError } from '@/lib/departure'
+import { canMarkDidNotStart, departureState, friendlyDepartureError } from '@/lib/departure'
 import { tenureLabel } from '@/lib/tenure'
 import { todayDb } from '@/lib/compensation'
 import { deliverNotifications } from '@/lib/notificationsApi'
@@ -603,7 +603,7 @@ onMounted(async () => {
               Confirm first day
             </button>
             <button
-              v-if="emp.status === 'pre_start' && auth.can(emp.company_id, 'employment.edit')"
+              v-if="canMarkDidNotStart(emp, todayDb()) && auth.can(emp.company_id, 'employment.edit')"
               class="button secondary small-btn danger-text"
               type="button"
               :disabled="busy"

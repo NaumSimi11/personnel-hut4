@@ -10,6 +10,21 @@ import { z } from 'zod'
 export type DepartureState = 'employed' | 'departing' | 'former'
 
 export const REASON_MAX = 500
+
+/** Days after the start date that Did not start stays on offer (mark_did_not_start, migration 0128). */
+export const DID_NOT_START_GRACE_DAYS = 7
+
+/**
+ * Did not start (audit B4): before the first day, on it, and for a week
+ * after, since a no-show is often noticed late. The database checks it again.
+ */
+export function canMarkDidNotStart(period: { status: string; start_date: string }, today: string): boolean {
+  if (period.status === 'pre_start') return true
+  if (period.status !== 'active') return false
+  const cutoff = new Date(`${today}T00:00:00Z`)
+  cutoff.setUTCDate(cutoff.getUTCDate() - DID_NOT_START_GRACE_DAYS)
+  return period.start_date >= cutoff.toISOString().slice(0, 10)
+}
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/
 
 /** A period with an end date is departing until the explicit act of becoming former. */

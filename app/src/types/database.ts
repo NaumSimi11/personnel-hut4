@@ -714,6 +714,64 @@ export type Database = {
           },
         ]
       }
+      asset_files: {
+        Row: {
+          asset_id: string
+          company_id: string
+          created_at: string
+          id: string
+          mime_type: string
+          original_name: string
+          size_bytes: number
+          storage_path: string
+          uploaded_by: string | null
+        }
+        Insert: {
+          asset_id: string
+          company_id: string
+          created_at?: string
+          id?: string
+          mime_type: string
+          original_name: string
+          size_bytes: number
+          storage_path: string
+          uploaded_by?: string | null
+        }
+        Update: {
+          asset_id?: string
+          company_id?: string
+          created_at?: string
+          id?: string
+          mime_type?: string
+          original_name?: string
+          size_bytes?: number
+          storage_path?: string
+          uploaded_by?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "asset_files_asset_id_fkey"
+            columns: ["asset_id"]
+            isOneToOne: false
+            referencedRelation: "assets"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "asset_files_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "asset_files_uploaded_by_fkey"
+            columns: ["uploaded_by"]
+            isOneToOne: false
+            referencedRelation: "people"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       asset_notes: {
         Row: {
           about_person_id: string | null
@@ -800,6 +858,8 @@ export type Database = {
           holder_note: string | null
           id: string
           inventory_number: string | null
+          purchase_date: string | null
+          warranty_until: string | null
           location_id: string | null
           model: string | null
           note: string | null
@@ -819,6 +879,8 @@ export type Database = {
           holder_note?: string | null
           id?: string
           inventory_number?: string | null
+          purchase_date?: string | null
+          warranty_until?: string | null
           location_id?: string | null
           model?: string | null
           note?: string | null
@@ -838,6 +900,8 @@ export type Database = {
           holder_note?: string | null
           id?: string
           inventory_number?: string | null
+          purchase_date?: string | null
+          warranty_until?: string | null
           location_id?: string | null
           model?: string | null
           note?: string | null
@@ -1838,6 +1902,142 @@ export type Database = {
         Insert: { body: string; company_id?: string | null; id?: string; kind: string; subject: string; updated_at?: string }
         Update: { body?: string; company_id?: string | null; kind?: string; subject?: string; updated_at?: string }
         Relationships: []
+      }
+      equipment_check_items: {
+        Row: {
+          answer: string | null
+          answered_at: string | null
+          asset_id: string
+          check_id: string
+          company_id: string
+          follow_up_note: string | null
+          followed_up_at: string | null
+          followed_up_by: string | null
+          id: string
+          note: string | null
+          person_id: string
+        }
+        Insert: {
+          answer?: string | null
+          answered_at?: string | null
+          asset_id: string
+          check_id: string
+          company_id: string
+          follow_up_note?: string | null
+          followed_up_at?: string | null
+          followed_up_by?: string | null
+          id?: string
+          note?: string | null
+          person_id: string
+        }
+        Update: {
+          answer?: string | null
+          answered_at?: string | null
+          asset_id?: string
+          check_id?: string
+          company_id?: string
+          follow_up_note?: string | null
+          followed_up_at?: string | null
+          followed_up_by?: string | null
+          id?: string
+          note?: string | null
+          person_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "equipment_check_items_check_id_fkey"
+            columns: ["check_id"]
+            isOneToOne: false
+            referencedRelation: "equipment_checks"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "equipment_check_items_asset_id_fkey"
+            columns: ["asset_id"]
+            isOneToOne: false
+            referencedRelation: "assets"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "equipment_check_items_person_id_fkey"
+            columns: ["person_id"]
+            isOneToOne: false
+            referencedRelation: "people"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "equipment_check_items_followed_up_by_fkey"
+            columns: ["followed_up_by"]
+            isOneToOne: false
+            referencedRelation: "people"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "equipment_check_items_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      equipment_checks: {
+        Row: {
+          closed_at: string | null
+          closed_by: string | null
+          company_id: string
+          deadline: string
+          id: string
+          name: string
+          started_at: string
+          started_by: string | null
+          status: string
+        }
+        Insert: {
+          closed_at?: string | null
+          closed_by?: string | null
+          company_id: string
+          deadline: string
+          id?: string
+          name: string
+          started_at?: string
+          started_by?: string | null
+          status?: string
+        }
+        Update: {
+          closed_at?: string | null
+          closed_by?: string | null
+          company_id?: string
+          deadline?: string
+          id?: string
+          name?: string
+          started_at?: string
+          started_by?: string | null
+          status?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "equipment_checks_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "equipment_checks_started_by_fkey"
+            columns: ["started_by"]
+            isOneToOne: false
+            referencedRelation: "people"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "equipment_checks_closed_by_fkey"
+            columns: ["closed_by"]
+            isOneToOne: false
+            referencedRelation: "people"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       hiring_settings: {
         Row: { company_id: string | null; id: string; key: string; updated_at: string; value: number }
@@ -5694,6 +5894,22 @@ export type Database = {
       }
       mark_did_not_start: {
         Args: { p_period_id: string; p_reason: string }
+        Returns: Json
+      }
+      start_equipment_check: {
+        Args: { p_company_id: string; p_deadline: string; p_name?: string }
+        Returns: Json
+      }
+      answer_equipment_check: {
+        Args: { p_item_id: string; p_answer: string; p_note?: string }
+        Returns: Json
+      }
+      follow_up_equipment_check: {
+        Args: { p_item_id: string; p_note: string }
+        Returns: Json
+      }
+      close_equipment_check: {
+        Args: { p_check_id: string }
         Returns: Json
       }
       buddy_options: {

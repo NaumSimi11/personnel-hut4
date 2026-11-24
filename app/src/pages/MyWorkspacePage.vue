@@ -13,6 +13,7 @@ import MyRequestsCard from '@/components/MyRequestsCard.vue'
 import MyTasksCard from '@/components/tasks/MyTasksCard.vue'
 import MyPoliciesCard from '@/components/MyPoliciesCard.vue'
 import PersonEquipmentCard from '@/components/PersonEquipmentCard.vue'
+import EquipmentCheckCard from '@/components/equipment/EquipmentCheckCard.vue'
 
 /**
  * My workspace: the signed-in person's own record — their profile, their
@@ -353,6 +354,7 @@ onMounted(load)
         </div>
 
         <div class="right-column">
+          <EquipmentCheckCard v-if="auth.personId" :person-id="auth.personId" />
           <LeaveCard v-if="auth.personId" :person-id="auth.personId" title="My leave" />
           <CompensationCard v-if="auth.personId" :person-id="auth.personId" :periods="employments" title="My compensation" />
           <DocumentsCard v-if="auth.personId" :person-id="auth.personId" :companies="myCompanies" title="My documents" />

@@ -15,6 +15,7 @@ import {
 } from '@/lib/equipment'
 import { bookHolder, holderChoice, KEPT_SOMEWHERE, matchesSearch, NOBODY, OTHER_HOLDER, UNMATCHED_PERSON } from '@/lib/assetRegister'
 import AssetRow, { type RowEdit } from '@/components/equipment/AssetRow.vue'
+import EquipmentCheckPanel from '@/components/equipment/EquipmentCheckPanel.vue'
 import { nextAssetTag, nextInventoryNumber } from '@/lib/assetNumbering'
 import { inventoryHeading, inventoryRows, localToday } from '@/lib/inventoryPrint'
 import { longDate } from '@/lib/candidatePool'
@@ -448,6 +449,8 @@ onMounted(load)
     </div>
     <div v-if="notice" class="notice" role="status">{{ notice }}</div>
     <p v-if="error" class="error-note" role="alert">{{ error }}</p>
+
+    <EquipmentCheckPanel />
 
     <div class="card">
       <div class="card-head">

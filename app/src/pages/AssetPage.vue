@@ -10,6 +10,7 @@ import { assetStatusLabel } from '@/lib/equipment'
 import { missingRecordMessage } from '@/lib/missingRecord'
 import { handoverActions, handoverStatusLine, type Handover, type HandoverAction } from '@/lib/equipment'
 import SignaturePad from '@/components/SignaturePad.vue'
+import AssetWarrantyCard from '@/components/equipment/AssetWarrantyCard.vue'
 import { handoverCapacity, handoverStatement, type HandoverSide, type SignatureInput } from '@shared/signature'
 
 /**
@@ -68,6 +69,8 @@ type Asset = {
   status: string
   company_id: string | null
   holder_note: string | null
+  purchase_date: string | null
+  warranty_until: string | null
   created_at: string
   asset_assignments: Assignment[]
 }
@@ -359,6 +362,15 @@ onMounted(load)
           >{{ open ? 'Ask for it back' : 'Hand it to someone' }}</button>
         </div>
       </section>
+
+      <AssetWarrantyCard
+        :asset-id="asset.id"
+        :company-id="asset.company_id"
+        :may-work="mayWork"
+        :purchase-date="asset.purchase_date"
+        :warranty-until="asset.warranty_until"
+        @changed="load"
+      />
 
       <section v-if="pending" class="card pending-card">
         <div class="card-head">

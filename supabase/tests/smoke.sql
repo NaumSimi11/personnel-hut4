@@ -10499,8 +10499,8 @@ do $$ begin
   assert (select string_agg(pc.capability_key, ',' order by pc.capability_key)
             from public.preset_capabilities pc join public.permission_presets p on p.id = pc.preset_id
            where p.name = 'General Administrator')
-       = 'access.manage,candidates.review,candidates.view,employment.edit,integration.manage,integration.view,jobs.approve,jobs.view,offer.approve,people.view,tasks.assign,tasks.complete,tasks.view',
-       '0120 + 0129: General Administrator has administration, onboarding and the hiring approvals';
+       = 'access.manage,candidates.review,candidates.view,employment.edit,integration.manage,integration.view,it.assign,it.view,jobs.approve,jobs.view,offer.approve,people.view,tasks.assign,tasks.complete,tasks.view',
+       '0120 + 0129 + 0130: General Administrator has administration, onboarding, hiring approvals and equipment';
 end $$;
 
 -- ------------------------------------------- every other role is cleaned out (0121)
@@ -10717,6 +10717,131 @@ begin
       join public.capability_dependencies d on d.capability_key = pc.capability_key
      where not exists (select 1 from public.preset_capabilities x where x.preset_id = p.id and x.capability_key = d.requires_key)),
     '0129: every permission of the role has its prerequisite';
+end $$;
+
+-- ------------------------------------------- the yearly equipment check and warranties (0130)
+insert into public.assets (id, company_id, asset_tag, type_key, model) values
+  ('a0000000-0000-0000-0000-000000000130', '10000000-0000-0000-0000-00000000000a', 'LT-0130', 'laptop', 'Check laptop'),
+  ('a0000000-0000-0000-0000-000000000131', '10000000-0000-0000-0000-00000000000a', 'PH-0131', 'phone', 'Check phone');
+insert into public.asset_assignments (asset_id, person_id, issued_at) values
+  ('a0000000-0000-0000-0000-000000000130', '20000000-0000-0000-0000-000000000003', now() - interval '30 days'),
+  ('a0000000-0000-0000-0000-000000000131', '20000000-0000-0000-0000-000000000003', now() - interval '30 days');
+
+do $$ begin
+  assert (select count(*) from public.permission_presets p join public.preset_capabilities pc on pc.preset_id = p.id
+           where p.name = 'General Administrator' and p.company_id is null and pc.capability_key in ('it.view', 'it.assign')) = 2,
+    '0130: the General Administrator manages equipment';
+end $$;
+
+-- Omar (an employee, no equipment rights) cannot start a check.
+set app.test_uid = '00000000-0000-0000-0000-000000000003';
+set role authenticated;
+do $$ begin
+  begin
+    perform public.start_equipment_check('10000000-0000-0000-0000-00000000000a', current_date + 14);
+    assert false, '0130: an employee started a check';
+  exception when insufficient_privilege then null;
+  end;
+end $$;
+reset role;
+
+-- Ada starts it: Omar's two items become lines and Omar is told.
+set app.test_uid = '00000000-0000-0000-0000-000000000004';
+set role authenticated;
+do $$ declare r jsonb; begin
+  begin
+    perform public.start_equipment_check('10000000-0000-0000-0000-00000000000a', current_date - 1);
+    assert false, '0130: a deadline in the past was taken';
+  exception when invalid_parameter_value then null;
+  end;
+  r := public.start_equipment_check('10000000-0000-0000-0000-00000000000a', current_date + 2, 'Equipment check test');
+  perform set_config('app.check0130', r->>'check_id', false);
+  assert (r->>'lines')::int >= 2, '0130: every issued item is a line: ' || r::text;
+  begin
+    perform public.start_equipment_check('10000000-0000-0000-0000-00000000000a', current_date + 14);
+    assert false, '0130: a second open check for the same company';
+  exception when invalid_parameter_value then null;
+  end;
+end $$;
+reset role;
+set app.test_uid = '';
+do $$ begin
+  assert exists (select 1 from public.notifications where person_id = '20000000-0000-0000-0000-000000000003' and kind = 'equipment.check'),
+    '0130: the holder is told to confirm';
+end $$;
+
+-- Omar answers: confirm needs no note; missing needs one; another person's line is refused.
+set app.test_uid = '00000000-0000-0000-0000-000000000003';
+set role authenticated;
+do $$
+declare v_laptop uuid; v_phone uuid; v_other uuid;
+begin
+  select id into v_laptop from public.equipment_check_items where check_id = current_setting('app.check0130')::uuid and asset_id = 'a0000000-0000-0000-0000-000000000130';
+  select id into v_phone from public.equipment_check_items where check_id = current_setting('app.check0130')::uuid and asset_id = 'a0000000-0000-0000-0000-000000000131';
+  assert v_laptop is not null and v_phone is not null, '0130: the holder sees their own lines';
+  perform public.answer_equipment_check(v_laptop, 'have');
+  begin
+    perform public.answer_equipment_check(v_phone, 'missing', '');
+    assert false, '0130: missing without a note';
+  exception when invalid_parameter_value then null;
+  end;
+  perform public.answer_equipment_check(v_phone, 'missing', 'Lost on a business trip');
+  select id into v_other from public.equipment_check_items where check_id = current_setting('app.check0130')::uuid
+     and person_id <> '20000000-0000-0000-0000-000000000003' limit 1;
+  if v_other is not null then
+    begin
+      perform public.answer_equipment_check(v_other, 'have');
+      assert false, '0130: answered someone else''s line';
+    exception when insufficient_privilege then null;
+    end;
+  end if;
+end $$;
+reset role;
+set app.test_uid = '';
+do $$ begin
+  assert (select answer from public.equipment_check_items where asset_id = 'a0000000-0000-0000-0000-000000000130' and check_id = current_setting('app.check0130')::uuid) = 'have', '0130: confirmed';
+  assert exists (select 1 from public.notifications where person_id = '20000000-0000-0000-0000-000000000004' and kind = 'equipment.check_flag'),
+    '0130: the starter hears of the missing phone';
+  perform public.run_equipment_check_clocks();
+end $$;
+
+-- Ada follows up the phone and closes the check; then nobody can answer.
+set app.test_uid = '00000000-0000-0000-0000-000000000004';
+set role authenticated;
+do $$ declare v_phone uuid; r jsonb; begin
+  select id into v_phone from public.equipment_check_items where check_id = current_setting('app.check0130')::uuid and asset_id = 'a0000000-0000-0000-0000-000000000131';
+  perform public.follow_up_equipment_check(v_phone, 'Marked lost, replacement ordered');
+  r := public.close_equipment_check(current_setting('app.check0130')::uuid);
+  assert r ? 'unanswered', '0130: closing reports what is unanswered';
+  -- warranty dates and a scan record on the item
+  update public.assets set purchase_date = '2025-01-10', warranty_until = '2027-01-10' where id = 'a0000000-0000-0000-0000-000000000130';
+  insert into public.asset_files (asset_id, company_id, storage_path, original_name, mime_type, size_bytes)
+  values ('a0000000-0000-0000-0000-000000000130', '10000000-0000-0000-0000-00000000000a',
+          '10000000-0000-0000-0000-00000000000a/a0000000-0000-0000-0000-000000000130/x-warranty.pdf', 'warranty.pdf', 'application/pdf', 1000);
+  begin
+    insert into public.asset_files (asset_id, company_id, storage_path, original_name, mime_type, size_bytes)
+    values ('a0000000-0000-0000-0000-000000000130', '10000000-0000-0000-0000-00000000000a', 'big', 'big.pdf', 'application/pdf', 3000000);
+    assert false, '0130: a scan over 2 MB was recorded';
+  exception when check_violation then null;
+  end;
+end $$;
+reset role;
+set app.test_uid = '00000000-0000-0000-0000-000000000003';
+set role authenticated;
+do $$ declare v_laptop uuid; begin
+  select id into v_laptop from public.equipment_check_items where asset_id = 'a0000000-0000-0000-0000-000000000130' and check_id = current_setting('app.check0130')::uuid;
+  begin
+    perform public.answer_equipment_check(v_laptop, 'issue', 'Battery dies');
+    assert false, '0130: answered a closed check';
+  exception when invalid_parameter_value then null;
+  end;
+  assert not exists (select 1 from public.asset_files), '0130: an employee cannot see warranty scans';
+end $$;
+reset role;
+set app.test_uid = '';
+do $$ begin
+  assert (select warranty_until from public.assets where id = 'a0000000-0000-0000-0000-000000000130') = '2027-01-10', '0130: the warranty date is kept';
+  assert (select file_size_limit from storage.buckets where id = 'asset-files') = 2097152, '0130: the scans bucket caps files at 2 MB';
 end $$;
 
 select 'SMOKE TESTS PASSED' as result;

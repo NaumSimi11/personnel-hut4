@@ -3,6 +3,7 @@ import { env } from './env.js'
 import { identityFromToken, serviceDb } from './supabaseAdmin.js'
 import { renderNotificationEmail } from './notificationEmails.js'
 import { deliverCandidateEmails, runHiringClocks } from './candidateEmails.js'
+import { runEquipmentCheckClocks } from './equipmentClocks.js'
 
 /**
  * POST /api/notifications/deliver — sends the queued notification emails
@@ -91,6 +92,7 @@ export function registerNotificationRoutes(app: FastifyInstance): void {
     try {
       // The hiring deadlines run first so their alerts go out in this same kick (0103).
       await runHiringClocks()
+      await runEquipmentCheckClocks()
       const delivered = await deliverPending()
       const candidates = await deliverCandidateEmails().catch((e: unknown) => {
         console.error('[candidate-emails] delivery failed:', e instanceof Error ? e.message : e)

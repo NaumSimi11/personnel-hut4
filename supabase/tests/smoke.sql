@@ -10499,8 +10499,8 @@ do $$ begin
   assert (select string_agg(pc.capability_key, ',' order by pc.capability_key)
             from public.preset_capabilities pc join public.permission_presets p on p.id = pc.preset_id
            where p.name = 'General Administrator')
-       = 'access.manage,integration.manage,integration.view,people.view,tasks.assign,tasks.complete,tasks.view',
-       '0120: General Administrator has administration and onboarding';
+       = 'access.manage,candidates.review,candidates.view,employment.edit,integration.manage,integration.view,jobs.approve,jobs.view,offer.approve,people.view,tasks.assign,tasks.complete,tasks.view',
+       '0120 + 0129: General Administrator has administration, onboarding and the hiring approvals';
 end $$;
 
 -- ------------------------------------------- every other role is cleaned out (0121)
@@ -10700,6 +10700,23 @@ do $$ begin
   assert not exists (select 1 from public.handover_sends where dedupe_key like '%:smoke-0128'
                       and (status = 'pending') is distinct from (to_email is not null)),
     '0128: a notice is held only when there is nobody to send it to';
+end $$;
+
+-- ------------------------------------------- the General Administrator can do its hiring work (0129)
+do $$
+declare v_caps text[];
+begin
+  select array_agg(pc.capability_key order by pc.capability_key) into v_caps
+    from public.permission_presets p join public.preset_capabilities pc on pc.preset_id = p.id
+   where p.name = 'General Administrator' and p.company_id is null;
+  assert v_caps @> array['jobs.approve', 'offer.approve', 'candidates.review', 'candidates.view', 'employment.edit', 'jobs.view', 'people.view'],
+    '0129: the General Administrator approves requests and offers, reviews candidates, edits employment: ' || v_caps::text;
+  assert not exists (
+    select 1 from public.preset_capabilities pc
+      join public.permission_presets p on p.id = pc.preset_id and p.name = 'General Administrator' and p.company_id is null
+      join public.capability_dependencies d on d.capability_key = pc.capability_key
+     where not exists (select 1 from public.preset_capabilities x where x.preset_id = p.id and x.capability_key = d.requires_key)),
+    '0129: every permission of the role has its prerequisite';
 end $$;
 
 select 'SMOKE TESTS PASSED' as result;

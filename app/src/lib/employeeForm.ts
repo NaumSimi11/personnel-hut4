@@ -32,7 +32,8 @@ export const employeeInput = personBasicsInput
     companyId: z.string().uuid('Choose the employing company.'),
     jobTitle: z.string().trim().min(2, 'Enter the job title.').max(120),
     departmentId: z.string(),
-    locationId: z.string(),
+    // 25 Nov: everyone working for the holding has a location; HR adds one inline when the company has none.
+    locationId: z.string().uuid('Choose the location. No location for this company yet? Add one under the field.'),
     employmentTypeKey: z.string(),
     managerId: z.string(),
     startDate: z.string().regex(DATE, 'Choose a start date.'),

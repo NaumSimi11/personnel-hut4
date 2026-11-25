@@ -7,6 +7,7 @@ import { deliverNotifications } from '@/lib/notificationsApi'
 import type { Json } from '@/types/database'
 import {
   addDepartment as addDepartmentRow,
+  addLocation as addLocationRow,
   EMPTY_STRUCTURE,
   loadCompanyStructure,
   withOption,
@@ -55,6 +56,8 @@ const payBases = ref<Keyed[]>([])
 const referenceLoaded = ref(false)
 const newDepartment = ref('')
 const addingDepartment = ref(false)
+const newLocation = ref('')
+const addingLocation = ref(false)
 const onboardingTouched = ref(false)
 const error = ref<string | null>(null)
 const busy = ref(false)
@@ -94,6 +97,7 @@ async function open(t?: ApplicationTarget): Promise<void> {
   error.value = null
   result.value = null
   newDepartment.value = ''
+  newLocation.value = ''
   dialog.value?.showModal()
   try {
     // Reference data changes rarely: once per mount is enough.
@@ -185,6 +189,21 @@ async function addDepartment(): Promise<void> {
     error.value = e instanceof Error ? e.message : 'Could not add the department.'
   } finally {
     addingDepartment.value = false
+  }
+}
+
+async function addLocation(): Promise<void> {
+  addingLocation.value = true
+  error.value = null
+  try {
+    const added = await addLocationRow(form.value.companyId, newLocation.value)
+    structure.value = { ...structure.value, locations: withOption(structure.value.locations, added) }
+    form.value = { ...form.value, locationId: added.id }
+    newLocation.value = ''
+  } catch (e) {
+    error.value = e instanceof Error ? e.message : 'Could not add the location.'
+  } finally {
+    addingLocation.value = false
   }
 }
 
@@ -311,10 +330,21 @@ function close(): void {
           </div>
           <div class="field">
             <label for="ae-location">Location</label>
-            <select id="ae-location" v-model="form.locationId">
-              <option value="">Not set</option>
+            <select id="ae-location" v-model="form.locationId" required>
+              <option value="">{{ structure.locations.length ? 'Choose the location' : 'No locations for this company yet' }}</option>
               <option v-for="l in structure.locations" :key="l.id" :value="l.id">{{ l.name }}</option>
             </select>
+            <div v-if="canAddDepartment" class="inline-add">
+              <input
+                id="ae-new-location"
+                v-model="newLocation"
+                maxlength="80"
+                placeholder="New location"
+                aria-label="New location"
+                @keydown.enter.prevent="addLocation"
+              />
+              <button class="button secondary small-btn" type="button" :disabled="addingLocation" @click="addLocation">Add</button>
+            </div>
           </div>
           <div class="field">
             <label for="ae-type">Employment type</label>

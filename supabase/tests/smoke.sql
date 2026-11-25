@@ -10844,4 +10844,38 @@ do $$ begin
   assert (select file_size_limit from storage.buckets where id = 'asset-files') = 2097152, '0130: the scans bucket caps files at 2 MB';
 end $$;
 
+-- ------------------------------------------- everyone working has a location (0131)
+insert into public.locations (id, company_id, name) values
+  ('b0000000-0000-0000-0000-000000000131', '10000000-0000-0000-0000-00000000000a', 'Skopje office 0131'),
+  ('b0000000-0000-0000-0000-000000000132', '10000000-0000-0000-0000-00000000000b', 'Other company office 0131');
+insert into public.people (id, full_name) values ('20000000-0000-0000-0000-000000000131', 'Lina Location');
+insert into public.employment_periods (id, person_id, company_id, job_title, start_date, status) values
+  ('30000000-0000-0000-0000-000000000131', '20000000-0000-0000-0000-000000000131', '10000000-0000-0000-0000-00000000000a', 'Clerk', current_date - 30, 'active');
+set app.test_uid = '00000000-0000-0000-0000-000000000003';  -- Omar, no employment.edit
+set role authenticated;
+do $$ begin
+  begin
+    perform public.set_employment_location('30000000-0000-0000-0000-000000000131', 'b0000000-0000-0000-0000-000000000131');
+    assert false, '0131: an employee set a location';
+  exception when insufficient_privilege then null;
+  end;
+end $$;
+reset role;
+set app.test_uid = '00000000-0000-0000-0000-000000000004';  -- Ada, admin
+set role authenticated;
+do $$ begin
+  perform public.set_employment_location('30000000-0000-0000-0000-000000000131', 'b0000000-0000-0000-0000-000000000131');
+  begin
+    perform public.set_employment_location('30000000-0000-0000-0000-000000000131', 'b0000000-0000-0000-0000-000000000132');
+    assert false, '0131: another company''s location was taken';
+  exception when invalid_parameter_value then null;
+  end;
+end $$;
+reset role;
+set app.test_uid = '';
+do $$ begin
+  assert (select location_id from public.employment_periods where id = '30000000-0000-0000-0000-000000000131') = 'b0000000-0000-0000-0000-000000000131',
+    '0131: the location is set';
+end $$;
+
 select 'SMOKE TESTS PASSED' as result;

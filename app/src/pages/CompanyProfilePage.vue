@@ -14,6 +14,7 @@ import {
 } from '@/lib/companyForm'
 import CompanyTile from '@/components/CompanyTile.vue'
 import CompanyStructurePanel from '@/components/CompanyStructurePanel.vue'
+import EmployeeLocationsPanel from '@/components/EmployeeLocationsPanel.vue'
 import CompanyPayrollPanel from '@/components/CompanyPayrollPanel.vue'
 import PayrollPeriodsPanel from '@/components/PayrollPeriodsPanel.vue'
 import BonusesPanel from '@/components/payroll/BonusesPanel.vue'
@@ -740,7 +741,10 @@ onMounted(load)
           </div>
         </div>
 
-        <CompanyStructurePanel v-else-if="activeTab === 'structure'" :company-id="companyId" />
+        <template v-else-if="activeTab === 'structure'">
+          <CompanyStructurePanel :company-id="companyId" />
+          <EmployeeLocationsPanel :company-id="companyId" />
+        </template>
 
         <div v-else-if="activeTab === 'access'" class="card">
           <div class="card-head">

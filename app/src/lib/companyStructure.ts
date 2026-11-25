@@ -41,6 +41,19 @@ export async function addDepartment(companyId: string, name: string): Promise<St
   return data
 }
 
+/** Adds a location to the company and returns it; HR (employment.edit) may (25 Nov: everyone working has one). */
+export async function addLocation(companyId: string, name: string): Promise<StructureOption> {
+  const trimmed = name.trim()
+  if (trimmed.length < 2) throw new Error('Enter the location name.')
+  const { data, error } = await supabase
+    .from('locations')
+    .insert({ company_id: companyId, name: trimmed })
+    .select('id, name')
+    .single()
+  if (error || !data) throw new Error(friendlyStructureError(error?.message ?? 'row-level security'))
+  return data
+}
+
 export function friendlyStructureError(message: string): string {
   if (/row-level security/.test(message)) return 'Changing the structure needs employment.edit in this company.'
   if (/unique|duplicate/i.test(message)) return 'That name already exists here.'

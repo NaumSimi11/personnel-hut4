@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import PersonLocationField from '@/components/locations/PersonLocationField.vue'
 import { computed, onMounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import { supabase } from '@/lib/supabase'
@@ -476,6 +477,7 @@ onMounted(async () => {
             <dd>{{ f.value }}<small v-if="f.sub">{{ f.sub }}</small></dd>
           </div>
         </dl>
+        <PersonLocationField v-if="current" :period="current" @saved="load" />
       </header>
       <div class="grid-two">
         <div class="main-column">

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { locationSummary, missingFirst } from './employeeLocations'
+import { locationName, locationSummary, missingFirst } from './employeeLocations'
 
 describe("the company's people and their locations (25 Nov)", () => {
   const rows = [
@@ -18,5 +18,15 @@ describe("the company's people and their locations (25 Nov)", () => {
   it('lists the people without a location first, then by name', () => {
     expect(missingFirst(rows).map((r) => r.full_name)).toEqual(['Ana', 'Marko', 'Bojan', 'Zora'])
     expect(rows.at(0)?.full_name).toBe('Zora')
+  })
+})
+
+describe('a typed location (25 Nov: Struga, Skopje, Lithuania…)', () => {
+  it('takes any place name of 2 to 80 characters, trimmed, with single spaces', () => {
+    expect(locationName.safeParse('  Struga ').data).toBe('Struga')
+    expect(locationName.safeParse('Vilnius,   Lithuania').data).toBe('Vilnius, Lithuania')
+    expect(locationName.safeParse('S').success).toBe(false)
+    expect(locationName.safeParse('x'.repeat(81)).success).toBe(false)
+    expect(locationName.safeParse('').error?.issues[0]?.message).toBe('Type where they work, e.g. Skopje, Struga or Vilnius, Lithuania.')
   })
 })

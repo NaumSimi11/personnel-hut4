@@ -5896,6 +5896,14 @@ export type Database = {
         Args: { p_period_id: string; p_reason: string }
         Returns: Json
       }
+      ensure_location: {
+        Args: { p_company_id: string; p_name: string }
+        Returns: string
+      }
+      set_employment_location_name: {
+        Args: { p_period_id: string; p_name: string }
+        Returns: Json
+      }
       set_employment_location: {
         Args: { p_period_id: string; p_location_id: string | null }
         Returns: Json

@@ -47,7 +47,7 @@ describe('employee form', () => {
   })
 
   it('refuses a short name, a bad email, no company and a pay amount that is not a number', () => {
-    const base = { ...emptyForm(TODAY), fullName: 'Ana Ilic', companyId: '11111111-1111-4111-8111-111111111111', jobTitle: 'Clerk', locationId: '22222222-2222-4222-8222-222222222222' }
+    const base = { ...emptyForm(TODAY), fullName: 'Ana Ilic', companyId: '11111111-1111-4111-8111-111111111111', jobTitle: 'Clerk', locationName: 'Skopje', locationId: '22222222-2222-4222-8222-222222222222' }
     expect(employeeInput.safeParse(base).success).toBe(true)
     expect(employeeInput.safeParse({ ...base, fullName: 'A' }).success).toBe(false)
     expect(employeeInput.safeParse({ ...base, workEmail: 'nope' }).success).toBe(false)
@@ -59,7 +59,7 @@ describe('employee form', () => {
   })
 
   it('builds the payload without blanks, nesting private and pay only when something is there', () => {
-    const base = employeeInput.parse({ ...emptyForm(TODAY), fullName: 'Ana Ilic', companyId: '11111111-1111-4111-8111-111111111111', jobTitle: 'Clerk', locationId: '22222222-2222-4222-8222-222222222222' })
+    const base = employeeInput.parse({ ...emptyForm(TODAY), fullName: 'Ana Ilic', companyId: '11111111-1111-4111-8111-111111111111', jobTitle: 'Clerk', locationName: 'Skopje', locationId: '22222222-2222-4222-8222-222222222222' })
     const plain = toPayload(base, {})
     expect(plain).toEqual({
       full_name: 'Ana Ilic',
@@ -94,7 +94,7 @@ describe('employee form', () => {
   })
 
   it('refuses to submit a filled section the viewer may not send, instead of dropping it', () => {
-    const base = employeeInput.parse({ ...emptyForm(TODAY), fullName: 'Ana Ilic', companyId: '11111111-1111-4111-8111-111111111111', jobTitle: 'Clerk', locationId: '22222222-2222-4222-8222-222222222222' })
+    const base = employeeInput.parse({ ...emptyForm(TODAY), fullName: 'Ana Ilic', companyId: '11111111-1111-4111-8111-111111111111', jobTitle: 'Clerk', locationName: 'Skopje', locationId: '22222222-2222-4222-8222-222222222222' })
     expect(hiddenSectionProblem(base, { personal: true, pay: true })).toBeNull()
     expect(hiddenSectionProblem({ ...base, nationalId: '1234' }, { personal: false, pay: true })).toMatch(/personal/i)
     expect(hiddenSectionProblem({ ...base, payAmount: '10' }, { personal: true, pay: false })).toMatch(/pay/i)
@@ -120,13 +120,13 @@ describe('withRequestDefaults (24 Nov: the hire carries its request)', () => {
   )
 
   it('fills department, location, employment type and manager from the hiring request', () => {
-    const out = withRequestDefaults(form, { departmentId: 'd1', locationId: 'l1', employmentTypeKey: 'part_time', managerId: 'm1' })
-    expect(out).toMatchObject({ departmentId: 'd1', locationId: 'l1', employmentTypeKey: 'part_time', managerId: 'm1', fullName: 'Ana' })
+    const out = withRequestDefaults(form, { departmentId: 'd1', locationId: 'l1', locationName: 'Skopje', employmentTypeKey: 'part_time', managerId: 'm1' })
+    expect(out).toMatchObject({ departmentId: 'd1', locationId: 'l1', locationName: 'Skopje', employmentTypeKey: 'part_time', managerId: 'm1', fullName: 'Ana' })
     expect(form.departmentId).toBe('')
   })
 
   it('leaves a field as it was when the request has none', () => {
-    const out = withRequestDefaults(form, { departmentId: null, locationId: null, employmentTypeKey: null, managerId: null })
+    const out = withRequestDefaults(form, { departmentId: null, locationId: null, locationName: null, employmentTypeKey: null, managerId: null })
     expect(out).toEqual(form)
   })
 })
@@ -136,7 +136,7 @@ describe('location on every employee (25 Nov)', () => {
     const base = { ...emptyForm(TODAY), fullName: 'Ana Ilic', companyId: '11111111-1111-4111-8111-111111111111', jobTitle: 'Clerk' }
     const r = employeeInput.safeParse(base)
     expect(r.success).toBe(false)
-    expect(r.success ? '' : r.error.issues[0]?.message).toBe('Choose the location. No location for this company yet? Add one under the field.')
-    expect(employeeInput.safeParse({ ...base, locationId: '22222222-2222-4222-8222-222222222222' }).success).toBe(true)
+    expect(r.success ? '' : r.error.issues[0]?.message).toBe('Type where they work, e.g. Skopje, Struga or Vilnius, Lithuania.')
+    expect(employeeInput.safeParse({ ...base, locationName: 'Struga' }).success).toBe(true)
   })
 })

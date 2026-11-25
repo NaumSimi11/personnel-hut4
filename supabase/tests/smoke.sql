@@ -10878,4 +10878,35 @@ do $$ begin
     '0131: the location is set';
 end $$;
 
+-- ------------------------------------------- a location is typed in (0132)
+set app.test_uid = '00000000-0000-0000-0000-000000000004';  -- Ada, admin
+set role authenticated;
+do $$ declare r jsonb; v1 uuid; v2 uuid; begin
+  r := public.set_employment_location_name('30000000-0000-0000-0000-000000000131', '  Struga ');
+  assert r->>'name' = 'Struga', '0132: a typed place becomes a location: ' || r::text;
+  v1 := (select location_id from public.employment_periods where id = '30000000-0000-0000-0000-000000000131');
+  r := public.set_employment_location_name('30000000-0000-0000-0000-000000000131', 'struga');
+  v2 := (select location_id from public.employment_periods where id = '30000000-0000-0000-0000-000000000131');
+  assert v1 = v2, '0132: the same place in another case is the same location';
+  assert public.ensure_location('10000000-0000-0000-0000-00000000000a', 'Vilnius,   Lithuania') is not null, '0132: a new place is made';
+  assert exists (select 1 from public.locations where name = 'Vilnius, Lithuania'), '0132: spaces are tidied';
+  begin
+    perform public.set_employment_location_name('30000000-0000-0000-0000-000000000131', 'S');
+    assert false, '0132: a one-letter location';
+  exception when invalid_parameter_value then null;
+  end;
+end $$;
+reset role;
+set app.test_uid = '00000000-0000-0000-0000-000000000003';  -- Omar
+set role authenticated;
+do $$ begin
+  begin
+    perform public.ensure_location('10000000-0000-0000-0000-00000000000a', 'Ohrid');
+    assert false, '0132: an employee made a location';
+  exception when insufficient_privilege then null;
+  end;
+end $$;
+reset role;
+set app.test_uid = '';
+
 select 'SMOKE TESTS PASSED' as result;

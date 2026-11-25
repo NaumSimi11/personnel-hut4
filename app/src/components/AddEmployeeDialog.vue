@@ -7,7 +7,6 @@ import { deliverNotifications } from '@/lib/notificationsApi'
 import type { Json } from '@/types/database'
 import {
   addDepartment as addDepartmentRow,
-  addLocation as addLocationRow,
   EMPTY_STRUCTURE,
   loadCompanyStructure,
   withOption,
@@ -29,6 +28,7 @@ import {
   type RequestDefaults,
   withRequestDefaults,
 } from '@/lib/employeeForm'
+import LocationInput from '@/components/locations/LocationInput.vue'
 import PrivateDetailsFields, { type PrivateDetailsForm } from '@/components/PrivateDetailsFields.vue'
 
 /**
@@ -56,8 +56,6 @@ const payBases = ref<Keyed[]>([])
 const referenceLoaded = ref(false)
 const newDepartment = ref('')
 const addingDepartment = ref(false)
-const newLocation = ref('')
-const addingLocation = ref(false)
 const onboardingTouched = ref(false)
 const error = ref<string | null>(null)
 const busy = ref(false)
@@ -97,7 +95,6 @@ async function open(t?: ApplicationTarget): Promise<void> {
   error.value = null
   result.value = null
   newDepartment.value = ''
-  newLocation.value = ''
   dialog.value?.showModal()
   try {
     // Reference data changes rarely: once per mount is enough.
@@ -118,18 +115,19 @@ defineExpose({ open })
 async function loadRequestDefaults(applicationId: string): Promise<RequestDefaults | null> {
   const { data, error: err } = await supabase
     .from('applications')
-    .select('job:jobs(hiring_manager_id, request:hiring_requests(department_id, location_id, employment_type_key, hiring_manager_id))')
+    .select('job:jobs(hiring_manager_id, request:hiring_requests(department_id, location_id, employment_type_key, hiring_manager_id, location:locations(name)))')
     .eq('id', applicationId)
     .maybeSingle()
   if (err) {
     console.error('Hire request defaults failed:', err.message)
     return null
   }
-  const job = (data as { job: { hiring_manager_id: string | null; request: { department_id: string | null; location_id: string | null; employment_type_key: string | null; hiring_manager_id: string | null } | null } | null } | null)?.job
+  const job = (data as { job: { hiring_manager_id: string | null; request: { department_id: string | null; location_id: string | null; employment_type_key: string | null; hiring_manager_id: string | null; location: { name: string } | null } | null } | null } | null)?.job
   if (!job) return null
   return {
     departmentId: job.request?.department_id ?? null,
     locationId: job.request?.location_id ?? null,
+    locationName: job.request?.location?.name ?? null,
     employmentTypeKey: job.request?.employment_type_key ?? null,
     managerId: job.hiring_manager_id ?? job.request?.hiring_manager_id ?? null,
   }
@@ -192,21 +190,6 @@ async function addDepartment(): Promise<void> {
   }
 }
 
-async function addLocation(): Promise<void> {
-  addingLocation.value = true
-  error.value = null
-  try {
-    const added = await addLocationRow(form.value.companyId, newLocation.value)
-    structure.value = { ...structure.value, locations: withOption(structure.value.locations, added) }
-    form.value = { ...form.value, locationId: added.id }
-    newLocation.value = ''
-  } catch (e) {
-    error.value = e instanceof Error ? e.message : 'Could not add the location.'
-  } finally {
-    addingLocation.value = false
-  }
-}
-
 async function submit(): Promise<void> {
   error.value = null
   const parsed = employeeInput.safeParse(form.value)
@@ -220,7 +203,14 @@ async function submit(): Promise<void> {
     return
   }
   busy.value = true
-  const payload = toPayload(parsed.data, { applicationId: target.value?.applicationId })
+  // The typed place becomes the company's location of that name (0132).
+  const loc = await supabase.rpc('ensure_location', { p_company_id: parsed.data.companyId, p_name: parsed.data.locationName })
+  if (loc.error || !loc.data) {
+    busy.value = false
+    error.value = loc.error?.message || 'Could not save the location.'
+    return
+  }
+  const payload = toPayload({ ...parsed.data, locationId: loc.data as string }, { applicationId: target.value?.applicationId })
   const { data, error: rpcErr } = await supabase.rpc('create_employee', { p: payload as Json })
   busy.value = false
   if (rpcErr) {
@@ -330,21 +320,7 @@ function close(): void {
           </div>
           <div class="field">
             <label for="ae-location">Location</label>
-            <select id="ae-location" v-model="form.locationId" required>
-              <option value="">{{ structure.locations.length ? 'Choose the location' : 'No locations for this company yet' }}</option>
-              <option v-for="l in structure.locations" :key="l.id" :value="l.id">{{ l.name }}</option>
-            </select>
-            <div v-if="canAddDepartment" class="inline-add">
-              <input
-                id="ae-new-location"
-                v-model="newLocation"
-                maxlength="80"
-                placeholder="New location"
-                aria-label="New location"
-                @keydown.enter.prevent="addLocation"
-              />
-              <button class="button secondary small-btn" type="button" :disabled="addingLocation" @click="addLocation">Add</button>
-            </div>
+            <LocationInput id="ae-location" v-model="form.locationName" :suggestions="structure.locations.map((l) => l.name)" aria-label="Location" />
           </div>
           <div class="field">
             <label for="ae-type">Employment type</label>

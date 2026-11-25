@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { locationName } from '@/lib/employeeLocations'
 
 /**
  * The Add employee form (plan 046): one screen, four sections, one call to
@@ -32,8 +33,9 @@ export const employeeInput = personBasicsInput
     companyId: z.string().uuid('Choose the employing company.'),
     jobTitle: z.string().trim().min(2, 'Enter the job title.').max(120),
     departmentId: z.string(),
-    // 25 Nov: everyone working for the holding has a location; HR adds one inline when the company has none.
-    locationId: z.string().uuid('Choose the location. No location for this company yet? Add one under the field.'),
+    // 25 Nov: everyone working has a location, typed in (Skopje, Struga, Vilnius…); the dialog turns it into the company's location.
+    locationId: z.string(),
+    locationName,
     employmentTypeKey: z.string(),
     managerId: z.string(),
     startDate: z.string().regex(DATE, 'Choose a start date.'),
@@ -78,6 +80,7 @@ export function emptyForm(today: string): EmployeeForm {
     jobTitle: '',
     departmentId: '',
     locationId: '',
+    locationName: '',
     employmentTypeKey: DEFAULT_EMPLOYMENT_TYPE,
     managerId: '',
     startDate: today,
@@ -131,6 +134,7 @@ export function prefillFromApplication(target: ApplicationTarget, today: string)
 export type RequestDefaults = {
   departmentId: string | null
   locationId: string | null
+  locationName: string | null
   employmentTypeKey: string | null
   managerId: string | null
 }
@@ -145,6 +149,7 @@ export function withRequestDefaults(form: EmployeeForm, d: RequestDefaults): Emp
     ...form,
     departmentId: d.departmentId ?? form.departmentId,
     locationId: d.locationId ?? form.locationId,
+    locationName: d.locationName ?? form.locationName,
     employmentTypeKey: d.employmentTypeKey ?? form.employmentTypeKey,
     managerId: d.managerId ?? form.managerId,
   }
